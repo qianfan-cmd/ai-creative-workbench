@@ -1,0 +1,19 @@
+# Node
+node_modules
+dist
+
+# Python
+.venv
+__pycache__
+
+# Java
+target
+.idea
+*.iml
+
+# Env
+.env
+
+# OS
+.DS_Store
+Thumbs.db
