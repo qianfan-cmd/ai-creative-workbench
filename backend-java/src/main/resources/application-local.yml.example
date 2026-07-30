@@ -1,0 +1,9 @@
+# 复制此文件为 application-local.yml（该文件已被 .gitignore 忽略，不会上传到 Git）
+# Copy this file to application-local.yml (gitignored — safe for real passwords)
+
+spring:
+  datasource:
+    password: your-mysql-password
+
+jwt:
+  secret: your-local-jwt-secret-at-least-32-characters-long

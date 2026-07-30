@@ -2,9 +2,12 @@ package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workbench.backendjava.common.BusinessException;
+import com.workbench.backendjava.dto.LoginRequest;
 import com.workbench.backendjava.dto.RegisterRequest;
 import com.workbench.backendjava.entity.User;
 import com.workbench.backendjava.mapper.UserMapper;
+import com.workbench.backendjava.util.JwtUtil;
+import com.workbench.backendjava.vo.LoginResponse;
 import com.workbench.backendjava.vo.UserVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
@@ -16,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class UserService {
 
     private final UserMapper userMapper;
+    private final JwtUtil jwtUtil;
 
     /**
      * 注册逻辑
@@ -66,5 +70,34 @@ public class UserService {
         BeanUtils.copyProperties(user, userVO);
         return userVO;
 
+    }
+
+    /**
+     * 登录逻辑
+     * LoginRequest->查用户是否存在/密码是否正确->生成token->返回LoginResponse
+     */
+    public LoginResponse login(LoginRequest request) {
+        // 查用户
+        User user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                        .eq(User::getUsername, request.getUsername())
+        );
+
+        // 用户不存在或密码输入错误->统一提示
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new BusinessException("用户名或密码错误");
+        }
+
+        // 生成token
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+
+        // 组装返回
+        UserVO userVO = new UserVO();
+        BeanUtils.copyProperties(user, userVO);
+
+        LoginResponse response = new LoginResponse();
+        response.setToken(token);
+        response.setUser(userVO);
+        return response;
     }
 }

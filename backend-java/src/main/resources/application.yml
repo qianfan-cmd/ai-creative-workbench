@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend-java
+  # 可选加载本地私密配置（不存在时不报错）
+  config:
+    import: optional:classpath:application-local.yml
+  datasource:
+    url: jdbc:mysql://localhost:3306/workbench?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: changeme
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+
+jwt:
+  secret: change-this-local-dev-secret-min-32-characters-long
+  expiration: 86400000
