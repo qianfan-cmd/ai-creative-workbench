@@ -2,6 +2,7 @@ package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workbench.backendjava.common.BusinessException;
+import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.LoginRequest;
 import com.workbench.backendjava.dto.RegisterRequest;
 import com.workbench.backendjava.entity.User;
@@ -99,5 +100,21 @@ public class UserService {
         response.setToken(token);
         response.setUser(userVO);
         return response;
+    }
+
+    public UserVO getCurrentUser() {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        User user  = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(401, "用户不存在");
+        }
+
+        UserVO userVO = new UserVO();
+        BeanUtils.copyProperties(user, userVO);
+        return userVO;
     }
 }

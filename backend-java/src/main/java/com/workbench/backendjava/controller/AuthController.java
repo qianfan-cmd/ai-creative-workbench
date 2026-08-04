@@ -8,10 +8,7 @@ import com.workbench.backendjava.vo.LoginResponse;
 import com.workbench.backendjava.vo.UserVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -32,5 +29,15 @@ public class AuthController {
         return Result.ok(response);
         // 返回的token：
         // eyJhbGciOiJIUzM4NCJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJ0ZXN0IiwiaWF0IjoxNzg1NDM3ODE5LCJleHAiOjE3ODU1MjQyMTl9.vHYcL04IBhBhrQf966ldbCYVpq74S27cVnZKYZVRKqVrE5sX62HkINQkTdHk2JCG
+    }
+
+    /**
+     * 登录成功返回用户信息，否则抛出异常
+     * @return
+     */
+    @GetMapping("/me")
+    public Result<UserVO> me() {
+        UserVO userVO = userService.getCurrentUser();
+        return Result.ok(userVO);
     }
 }
