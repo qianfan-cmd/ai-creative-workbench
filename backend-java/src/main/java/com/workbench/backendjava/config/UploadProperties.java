@@ -12,5 +12,5 @@ import java.util.List;
 public class UploadProperties {
     private String dir = "./uploads";
     private long maxSize = 52_428_800L;
-    private List<String> allowedExtensions = List.of("png", "jpg", "jpeg", "gif", "webp","pdf");
+    private List<String> allowedExtensions = List.of("png", "jpg", "jpeg", "gif", "webp","pdf","md");
 }

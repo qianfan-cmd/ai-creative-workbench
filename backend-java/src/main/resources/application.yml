@@ -10,10 +10,10 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/workbench?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
     username: root
-    password: 及你太美
+    password: xxxxxx
     driver-class-name: com.mysql.cj.jdbc.Driver
   servlet:
-    multipart:
+    multipart: # 上传文件限制
       max-file-size: 50MB
       max-request-size: 50MB
 
@@ -27,11 +27,12 @@ mybatis-plus:
       logic-delete-field: deleted
 
 jwt:
-  secret: 中国人会飞中国人会飞中国人会飞蓝烙
+  secret: xxxx
   expiration: 86400000
 
 app:
+  public-base-url: http://localhost:8080
   upload:
-    dir: ./uploads #本地存储目录
+    dir: E:/ai-creative-workbench/uploads #本地存储目录
     max-size: 52428800 #50MB
-    allowed-extensions: jpg,jpeg,png,gif,webp,pdf
+    allowed-extensions: jpg,jpeg,png,gif,webp,pdf,md
