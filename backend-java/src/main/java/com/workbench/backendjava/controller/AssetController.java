@@ -1,13 +1,12 @@
 package com.workbench.backendjava.controller;
 
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.service.AssetService;
 import com.workbench.backendjava.vo.AssetUploadVO;
+import com.workbench.backendjava.vo.AssetVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
@@ -29,5 +28,12 @@ public class AssetController {
     @PostMapping("/upload")
     public Result<AssetUploadVO> upload(@RequestParam("file") MultipartFile file) {
         return Result.ok(assetService.upload(file));
+    }
+
+    @GetMapping
+    public Result<PageResult<AssetVO>> list(@RequestParam(defaultValue = "1") Long page,
+                                            @RequestParam(defaultValue = "10") Long size
+    ) {
+        return Result.ok(assetService.listPage(page, size));
     }
 }
