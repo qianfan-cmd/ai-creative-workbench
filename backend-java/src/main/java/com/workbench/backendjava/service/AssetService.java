@@ -129,4 +129,42 @@ public class AssetService {
         vo.setCreatedAt(asset.getCreatedAt());
         return vo;
     }
+
+    /**
+     * 查询当前用户的素材详情
+     */
+    public AssetVO getDetail(Long id) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        Asset asset = assetMapper.selectById(id);
+
+        // 不存在，或不属于当前用户，统一404
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+
+        return toAssetVO(asset);
+    }
+
+    /**
+     * 逻辑删除用户素材
+     */
+    public void delete(Long id) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        Asset asset = assetMapper.selectById(id);
+
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+
+        assetMapper.deleteById(id);
+        log.info("素材删除, userId={}, assetId={}", userId, id);
+    }
 }

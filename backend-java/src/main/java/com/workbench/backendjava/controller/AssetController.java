@@ -30,10 +30,35 @@ public class AssetController {
         return Result.ok(assetService.upload(file));
     }
 
+    /**
+     * 分页查询当前用户的素材列表
+     * @param page
+     * @param size
+     * @return
+     */
     @GetMapping
     public Result<PageResult<AssetVO>> list(@RequestParam(defaultValue = "1") Long page,
                                             @RequestParam(defaultValue = "10") Long size
     ) {
         return Result.ok(assetService.listPage(page, size));
+    }
+
+    /**
+     * 获取素材详情
+     * @param id
+     * @return
+     */
+    @GetMapping("/{id}")
+    public Result<AssetVO> getDetail(@PathVariable Long id) {
+        return Result.ok(assetService.getDetail(id));
+    }
+
+    /**
+     * 删除素材
+     */
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        assetService.delete(id);
+        return Result.ok();
     }
 }
