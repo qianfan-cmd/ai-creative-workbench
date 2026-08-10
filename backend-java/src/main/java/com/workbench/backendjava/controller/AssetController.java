@@ -39,9 +39,12 @@ public class AssetController {
     @GetMapping
     public Result<PageResult<AssetVO>> list(@RequestParam(defaultValue = "1") Long page,
                                             @RequestParam(defaultValue = "10") Long size,
-                                            @RequestParam(required = false) Long tagId
+                                            @RequestParam(required = false) Long tagId,
+                                            @RequestParam(required = false) String keyword,
+                                            @RequestParam(required = false) String type,
+                                            @RequestParam(defaultValue = "desc") String sort
     ) {
-        return Result.ok(assetService.listPage(page, size, tagId));
+        return Result.ok(assetService.listPage(page, size, tagId, keyword, type, sort));
     }
 
     /**

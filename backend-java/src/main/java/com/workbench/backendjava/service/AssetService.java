@@ -83,7 +83,7 @@ public class AssetService {
     /**
      * 分页查询当前用户的素材列表
      */
-    public PageResult<AssetVO> listPage(long page, long size, Long tagId) {
+    public PageResult<AssetVO> listPage(long page, long size, Long tagId, String keyword, String type, String sort) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
             throw new BusinessException(401, "未登录");
@@ -109,6 +109,16 @@ public class AssetService {
          */
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Asset::getUserId, userId);
+
+        // 按关键字筛选
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.like(Asset::getName, keyword);
+        }
+
+        // 按类型筛选
+        if (type != null && !type.isBlank()) {
+            wrapper.eq(Asset::getType, type);
+        }
 
         // 按标签筛选
         if (tagId != null) {
@@ -136,7 +146,13 @@ public class AssetService {
             wrapper.in(Asset::getId, assetIds);
         }
 
-        wrapper.orderByDesc(Asset::getCreatedAt);
+        // 按创建时间排序（可选，默认 desc）
+        if (sort != null && "asc".equalsIgnoreCase(sort.trim())) {
+            wrapper.orderByAsc(Asset::getCreatedAt);
+        } else {
+            // desc 或未传、乱传都按最新在前
+            wrapper.orderByDesc(Asset::getCreatedAt);
+        }
 
         // 分页查询（会自动拼接LiMIT: @TableLogic 会过滤 deleted = 1)
         Page<Asset> resultPage = assetMapper.selectPage(mpPage, wrapper);
