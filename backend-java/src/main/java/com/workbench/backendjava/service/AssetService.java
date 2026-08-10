@@ -7,7 +7,11 @@ import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.config.AppProperties;
 import com.workbench.backendjava.entity.Asset;
+import com.workbench.backendjava.entity.AssetTag;
+import com.workbench.backendjava.entity.Tag;
 import com.workbench.backendjava.mapper.AssetMapper;
+import com.workbench.backendjava.mapper.AssetTagMapper;
+import com.workbench.backendjava.mapper.TagMapper;
 import com.workbench.backendjava.vo.AssetUploadVO;
 import com.workbench.backendjava.vo.AssetVO;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +30,9 @@ public class AssetService {
     private final AssetMapper assetMapper;
     private final FileStorageService fileStorageService;
     private final AppProperties appProperties;
+
+    private final TagMapper tagMapper;
+    private final AssetTagMapper assetTagMapper;
 
     /**
      * 上传文件落库
@@ -76,7 +83,7 @@ public class AssetService {
     /**
      * 分页查询当前用户的素材列表
      */
-    public PageResult<AssetVO> listPage(long page, long size) {
+    public PageResult<AssetVO> listPage(long page, long size, Long tagId) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
             throw new BusinessException(401, "未登录");
@@ -101,8 +108,35 @@ public class AssetService {
          * 相当于WHERE user_id = ? ORDER BY created_at DESC
          */
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Asset::getUserId, userId)
-                .orderByDesc(Asset::getCreatedAt);
+        wrapper.eq(Asset::getUserId, userId);
+
+        // 按标签筛选
+        if (tagId != null) {
+            // 标签不存在 404
+            Tag tag = tagMapper.selectById(tagId);
+            if (tag == null) {
+                throw new BusinessException(404, "标签不存在");
+            }
+
+            // 查关联表，汇总该标签下的所有assetId
+            List<AssetTag> relations = assetTagMapper.selectList(
+                    new LambdaQueryWrapper<AssetTag>()
+                            .eq(AssetTag::getTagId, tagId)
+            );
+
+            if (relations.isEmpty()) {
+                // 没有绑定该标签的素材，返回空页面
+                return PageResult.of(List.of(), 0, page, size);
+            }
+
+            List<Long> assetIds = relations.stream()
+                    .map(AssetTag::getAssetId)
+                    .collect(Collectors.toList());
+
+            wrapper.in(Asset::getId, assetIds);
+        }
+
+        wrapper.orderByDesc(Asset::getCreatedAt);
 
         // 分页查询（会自动拼接LiMIT: @TableLogic 会过滤 deleted = 1)
         Page<Asset> resultPage = assetMapper.selectPage(mpPage, wrapper);
@@ -166,5 +200,45 @@ public class AssetService {
 
         assetMapper.deleteById(id);
         log.info("素材删除, userId={}, assetId={}", userId, id);
+    }
+
+    /**
+     * 给素材绑定标签
+     */
+    public void bindTag(Long assetId, Long tagId) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        // 校验素材：存在且属于当前用户
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+
+        // 校验标签是否存在
+        Tag tag = tagMapper.selectById(tagId);
+        if (tag == null) {
+            throw new BusinessException(404, "标签不存在");
+        }
+
+        // 不能重复绑定同一对素材和标签
+        AssetTag exist = assetTagMapper.selectOne(
+                new LambdaQueryWrapper<AssetTag>()
+                        .eq(AssetTag::getAssetId, assetId)
+                        .eq(AssetTag::getTagId, tagId)
+        );
+        if (exist != null) {
+            throw new BusinessException(409, "素材和标签已绑定");
+        }
+
+        // 写入关联表
+        AssetTag assetTag = new AssetTag();
+        assetTag.setAssetId(assetId);
+        assetTag.setTagId(tagId);
+        assetTagMapper.insert(assetTag);
+
+        log.info("素材绑定标签, userId={}, assetId={}, tagId={}", userId, assetId, tagId);
     }
 }

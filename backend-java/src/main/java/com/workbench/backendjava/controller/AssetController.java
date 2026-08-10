@@ -38,9 +38,10 @@ public class AssetController {
      */
     @GetMapping
     public Result<PageResult<AssetVO>> list(@RequestParam(defaultValue = "1") Long page,
-                                            @RequestParam(defaultValue = "10") Long size
+                                            @RequestParam(defaultValue = "10") Long size,
+                                            @RequestParam(required = false) Long tagId
     ) {
-        return Result.ok(assetService.listPage(page, size));
+        return Result.ok(assetService.listPage(page, size, tagId));
     }
 
     /**
@@ -59,6 +60,15 @@ public class AssetController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         assetService.delete(id);
+        return Result.ok();
+    }
+
+    /**
+     * 素材绑定标签
+     */
+    @PostMapping("/{assetId}/tags/{tagId}")
+    public Result<Void> bindTag(@PathVariable Long assetId, @PathVariable Long tagId) {
+        assetService.bindTag(assetId, tagId);
         return Result.ok();
     }
 }
