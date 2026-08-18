@@ -2,9 +2,13 @@ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
+import com.workbench.backendjava.dto.AssetUpdateRequest;
 import com.workbench.backendjava.service.AssetService;
+import com.workbench.backendjava.vo.AssetStatsVO;
 import com.workbench.backendjava.vo.AssetUploadVO;
 import com.workbench.backendjava.vo.AssetVO;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -67,11 +71,37 @@ public class AssetController {
     }
 
     /**
+     * 修改素材（目前仅支持改名）
+     */
+    @PatchMapping("/{id}")
+    public Result<AssetVO> update(@PathVariable Long id,
+                                  @Valid @RequestBody AssetUpdateRequest request) {
+        return Result.ok(assetService.updateName(id, request));
+    }
+    /**
+     * 整批替换素材标签
+     */
+    @PutMapping("/{id}/tags")
+    public Result<Void> replaceTags(@PathVariable Long id,
+                                    @RequestBody AssetTagsUpdateRequest request) {
+        assetService.replaceTags(id, request);
+        return Result.ok();
+    }
+
+    /**
      * 素材绑定标签
      */
     @PostMapping("/{assetId}/tags/{tagId}")
     public Result<Void> bindTag(@PathVariable Long assetId, @PathVariable Long tagId) {
         assetService.bindTag(assetId, tagId);
         return Result.ok();
+    }
+
+    /**
+     * kpi卡片数据
+     */
+    @GetMapping("/stats")
+    public Result<AssetStatsVO> stats() {
+        return Result.ok(assetService.getStats());
     }
 }

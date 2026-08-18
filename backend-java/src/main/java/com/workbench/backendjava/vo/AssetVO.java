@@ -3,6 +3,7 @@ package com.workbench.backendjava.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class AssetVO {
@@ -30,4 +31,6 @@ public class AssetVO {
     private String type;
 
     private LocalDateTime createdAt;
+
+    private List<TagVO> tags;
 }
