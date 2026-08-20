@@ -1,0 +1,149 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.pageHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.pageTitle {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    margin: 0 0 var(--space-1)
+}
+
+.pageDescription {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.tablePanel {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.tablePanelHeader {
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--color-border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tablePanelTitle {
+    font-size: var(--text-base);
+    font-weight: 600;
+}
+
+.tableWrap {
+    padding: 0 var(--space-4) var(--space-4);
+}
+
+.monoCell {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+.emptyText {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+/* 1. 页面占满内容区，禁止整页变长 */
+.page_lockScroll {
+    height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+    max-height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.page_lockScroll>.pageHeader {
+    flex-shrink: 0;
+    /* 顶部标题+按钮不压缩 */
+}
+
+.page_lockScroll .section {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 2. Spin 容器参与 flex（否则中间高度传不下去） */
+.sectionSpin {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sectionSpin :global(.ant-spin-nested-loading),
+.sectionSpin :global(.ant-spin-container) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.sectionBody {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 3. 面板占满 section，内部纵向布局 */
+.page_lockScroll .tablePanel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tablePanelHeader {
+    flex-shrink: 0;
+    /* 「全部标签」固定 */
+}
+
+/* 4. 真正滚动的地方 */
+.tableScrollArea {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+}
+
+.actionCell {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    gap: 4px;
+}
+
+.actionCell :global(.ant-btn-link) {
+    padding: 0 4px;
+    height: auto;
+}
