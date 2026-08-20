@@ -1,0 +1,77 @@
+.topBar {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.breadcrumbCurrent {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.userBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: default;
+}
+
+.userBlock:hover {
+  background: var(--color-bg-hover);
+}
+
+.userName {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.userRole {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.3;
+}
+
+.avatar {
+  background: var(--color-ink) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+[data-theme='dark'] .avatar {
+  background: var(--color-accent) !important;
+  color: var(--color-canvas) !important;
+}
+
+@media (max-width: 768px) {
+  .userMeta {
+    display: none;
+  }
+}

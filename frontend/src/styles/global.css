@@ -1,0 +1,84 @@
+/*
+引入谷歌字体，全局样式
+变量                 	值	用途
+--color-ink             #18181B         主文字、主按钮
+--color-canvas          #F7F7F8         页面背景
+--color-accent          #0D9488         链接、Nav 激活（Teal）
+--color-surface         #FFFFFF         卡片背景
+--color-subtle          #F4F4F5         次要文字、辅助按钮
+--color-hover           #FAFAFA         鼠标悬停背景
+--color-border          #E4E4E7         边框、分割线
+--color-border-subtle   #F0F0F0         次要边框
+--color-muted           #71717A         次要文字
+--color-faint           #A1A1AA         最次要文字
+--color-inverse         #FFFFFF         反色文字、反色按钮
+--color-accent-hover    #0F766E         链接悬停（Teal）
+--color-accent-subtle   rgba(13, 148, 136, 0.08) 链接悬停背景（Teal）
+--color-accent-border   rgba(13, 148, 136, 0.24) 链接边框（Teal）
+--color-success         #059669         成功提示
+--color-warning         #D97706         警告提示
+--color-error           #DC2626         错误提示
+*/
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background: var(--color-bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-primary);
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+}

@@ -1,0 +1,182 @@
+/**
+ * Workbench Design Tokens — Studio Neutral
+ * Light / Dark via [data-theme="dark"] on :root
+ *全站颜色/间距/字体的字典
+ */
+
+ /*
+ 变量                 	值              用途
+--color-ink             #18181B         主文字、主按钮
+--color-canvas          #F7F7F8         页面背景
+--color-accent          #0D9488         链接、Nav 激活（Teal）
+--color-surface         #FFFFFF         卡片背景
+--color-subtle          #F4F4F5         次要文字、辅助按钮
+--color-hover           #FAFAFA         鼠标悬停背景
+--color-border          #E4E4E7         边框、分割线
+--color-border-subtle   #F0F0F0         次要边框
+--color-muted           #71717A         次要文字
+--color-faint           #A1A1AA         最次要文字
+--color-inverse         #FFFFFF         反色文字、反色按钮
+--color-accent-hover    #0F766E         链接悬停（Teal）
+--color-accent-subtle   rgba(13, 148, 136, 0.08) 链接悬停背景（Teal）
+--color-accent-border   rgba(13, 148, 136, 0.24) 链接边框（Teal）
+--color-success         #059669         成功提示
+--color-warning         #D97706         警告提示
+--color-error           #DC2626         错误提示
+--color-bg-page         var(--color-canvas) 页面背景
+--color-bg-surface      var(--color-surface) 卡片背景
+--color-bg-subtle       var(--color-subtle) 次要背景
+--color-bg-hover        var(--color-hover) 鼠标悬停背景
+--color-text-primary    var(--color-ink) 主文字
+--color-text-secondary  var(--color-muted) 次要文字
+--color-text-tertiary   var(--color-faint) 最次要文字
+--color-text-inverse    var(--color-inverse) 反色文字
+--font-sans             'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif 默认字体
+--font-mono             'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace 代码字体
+--text-xs               12px 最小文字
+--text-sm               13px 小文字
+--text-base             14px 基础文字
+--text-lg               16px 大文字
+--text-xl               20px 较大文字
+--text-2xl             24px 很大文字
+--leading-tight         1.25 紧凑行高
+--leading-normal        1.5 正常行高
+--tracking-tight        -0.02em 紧凑字距
+--tracking-normal        0 正常字距
+--space-1               4px 最小间距
+--space-2               8px 小间距
+--space-3               12px 中间距
+--space-4               16px 大间距
+--space-5               20px 较大间距
+--space-6               24px 很大间距
+--space-8               32px 超大间距
+--space-10              40px 巨型间距
+--sidebar-width         240px 侧边栏宽度
+--header-height         56px 顶部栏高度
+--content-max-width     1200px 内容最大宽度
+--radius-sm             6px 小圆角
+--radius-control        8px 控件圆角
+--radius-panel          12px 面板圆角
+--radius-full           9999px 全圆角
+--shadow-sm             0 1px 2px rgba(0, 0, 0, 0.04) 小阴影
+ */
+:root {
+  /* Core palette — Light */
+  --color-ink: #18181b;
+  --color-canvas: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-subtle: #f4f4f5;
+  --color-hover: #fafafa;
+  --color-border: #e4e4e7;
+  --color-border-subtle: #f0f0f0;
+  --color-muted: #71717a;
+  --color-faint: #a1a1aa;
+  --color-inverse: #ffffff;
+
+  --color-accent: #0d9488;
+  --color-accent-hover: #0f766e;
+  --color-accent-subtle: rgba(13, 148, 136, 0.08);
+  --color-accent-border: rgba(13, 148, 136, 0.24);
+
+  /* Semantic */
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+
+  /* Legacy aliases (style-guide components) */
+  --color-bg-page: var(--color-canvas);
+  --color-bg-surface: var(--color-surface);
+  --color-bg-subtle: var(--color-subtle);
+  --color-bg-hover: var(--color-hover);
+  --color-text-primary: var(--color-ink);
+  --color-text-secondary: var(--color-muted);
+  --color-text-tertiary: var(--color-faint);
+  --color-text-inverse: var(--color-inverse);
+
+  /* Typography */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --header-height: 56px;
+  --content-max-width: 1200px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --radius-full: 9999px;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* Checkerboard (asset thumbnails) */
+  --checker-light: #e4e4e7;
+  --checker-dark: #d4d4d8;
+
+  /* Transition */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --color-ink: #fafafa;
+  --color-canvas: #09090b;
+  --color-surface: #18181b;
+  --color-subtle: #27272a;
+  --color-hover: #27272a;
+  --color-border: #27272a;
+  --color-border-subtle: #3f3f46;
+  --color-muted: #a1a1aa;
+  --color-faint: #71717a;
+  --color-inverse: #18181b;
+
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #5eead4;
+  --color-accent-subtle: rgba(45, 212, 191, 0.1);
+  --color-accent-border: rgba(45, 212, 191, 0.28);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  --checker-light: #27272a;
+  --checker-dark: #3f3f46;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 0ms;
+    --transition-normal: 0ms;
+  }
+}

@@ -1,0 +1,16 @@
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.searchInput {
+    width: 260px;
+  }
+  .tagSelect {
+    width: 160px;
+  }
+  .sortSelect {
+    width: 160px;
+  }

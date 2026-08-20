@@ -1,0 +1,122 @@
+.authSection {
+  padding: var(--space-8) var(--space-6);
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.authSectionTitle {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.authPreview {
+  display: flex;
+  justify-content: center;
+}
+
+.authCard {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-md);
+}
+
+.authCardHeader {
+  text-align: center;
+  margin-bottom: var(--space-6);
+}
+
+.authCardLogo {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-inverse);
+  font-weight: 700;
+  font-size: var(--text-lg);
+}
+
+.authCardTitle {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.authCardDesc {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.authFormMock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.mockField label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.mockInput {
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.mockButton {
+  height: 36px;
+  background: var(--color-ink);
+  color: var(--color-inverse);
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.authFooter {
+  text-align: center;
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.authFooter a {
+  font-weight: 500;
+  margin-left: var(--space-1);
+}
+
+[data-theme='dark'] .mockButton {
+  background: var(--color-accent);
+  color: var(--color-canvas);
+}
+
+[data-theme='dark'] .authCardLogo {
+  background: var(--color-accent);
+  color: var(--color-canvas);
+}

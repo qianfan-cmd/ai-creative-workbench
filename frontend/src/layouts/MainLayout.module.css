@@ -1,0 +1,31 @@
+/* 整页：侧栏 + 主栏 横向排序 */
+.shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* 右侧：顶栏 + 内容 纵向排列 */
+.mainColumn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.content {
+    flex: 1;
+    padding: var(--space-6);
+    background: var(--color-bg-page);
+    overflow: auto;
+  }
+  
+  @media (max-width: 1024px) {
+    .content {
+      padding: var(--space-4);
+    }
+  }
+  .contentInner {
+    max-width: var(--content-max-width);
+    margin: 0 auto;
+    width: 100%;
+  }

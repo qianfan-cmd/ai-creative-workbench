@@ -1,0 +1,125 @@
+.sidebar {
+    width: var(--sidebar-width);
+    min-height: 100vh;
+    background-color: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-5) var(--space-5) var(--space-4);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.logoMark {
+    width: 32px;
+    height: 32px;
+    background-color: var(--color-ink);
+    color: var(--color-inverse);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: 700;
+    font-size: var(--text-sm);
+    flex-shrink: 0;
+    border-radius: 25%;
+}
+
+.logoText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.logoTitle {
+    font-size: var(--text-base);
+    font-weight: 800;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-primary);
+}
+
+.logoSubtitle {
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 导航 */
+.nav {
+    flex: 1;
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.navItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    position: relative;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.navItem:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text-primary);
+}
+
+.navItemActive {
+    background-color: var(--color-accent-subtle);
+    color: var(--color-accent);
+}
+
+.navItemActive::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 18px;
+    background-color: var(--color-accent);
+    border-radius: var(--radius-full);
+}
+
+.navIcon {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    opacity: 0.75;
+}
+
+.navItemActive .navIcon {
+    opacity: 1;
+}
+
+.navItemDisabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.navItemDisabled:hover {
+    background-color: transparent;
+    color: var(--color-text-secondary);
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        display: none;
+    }
+}

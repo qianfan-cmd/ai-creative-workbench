@@ -1,0 +1,70 @@
+.page {
+    max-width: 640px;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.pageHeader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-4);
+}
+
+.pageTitle {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    margin: 0 0 var(--space-1);
+}
+
+.pageDesc {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.uploadPanel {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-6);
+}
+
+.progress {
+    margin-top: var(--space-4);
+}
+
+.configPanel {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.fileMeta {
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.tagRow {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
+}
+
+.tagSelect {
+    flex: 1;
+}
+
+.configActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+}
