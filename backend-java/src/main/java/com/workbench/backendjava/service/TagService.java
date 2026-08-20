@@ -4,12 +4,16 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.TagCreateRequest;
+import com.workbench.backendjava.dto.TagUpdateRequest;
+import com.workbench.backendjava.entity.AssetTag;
 import com.workbench.backendjava.entity.Tag;
+import com.workbench.backendjava.mapper.AssetTagMapper;
 import com.workbench.backendjava.mapper.TagMapper;
 import com.workbench.backendjava.vo.TagVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -23,6 +27,7 @@ public class TagService {
      */
 
     private final TagMapper tagMapper;
+    private final AssetTagMapper assetTagMapper;
 
     private static final String DEFAULT_COLOR = "#1677ff";
 
@@ -77,4 +82,61 @@ public class TagService {
                    .map(tag -> toTagVO(tag))
                    .collect(Collectors.toList());
     }
+
+    /**
+     * 编辑标签
+     */
+    public TagVO update(Long id, TagUpdateRequest request) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        Tag exist = tagMapper.selectById(id);
+        if (exist == null) {
+            throw new BusinessException(404, "标签不存在");
+        }
+
+        String name = request.getName();
+
+        Tag duplicate = tagMapper.selectOne(
+                new LambdaQueryWrapper<Tag>()
+                        .eq(Tag::getName, name)
+                        .ne(Tag::getId, id)
+        );
+        if (duplicate != null) {
+            throw new BusinessException(409, "标签名已存在");
+        }
+
+        exist.setName(name);
+        exist.setColor(request.getColor() != null ? request.getColor() : DEFAULT_COLOR);
+        tagMapper.updateById(exist);
+
+        log.info("标签更新成功, tagId={}, name={}", id, exist.getName());
+        return toTagVO(exist);
+    }
+
+    /**
+     * 删除标签(逻辑删tag + 物理删 asset_tag关联）
+     */
+    @Transactional
+    public void delete(Long id) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        Tag tag = tagMapper.selectById(id);
+        if (tag == null) {
+            throw new BusinessException(404, "标签不存在");
+        }
+
+        assetTagMapper.delete(
+                new LambdaQueryWrapper<AssetTag>()
+                        .eq(AssetTag::getTagId, id)
+        );
+        tagMapper.deleteById(id);
+        log.info("标签删除成功, tagId={}, name={}", id, tag.getName());
+    }
+
 }

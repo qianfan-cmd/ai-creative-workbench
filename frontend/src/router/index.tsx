@@ -7,6 +7,7 @@ import AssetListPage from '@/pages/AssetListPage'
 import AuthGuard from '@/components/AuthGuard'
 import GuestGuard from '@/components/GuestGuard'
 import NotFoundPage from '@/pages/NotFoundPage'
+import TagsPage from '@/pages/TagsPage'
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/assets" replace /> },
           { path: 'assets', element: <AssetListPage /> },
           { path: 'assets/upload', element: <AssetUploadPage /> },
+          { path: 'tags', element: <TagsPage /> },
         ],
       },
     ],
