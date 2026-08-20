@@ -31,6 +31,57 @@
   gap: var(--space-4);
 }
 
+.page_gridMode > header,
+.page_gridMode > :global([class*="statsStrip"]),
+.page_gridMode > :global([class*="toolbar"]) {
+  flex-shrink: 0;
+}
+
+.page_gridMode .section {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionSpin {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionSpin :global(.ant-spin-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sectionBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page_gridMode .section :global(.ant-spin-nested-loading) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page_gridMode .section :global(.ant-spin-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .sectionTitle {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -175,4 +226,43 @@
 
 .tagPopover {
   max-width: 240px;
+}
+
+/* 网格视图：固定可视高度，上方固定，仅 gridScrollArea 内滚 */
+.page_gridMode {
+  height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+  max-height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gridPanel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow: hidden;
+}
+
+.gridPanel .contentHeader {
+  flex-shrink: 0;
+}
+
+.gridScrollArea {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.gridLoadMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
 }

@@ -1,52 +1,61 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, message, Spin, Modal, Table, Tag } from 'antd'
+import { Button, message, Spin, Modal, Table } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 import { listAssetsApi, getAssetStatsApi, deleteAssetApi } from '@/api/assets'
 import type { AssetVO, AssetStatsVO } from '@/types/api'
 import styles from '@/pages/AssetListPage.module.css'
+import layoutStyles from '@/layouts/MainLayout.module.css'
 import AssetStatsStrip from '@/components/assets/AssetStatsStrip'
 import Toolbar from '@/components/assets/ToolBar'
 import useDebouncedValue from '@/hooks/useDebouncedValue'
 import { listTagsApi } from '@/api/tags'
 import type { TagVO } from '@/api/tags'
 import CreateTagModal from '@/components/assets/CreateTagModal'
-import AssetGrid from '@/components/assets/AssetGrid'
+import VirtualAssetGrid from '@/components/assets/VirtualAssetGrid'
 import type { ColumnsType } from 'antd/es/table'
 import { formatDate, formatFileSize } from '@/utils/format'
 import EditAssetModal from '@/components/assets/EditAssetModal'
 import TagListCell from '@/components/assets/TagListCell'
 
+const GRID_PAGE_SIZE = 40
 
 const AssetListPage = () => {
-    const navigate = useNavigate();
+    const navigate = useNavigate()
+    const gridScrollRef = useRef<HTMLDivElement>(null)
 
-    const [loading, setLoading] = useState(false);
-    const [records, setRecords] = useState<AssetVO[]>([]);
-    const [total, setTotal] = useState(0);
-    const [page, setPage] = useState(1);
-    const [size, setSize] = useState(10);
+    const [listLoading, setListLoading] = useState(false)
+    const [records, setRecords] = useState<AssetVO[]>([])
+    const [total, setTotal] = useState(0)
+    const [page, setPage] = useState(1)
+    const [size, setSize] = useState(10)
+
+    const [gridAssets, setGridAssets] = useState<AssetVO[]>([])
+    const [gridTotal, setGridTotal] = useState(0)
+    const [gridPage, setGridPage] = useState(1)
+    const [gridLoading, setGridLoading] = useState(false)
+    const [gridLoadingMore, setGridLoadingMore] = useState(false)
 
     const [stats, setStats] = useState<AssetStatsVO>({
         total: 0,
         last7DaysCount: 0,
         prev7DaysCount: 0,
         knowledgeDocCount: 0,
-    });
+    })
 
-    const [searchInput, setSearchInput] = useState('');
-    const keyword = useDebouncedValue(searchInput.trim(), 300);
+    const [searchInput, setSearchInput] = useState('')
+    const keyword = useDebouncedValue(searchInput.trim(), 300)
 
-    const [tagId, setTagId] = useState<number | undefined>();
-    const [sort, setSort] = useState<'asc' | 'desc'>('desc');
+    const [tagId, setTagId] = useState<number | undefined>()
+    const [sort, setSort] = useState<'asc' | 'desc'>('desc')
 
-    const [tags, setTags] = useState<TagVO[]>([]);
-    const [createTagOpen, setCreateTagOpen] = useState(false);
+    const [tags, setTags] = useState<TagVO[]>([])
+    const [createTagOpen, setCreateTagOpen] = useState(false)
 
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
-    const [editOpen, setEditOpen] = useState(false);
-    const [editingAsset, setEditingAsset] = useState<AssetVO | null>(null);
+    const [editOpen, setEditOpen] = useState(false)
+    const [editingAsset, setEditingAsset] = useState<AssetVO | null>(null)
 
     const handleEditAsset = (asset: AssetVO) => {
         setEditingAsset(asset)
@@ -54,11 +63,27 @@ const AssetListPage = () => {
     }
 
     useEffect(() => {
-        listTagsApi().then(setTags);
-    }, []);
+        listTagsApi().then(setTags)
+    }, [])
+
+    // Grid 模式：锁定 MainLayout 外层滚动，仅 gridScrollArea 内滚
+    useEffect(() => {
+        const main = document.getElementById('main-content')
+        if (!main) return
+
+        if (viewMode === 'grid') {
+            main.classList.add(layoutStyles.content_lockScroll)
+        } else {
+            main.classList.remove(layoutStyles.content_lockScroll)
+        }
+
+        return () => {
+            main.classList.remove(layoutStyles.content_lockScroll)
+        }
+    }, [viewMode])
 
     const fetchList = useCallback(async () => {
-        setLoading(true);
+        setListLoading(true)
         try {
             const data = await listAssetsApi({
                 page,
@@ -67,34 +92,86 @@ const AssetListPage = () => {
                 keyword: keyword || undefined,
                 sort,
             })
-            setRecords(data.records);
-            setTotal(data.total);
+            setRecords(data.records)
+            setTotal(data.total)
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '获取素材列表失败');
+            message.error(err instanceof Error ? err.message : '获取素材列表失败')
         } finally {
-            setLoading(false);
+            setListLoading(false)
         }
-    }, [page, size, keyword, sort, tagId]);
+    }, [page, size, keyword, sort, tagId])
+
+    const fetchGridPage = useCallback(async (targetPage: number, append: boolean) => {
+        if (append) {
+            setGridLoadingMore(true)
+        } else {
+            setGridLoading(true)
+        }
+
+        try {
+            const data = await listAssetsApi({
+                page: targetPage,
+                size: GRID_PAGE_SIZE,
+                tagId,
+                keyword: keyword || undefined,
+                sort,
+            })
+            setGridTotal(data.total)
+            setGridPage(targetPage)
+            setGridAssets((prev) => (append ? [...prev, ...data.records] : data.records))
+        } catch (err) {
+            message.error(err instanceof Error ? err.message : '获取素材列表失败')
+        } finally {
+            setGridLoading(false)
+            setGridLoadingMore(false)
+        }
+    }, [keyword, sort, tagId])
 
     useEffect(() => {
+        if (viewMode !== 'list') return
         fetchList()
-    }, [fetchList])
+    }, [viewMode, fetchList])
+
+    useEffect(() => {
+        if (viewMode !== 'grid') return
+        void fetchGridPage(1, false)
+    }, [viewMode, keyword, tagId, sort, fetchGridPage])
+
+    // 内容未撑满滚动区时自动加载下一页
+    useEffect(() => {
+        if (viewMode !== 'grid' || gridLoading || gridLoadingMore) return
+        if (gridAssets.length >= gridTotal) return
+
+        const el = gridScrollRef.current
+        if (!el) return
+        if (el.scrollHeight <= el.clientHeight + 1) {
+            void fetchGridPage(gridPage + 1, true)
+        }
+    }, [
+        viewMode,
+        gridLoading,
+        gridLoadingMore,
+        gridAssets.length,
+        gridTotal,
+        gridPage,
+        fetchGridPage,
+    ])
 
     const handleSearchChange = (value: 'asc' | 'desc') => {
-        setSort(value);
-        setPage(1);
+        setSort(value)
+        setPage(1)
     }
 
     useEffect(() => {
-        setPage(1);
+        setPage(1)
     }, [keyword, tagId])
 
     const fetchStats = useCallback(async () => {
         try {
-            const data = await getAssetStatsApi();
-            setStats(data);
+            const data = await getAssetStatsApi()
+            setStats(data)
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '获取素材统计失败');
+            message.error(err instanceof Error ? err.message : '获取素材统计失败')
         }
     }, [])
 
@@ -102,15 +179,32 @@ const AssetListPage = () => {
         fetchStats()
     }, [fetchStats])
 
-    /**获取tag列表 */
     const reloadTags = useCallback(async () => {
-        const data = await listTagsApi();
-        setTags(data);
-    }, []);
+        const data = await listTagsApi()
+        setTags(data)
+    }, [])
 
     useEffect(() => {
-        reloadTags();
-    }, [reloadTags]);
+        reloadTags()
+    }, [reloadTags])
+
+    const handleGridScroll = useCallback(() => {
+        const el = gridScrollRef.current
+        if (!el || gridLoading || gridLoadingMore) return
+        if (gridAssets.length >= gridTotal) return
+
+        const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 200
+        if (nearBottom) {
+            void fetchGridPage(gridPage + 1, true)
+        }
+    }, [
+        gridLoading,
+        gridLoadingMore,
+        gridAssets.length,
+        gridTotal,
+        gridPage,
+        fetchGridPage,
+    ])
 
     const handleViewAsset = (asset: AssetVO) => {
         window.open(asset.url, '_blank', 'noopener,noreferrer')
@@ -128,8 +222,10 @@ const AssetListPage = () => {
                     await deleteAssetApi(asset.id)
                     message.success('删除成功')
 
-                    // 若当前页删空了且不是第一页，回退一页
-                    if (records.length === 1 && page > 1) {
+                    if (viewMode === 'grid') {
+                        setGridAssets((prev) => prev.filter((item) => item.id !== asset.id))
+                        setGridTotal((prev) => Math.max(0, prev - 1))
+                    } else if (records.length === 1 && page > 1) {
                         setPage(page - 1)
                     } else {
                         await fetchList()
@@ -138,13 +234,12 @@ const AssetListPage = () => {
                     await fetchStats()
                 } catch (err) {
                     message.error(err instanceof Error ? err.message : '删除失败')
-                    throw err // 让 Modal 保持打开/loading 结束
+                    throw err
                 }
             },
         })
     }
 
-    /**表格视图组件列定义 */
     const columns: ColumnsType<AssetVO> = [
         {
             title: '文件名',
@@ -181,8 +276,8 @@ const AssetListPage = () => {
         {
             title: '操作',
             key: 'actions',
-            width: 168,          // 够放「查看 编辑 删除」一行
-            fixed: 'right',      // 可选：窄屏时操作列贴右不挤
+            width: 168,
+            fixed: 'right',
             render: (_, record) => (
               <div className={styles.actionCell}>
                 <Button type="link" size="small" className={styles.actionBtn} onClick={() => handleViewAsset(record)}>
@@ -197,10 +292,13 @@ const AssetListPage = () => {
               </div>
             ),
           },
-    ];
+    ]
+
+    const gridHasMore = gridAssets.length < gridTotal
+    const pageLoading = viewMode === 'grid' ? gridLoading : listLoading
 
     return (
-        <div className={styles.page}>
+        <div className={`${styles.page} ${viewMode === 'grid' ? styles.page_gridMode : ''}`}>
             <header className={styles.pageHeader}>
                 <div>
                     <h1 className={styles.pageTitle}>素材 Asset</h1>
@@ -251,15 +349,20 @@ const AssetListPage = () => {
                 onSuccess={async () => {
                     setEditOpen(false)
                     setEditingAsset(null)
-                    await fetchList()
+                    if (viewMode === 'grid') {
+                        await fetchGridPage(1, false)
+                    } else {
+                        await fetchList()
+                    }
                 }}
                 onTagsReload={reloadTags}
             />
 
             <section className={styles.section}>
-                <Spin spinning={loading}>
+                <Spin spinning={pageLoading} className={styles.sectionSpin}>
+                    <div className={styles.sectionBody}>
                     {viewMode === 'grid' ? (
-                        <>
+                        <div className={styles.gridPanel}>
                             <div className={styles.contentHeader}>
                                 <div className={styles.sectionTitle}>Grid 网格视图</div>
                                 <div className={styles.viewToggle}>
@@ -279,8 +382,8 @@ const AssetListPage = () => {
                                     </button>
                                 </div>
                             </div>
-                            {!loading && records.length === 0 ? (
-                                total === 0 && !keyword && !tagId ? (
+                            {!gridLoading && gridAssets.length === 0 ? (
+                                gridTotal === 0 && !keyword && !tagId ? (
                                     <div className={styles.emptyState}>
                                         <p className={styles.emptyText}>还没有素材，上传第一个文件吧</p>
                                         <Button type="primary" onClick={() => navigate('/assets/upload')}>
@@ -291,14 +394,30 @@ const AssetListPage = () => {
                                     <p className={styles.filterEmpty}>无匹配素材</p>
                                 )
                             ) : (
-                                <AssetGrid
-                                    assets={records}
-                                    onView={handleViewAsset}
-                                    onEdit={handleEditAsset}
-                                    onDelete={handleDeleteAsset}
-                                />
+                                <div
+                                    ref={gridScrollRef}
+                                    className={styles.gridScrollArea}
+                                    onScroll={handleGridScroll}
+                                >
+                                    <VirtualAssetGrid
+                                        assets={gridAssets}
+                                        scrollRef={gridScrollRef}
+                                        onView={handleViewAsset}
+                                        onEdit={handleEditAsset}
+                                        onDelete={handleDeleteAsset}
+                                    />
+                                    {gridLoadingMore && (
+                                        <div className={styles.gridLoadMore}>
+                                            <Spin size="small" />
+                                            加载中…
+                                        </div>
+                                    )}
+                                    {!gridLoadingMore && gridHasMore && gridAssets.length > 0 && (
+                                        <div className={styles.gridLoadMore}>继续滚动加载更多</div>
+                                    )}
+                                </div>
                             )}
-                        </>
+                        </div>
                     ) : (
                         <div className={styles.tablePanel}>
                             <div className={styles.tablePanelHeader}>
@@ -320,7 +439,7 @@ const AssetListPage = () => {
                                     </button>
                                 </div>
                             </div>
-                            {!loading && records.length === 0 ? (
+                            {!listLoading && records.length === 0 ? (
                                 total === 0 && !keyword && !tagId ? (
                                     <div className={styles.emptyStateInPanel}>
                                         <p className={styles.emptyText}>还没有素材，上传第一个文件吧</p>
@@ -354,10 +473,11 @@ const AssetListPage = () => {
                             )}
                         </div>
                     )}
+                    </div>
                 </Spin>
             </section>
         </div>
     )
 }
 
-export default AssetListPage;
+export default AssetListPage

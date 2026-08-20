@@ -27,7 +27,7 @@ export default function MainLayout() {
       <AppSidebar />
       <div className={styles.mainColumn}>
         <AppTopBar items={breadcrumbItems} />
-        <main className={styles.content}>
+        <main id="main-content" className={styles.content}>
           <div className={styles.contentInner}>
             <Outlet />
           </div>
