@@ -8,6 +8,7 @@ import AuthGuard from '@/components/AuthGuard'
 import GuestGuard from '@/components/GuestGuard'
 import NotFoundPage from '@/pages/NotFoundPage'
 import TagsPage from '@/pages/TagsPage'
+import ChatPage from '@/pages/ChatPage'
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
           { path: 'assets', element: <AssetListPage /> },
           { path: 'assets/upload', element: <AssetUploadPage /> },
           { path: 'tags', element: <TagsPage /> },
+          { path: 'chat', element: <ChatPage /> },
         ],
       },
     ],

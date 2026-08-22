@@ -25,6 +25,10 @@ export function useAppBreadcrumbs(): BreadcrumbItem[] {
         return [home, { label: '素材 Assets'}];
     }
 
+    if (pathname === '/chat') {
+        return [home, { label: 'AI 对话 Chat', href: '/chat' }];
+    }
+
     return [home, { label: 'Workbench' }];
     }, [pathname])
 }
