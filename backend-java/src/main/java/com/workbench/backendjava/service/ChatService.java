@@ -1,5 +1,6 @@
 package com.workbench.backendjava.service;
 
+import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.vo.ChatReplyVO;
@@ -16,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class ChatService {
 
+    private final PythonAiClient pythonAiClient;
+
     public ChatReplyVO chat(String message) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -23,10 +26,10 @@ public class ChatService {
         }
 
         String trimmed = message.trim();
-        log.info("Chat stub, userId={}, message={}", userId, trimmed);
-
+        log.info("Chat 调用 Python AI, userId={}, message={}", userId, trimmed);
+        String reply = pythonAiClient.chat(trimmed);
         ChatReplyVO vo = new ChatReplyVO();
-        vo.setReply("收到你的问题：" + trimmed);
+        vo.setReply(reply);
         return vo;
     }
 
@@ -42,9 +45,7 @@ public class ChatService {
         }
 
         String trimmed = message.trim();
-        String fullReply = "收到你的问题：" + trimmed;
-        log.info("Chat stream stub, userId={}, message={}", userId, trimmed);
-
+        log.info("Chat stream 调用 Python AI, userId={}, message={}", userId, trimmed);
 
         /**
          * SseEmitter是spring提供的sse发射器，代表一条管道
@@ -60,16 +61,25 @@ public class ChatService {
          */
         CompletableFuture.runAsync(() -> {
             try {
+                // ① 先向 Python 要完整回复（可能等几秒～几十秒）
+                String fullReply = pythonAiClient.chat(trimmed);
+
+                // ② 再逐字 SSE 推给前端（和之前 stub 一样，只是内容变真 AI）
                 for (char ch : fullReply.toCharArray()) {
                     emitter.send(SseEmitter.event()
-                            .name("message") // 事件名，前端可监听event: message
+                            .name("message")
                             .data(String.valueOf(ch)));
-                    Thread.sleep(30); // 模拟流式延迟
+                    Thread.sleep(30);
                 }
                 emitter.send(SseEmitter.event()
                         .name("done")
                         .data("[DONE]"));
                 emitter.complete();
+
+            } catch (BusinessException e) {
+                // Python 不可用 / 返回空 等
+                log.error("流式 Chat 调用 AI 失败: {}", e.getMessage());
+                emitter.completeWithError(e);
             } catch (IOException e) {
                 emitter.completeWithError(e);
             } catch (InterruptedException e) {

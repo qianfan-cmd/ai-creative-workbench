@@ -3025,6 +3025,8 @@ AI 对话可以流式输出、保存历史、重新查看。
 
 把 AI 能力从 Java 后端拆到 Python 服务，为 RAG 做准备。
 
+> **Python 学习约定**：用户 Python 经验较少，所有 `ai-service-python` 代码须含详细中文注释与库说明，见 **[docs/python-learning-guide.md](./python-learning-guide.md)**。
+
 
 
 ---

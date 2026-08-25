@@ -32,7 +32,11 @@ jwt:
 
 app:
   public-base-url: http://localhost:8080
+  ai-service:
+    base-url: http://localhost:8000   # Python FastAPI 地址
   upload:
     dir: E:/ai-creative-workbench/uploads #本地存储目录
     max-size: 52428800 #50MB
     allowed-extensions: jpg,jpeg,png,gif,webp,pdf,md
+
+
