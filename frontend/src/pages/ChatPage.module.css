@@ -1,0 +1,258 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.pageHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.pageTitle {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    margin: 0 0 var(--space-1)
+}
+
+.pageDescription {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.placeholder {
+    text-align: center;
+    color: var(--color-text-secondary);
+}
+
+
+.panel {
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    max-width: var(--content-max-width);
+    margin: 0 auto;
+    width: 100%;
+
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+    max-height: calc(100vh - var(--header-height) - var(--space-6) * 2);
+    min-height: 0;
+}
+
+.messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /*当消息太多，内容高度超过自身被分配的高度时右侧会出现滚动条*/
+    overflow-x: hidden;
+    /* 隐藏水平滚动条 ，超出部分直接截断*/
+    overscroll-behavior: contain;
+    /* 阻止浏览器默认的滚动行为，防止滚动条抖动 */
+
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    /* 删掉 min-height: 220px，或保留作最小值：min-height: 220px 也可以 */
+}
+
+.message {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-width: 85%;
+}
+
+.message_user {
+    align-self: flex-end;
+    align-items: flex-end;
+}
+
+.message_assistant {
+    align-self: flex-start;
+}
+
+.messageLabel {
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+}
+
+.bubble {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-panel);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+}
+
+.message_user .bubble {
+    background: var(--color-ink);
+    color: var(--color-inverse);
+    border-bottom-right-radius: var(--radius-sm);
+}
+
+.message_assistant .bubble {
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border);
+    border-bottom-left-radius: var(--radius-sm);
+}
+
+.streamingLine {
+    color: var(--color-text-secondary);
+}
+
+.cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: var(--color-accent);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cursor {
+        animation: none;
+        opacity: 1;
+    }
+}
+
+.composer {
+    flex-shrink: 0;
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.inputMock {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-surface);
+}
+
+.composerActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.stopBtn,
+.sendBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-control);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: default;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}
+
+.sendBtn {
+    background: var(--color-ink);
+    color: var(--color-inverse);
+    border-color: var(--color-ink);
+}
+
+[data-theme='dark'] .message_user .bubble {
+    background: var(--color-subtle);
+    color: var(--color-ink);
+}
+
+[data-theme='dark'] .sendBtn {
+    background: var(--color-accent);
+    color: var(--color-canvas);
+    border-color: var(--color-accent);
+}
+
+.messageMeta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.message_user .messageMeta {
+    flex-direction: row-reverse;
+}
+
+.copyBtn {
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-size: var(--text-xs);
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+}
+
+.copyBtn:hover {
+    color: var(--color-text-secondary);
+}
+
+.message:hover .copyBtn {
+    color: var(--color-text-secondary);
+}
+
+.messageActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}
+
+.message_user .messageActions {
+    justify-content: flex-end;
+}
+
+.actionBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+}
+
+.actionBtn:hover:not(:disabled) {
+    color: var(--color-text-secondary);
+    background: var(--color-bg-subtle);
+}
+
+.actionBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
