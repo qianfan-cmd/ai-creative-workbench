@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 # 从 routers/chat.py 导入名为 router 的路由对象，起别名 chat_router 避免命名冲突
 from app.routers.chat import router as chat_router
 from app.routers.document import router as document_router
+from app.routers.embedding import router as embedding_router
 
 # 必须在读 os.getenv 之前调用；通常放在 main.py 最前面
 load_dotenv()
@@ -36,6 +37,7 @@ app = FastAPI(
 # 挂载 chat 路由：chat_router 里 prefix="/ai"，所以会有 POST /ai/chat
 app.include_router(chat_router)
 app.include_router(document_router)
+app.include_router(embedding_router)
 
 
 @app.get("/health")
