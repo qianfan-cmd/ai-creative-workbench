@@ -28,3 +28,9 @@ class DocumentChunkResponse(BaseModel):
     char_count: int = Field(..., description = "全文总字符数")
     chunk_count: int = Field(..., description = "切分后的 chunk 总数")
     chunks: list[DocumentChunkItem] = Field(..., description = "切分后的 chunk 列表")
+
+class DocumentIndexResponse(BaseModel):
+    filename: str = Field(..., description = "原始文件名，例如 notes.md")
+    char_count: int = Field(..., description = "全文总字符数")
+    chunk_count: int = Field(..., description = "切分后的 chunk 总数")
+    indexed_count: int = Field(..., description = "写入 Chroma 的条数")

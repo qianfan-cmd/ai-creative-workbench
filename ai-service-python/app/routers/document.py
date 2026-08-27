@@ -8,11 +8,13 @@
 （router prefix="/ai/documents" + 路由 "/parse"）
 """
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, UploadFile, HTTPException
 
-from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem
+from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse
 from app.services.document_parser import parse_upload_file
 from app.services.text_splitter import split_text
+from app.services.vector_store import add_chunks
+from app.services.embedding_service import embed_texts
 
 # prefix会把所有路由前缀都加上/ai/documents
 router = APIRouter(prefix = "/ai/documents", tags = ["documents"])
@@ -64,3 +66,42 @@ async def chunk_document(file: UploadFile = File(...)):
         chunk_count = len(pieces),
         chunks = chunks_items,
     )
+
+@router.post("/index", response_model = DocumentIndexResponse)
+async def index_document(file: UploadFile = File(...)):
+    """
+    文档入库：parse → chunk → embed → Chroma
+    """
+    filename, content = parse_upload_file(file)
+    pieces = split_text(content, chunk_size = 400, overlap = 50)
+
+    if not pieces:
+        raise HTTPException(status_code = 400, detail = "切分结果为空")
+
+    # 批量 Embedding
+    embeddings = embed_texts(pieces)
+
+    ids: list[str] = []
+    metadatas: list[dict] = []
+    for i, text in enumerate(pieces):
+        ids.append(f"{filename}-{i}")
+        metadatas.append({
+            "source": filename,
+            "index": i,
+        })
+    
+    indexed = add_chunks(
+        ids = ids,
+        documents = pieces,
+        embeddings = embeddings,
+        metadatas = metadatas,
+    )
+
+    return DocumentIndexResponse(
+        filename = filename,
+        char_count = len(content),
+        chunk_count = len(pieces),
+        indexed_count = indexed,
+    )
+
+
