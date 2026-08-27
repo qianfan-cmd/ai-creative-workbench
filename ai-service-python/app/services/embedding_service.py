@@ -20,9 +20,9 @@ def embed_text(text: str) -> list[float]:
         ValueError: 未配置 API Key 或 API 返回空
         httpx.HTTPStatusError: API 4xx/5xx
     """
-    api_key = os.getenv("MODEL_API_KEY")
-    base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    model = os.getenv("EMBEDDING_MODEL", "deepseek-embedding")
+    api_key = os.getenv("EMBEDDING_API_KEY")
+    base_url = os.getenv("EMBEDDING_BASE_URL", "https://ws-a23kprk4xntvhx3d.cn-beijing.maas.aliyuncs.com/compatible-mode/v1").rstrip("/")
+    model = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 
     if not api_key:
         raise ValueError("未配置 API Key")
@@ -72,9 +72,9 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     
-    api_key = os.getenv("MODEL_API_KEY")
-    base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    model = os.getenv("EMBEDDING_MODEL", "deepseek-embedding")
+    api_key = os.getenv("EMBEDDING_API_KEY")
+    base_url = os.getenv("EMBEDDING_BASE_URL", "https://ws-a23kprk4xntvhx3d.cn-beijing.maas.aliyuncs.com/compatible-mode/v1").rstrip("/")
+    model = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 
     if not api_key:
         raise ValueError("未配置 API Key")
