@@ -2,6 +2,8 @@ package com.workbench.backendjava.client;
 
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.config.AiServiceProperties;
+import com.workbench.backendjava.vo.RagQueryVO;
+import com.workbench.backendjava.vo.RagReferenceVO;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +14,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 调用 Python ai-service-python 的 HTTP 客户端。
@@ -71,10 +76,60 @@ public class PythonAiClient {
         }
     }
 
-    @Data
-    static class PythonChatResponse {
-        private String reply;
-        private String model;
+
+    /**
+     * 调用 Python POST /ai/rag/query，返回 RAG 问答结果。
+     *
+     * @param question 用户问题
+     * @param topK     检索条数，传给 Python 的 top_k
+     */
+    public RagQueryVO ragQuery(String question, int topK) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query";
+
+        // python 字段名是top_k，用 Map 避免 Java camelCase 序列化问题
+        Map<String, Object> body = new HashMap<>();
+        body.put("question", question);
+        body.put("top_k", topK);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+        log.info("调用 Python RAG: url={}, questionLength={}, topK={}", url, question.length(), topK);
+
+        try {
+            PythonRagResponse response = restTemplate.postForObject(
+                    url,
+                    entity,
+                    PythonRagResponse.class
+            );
+
+            if (response == null || response.getAnswer() == null || response.getAnswer().isBlank()) {
+                throw new BusinessException(502, "RAG 服务返回为空");
+            }
+
+            RagQueryVO vo = new RagQueryVO();
+            vo.setAnswer(response.getAnswer());
+
+            if (response.getReferences() != null) {
+                List<RagReferenceVO> refs = response.getReferences().stream()
+                        .map(ref -> {
+                            RagReferenceVO r = new RagReferenceVO();
+                            r.setContent(ref.getContent());
+                            r.setSource(ref.getSource());
+                            r.setIndex(ref.getIndex());
+                            return r;
+                        })
+                        .collect(Collectors.toList());
+                vo.setReferences(refs);
+            }
+
+            return vo;
+        } catch (RestClientException e) {
+            log.error("调用 Python RAG 失败: {}", e.getMessage(), e);
+            throw new BusinessException(502, "RAG 服务暂时不可用，请确认 ai-service-python 已启动（端口 8000）");
+        }
+
     }
 
     /**
@@ -91,5 +146,24 @@ public class PythonAiClient {
             log.warn("Python health 检查失败: {}", e.getMessage());
             return false;
         }
+    }
+
+    @Data
+    static class PythonChatResponse {
+        private String reply;
+        private String model;
+    }
+
+    @Data
+    static class PythonRagResponse {
+        private String answer;
+        private List<PythonRagReference> references;
+    }
+
+    @Data
+    static class PythonRagReference {
+        private String content;
+        private String source;
+        private Integer index;
     }
 }
