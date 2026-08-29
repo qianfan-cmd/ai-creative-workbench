@@ -10,10 +10,10 @@
 
 from fastapi import APIRouter, File, UploadFile, HTTPException
 
-from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse
+from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse
 from app.services.document_parser import parse_upload_file
 from app.services.text_splitter import split_text
-from app.services.vector_store import add_chunks
+from app.services.vector_store import add_chunks, list_documents
 from app.services.embedding_service import embed_texts
 
 # prefix会把所有路由前缀都加上/ai/documents
@@ -104,4 +104,11 @@ async def index_document(file: UploadFile = File(...)):
         indexed_count = indexed,
     )
 
-
+@router.get("/list", response_model = DocumentListResponse)
+async def list_indexed_documents():
+    """
+    返回已入库文档列表（filename + chunk_count）。
+    Java 后端 GET /api/knowledge/documents 会转发到这里。
+    """
+    docs = list_documents()
+    return DocumentListResponse(documents = docs)

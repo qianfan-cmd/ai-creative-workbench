@@ -1,0 +1,243 @@
+/* ─── Prose 容器（Cursor 式对话排版） ─── */
+.prose {
+    font-size: var(--text-sm);
+    line-height: 1.65;
+    color: var(--color-text-primary);
+    word-break: break-word;
+}
+
+/* 块与块之间的垂直节奏 */
+.prose > :global(*:not(:first-child)) {
+    margin-top: var(--space-3);
+}
+
+/* ─── 标题阶梯 ─── */
+.h1 {
+    margin: var(--space-6) 0 var(--space-2);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    color: var(--color-text-primary);
+}
+
+.h1:first-child {
+    margin-top: 0;
+}
+
+.h2 {
+    margin: var(--space-5) 0 var(--space-2);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    color: var(--color-text-primary);
+}
+
+.h2:first-child {
+    margin-top: 0;
+}
+
+.h3 {
+    margin: var(--space-4) 0 var(--space-2);
+    font-size: var(--text-base);
+    font-weight: 600;
+    line-height: var(--leading-tight);
+    color: var(--color-text-primary);
+}
+
+.h3:first-child {
+    margin-top: 0;
+}
+
+.h4 {
+    margin: var(--space-3) 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.h4:first-child {
+    margin-top: 0;
+}
+
+/* ─── 段落 ─── */
+.paragraph {
+    margin: 0;
+}
+
+.strong {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* ─── 列表 ─── */
+.list,
+.listOrdered {
+    margin: 0;
+    padding-left: var(--space-5);
+    color: var(--color-text-secondary);
+}
+
+.listItem + .listItem {
+    margin-top: var(--space-1);
+}
+
+.listItem {
+    line-height: 1.65;
+}
+
+.listItem::marker {
+    color: var(--color-text-tertiary);
+}
+
+/* ─── 引用块 ─── */
+.blockquote {
+    margin: 0;
+    padding: var(--space-2) 0 var(--space-2) var(--space-4);
+    border-left: 3px solid var(--color-accent);
+    color: var(--color-text-secondary);
+}
+
+.blockquote > :global(*:first-child) {
+    margin-top: 0;
+}
+
+/* ─── 分割线 ─── */
+.hr {
+    margin: var(--space-4) 0;
+    border: none;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+/* ─── 链接 ─── */
+.link {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+.link:hover {
+    color: var(--color-accent-hover);
+    text-decoration: underline;
+}
+
+/* ─── 表格（GFM） ─── */
+.tableWrapper {
+    overflow-x: auto;
+    margin: 0;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.thead {
+    background: var(--color-bg-subtle);
+}
+
+.th,
+.td {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.th {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.td {
+    color: var(--color-text-secondary);
+}
+
+/* ─── 代码 ─── */
+.inlineCode {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border-subtle);
+}
+
+.pre {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-control);
+    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border-subtle);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+}
+
+.pre :global(code.hljs) {
+    padding: 0;
+    background: transparent;
+    border: none;
+    font-size: inherit;
+}
+
+/* highlight.js github 主题微调 + 暗色 */
+.prose :global(.hljs) {
+    background: transparent;
+    color: var(--color-text-primary);
+}
+
+[data-theme='dark'] .pre {
+    background: #1e1e22;
+    border-color: var(--color-border);
+}
+
+[data-theme='dark'] .prose :global(.hljs) {
+    color: #e4e4e7;
+}
+
+[data-theme='dark'] .prose :global(.hljs-comment),
+[data-theme='dark'] .prose :global(.hljs-quote) {
+    color: #71717a;
+}
+
+[data-theme='dark'] .prose :global(.hljs-keyword),
+[data-theme='dark'] .prose :global(.hljs-selector-tag) {
+    color: #2dd4bf;
+}
+
+[data-theme='dark'] .prose :global(.hljs-string),
+[data-theme='dark'] .prose :global(.hljs-attr) {
+    color: #a5f3fc;
+}
+
+/* ─── 行内引用角标 [1][2] ─── */
+.cite {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin-left: 2px;
+    cursor: default;
+}
+
+/* ─── 状态 / 光标 ─── */
+.statusText {
+    color: var(--color-text-tertiary);
+}
+
+.cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--color-accent);
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}

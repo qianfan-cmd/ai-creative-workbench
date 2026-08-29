@@ -15,7 +15,7 @@ const NAV_ITEMS: NavItemConfig[] = [
     {key: 'asset', label: '素材 Assets', icon: <AppstoreOutlined />, to: '/assets'},
     {key: 'tags', label: '标签 Tags', icon: <TagsOutlined />, to: '/tags'},
     { key: 'chat', label: 'AI 对话 Chat', icon: <MessageOutlined />, to: '/chat' },
-    { key: 'knowledge', label: '知识库 Knowledge', icon: <BookOutlined /> },
+    { key: 'knowledge', label: '知识库 Knowledge', icon: <BookOutlined />, to: '/knowledge' },
     { key: 'settings', label: '设置 Settings', icon: <SettingOutlined /> },
 ]
 

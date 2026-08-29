@@ -117,3 +117,30 @@ def search_similar(query_embedding: list[float], top_k: int = 3) -> list[dict[st
             "distance": dist, # 越小越相似
         })
     return items
+
+def list_documents() -> list[dict[str, Any]]:
+    """
+    列出已索引的文档（按 source 文件名聚合 chunk 数量）。
+    数据来自 Chroma metadatas，刷新页面后仍可展示左栏文档库。
+    注意：当前 collection 全局共享，未按 user_id 隔离（Week 11 可接受）。
+    """
+    collection = _get_collection()
+    result = collection.get(include=["metadatas"])
+    metas = result.get("metadatas") or []
+
+    # 按 source 文件名计数
+    counts: dict[str, int] = {}
+    for meta in metas:
+        if not meta:
+            continue
+        source = meta.get("source")
+        if not source:
+            continue
+        counts[source] = counts.get(source, 0) + 1
+
+    items = [
+        {"filename": filename, "chunk_count": count}
+        for filename, count in counts.items()
+    ]
+    items.sort(key=lambda x: x["filename"])
+    return items

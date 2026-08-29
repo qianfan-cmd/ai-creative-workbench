@@ -10,7 +10,8 @@ import PreviewSidebar from './components/PreviewSidebar'
 import PreviewTopBar from './components/PreviewTopBar'
 import PreviewStatsStrip from './components/PreviewStatsStrip'
 import PreviewAssetGrid from './components/PreviewAssetGrid'
-import PreviewChatPanel from './components/PreviewChatPanel'
+import PreviewChatEmpty from './components/PreviewChatEmpty'
+import PreviewChatActive from './components/PreviewChatActive'
 import PreviewKnowledgePanel from './components/PreviewKnowledgePanel'
 import ThemeToggle from './components/ThemeToggle'
 import styles from './DesignPreviewPage.module.css'
@@ -182,7 +183,8 @@ export default function DesignPreviewPage() {
         </div>
 
         <PreviewAuthCard />
-        <PreviewChatPanel />
+        <PreviewChatEmpty />
+        <PreviewChatActive />
         <PreviewKnowledgePanel />
       </div>
     </ConfigProvider>

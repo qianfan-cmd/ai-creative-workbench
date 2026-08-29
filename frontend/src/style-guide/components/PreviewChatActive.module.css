@@ -1,0 +1,63 @@
+.frame {
+  display: flex;
+  height: 560px;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-4);
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  background: var(--color-bg-surface);
+}
+
+.inputMock {
+  flex: 1;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-surface);
+  display: flex;
+  align-items: center;
+}
+
+.stopBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-surface);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.stopBtn:hover {
+  background: var(--color-bg-hover);
+}

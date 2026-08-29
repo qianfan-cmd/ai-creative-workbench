@@ -11,16 +11,14 @@ RAG 问答服务 — 串联：Embedding 检索 + 大模型生成。
 """
 from app.services.embedding_service import embed_text
 from app.services.vector_store import search_similar
-from app.services.llm_service import chat_with_llm
+from app.services.llm_service import chat_with_llm, stream_chat_with_llm
 
-def rag_query(question: str, top_k: int = 3) -> dict:
+def _retrieve_context(question: str, top_k: int = 3) -> tuple[list[dict], str]:
     """
-    RAG 问答服务。
-    参数:
-        question: 用户问题
-        top_k: 返回几条，默认 3
+    检索知识库并拼好给 LLM 的 prompt。
     返回:
-        dict，含 answer 和 references
+        references: [{content, source, index}, ...]
+        prompt:     发给大模型的完整提示词
     """
     q = question.strip()
     if not q:
@@ -34,10 +32,7 @@ def rag_query(question: str, top_k: int = 3) -> dict:
 
     # 若知识库为空，返回无相关文档，后续可设计为调用联网工具
     if not hits:
-        return {
-            "answer": "知识库中没有相关文档，请提供更多信息或知识库更新。",
-            "references": [],
-        }
+        return [], ""
 
     # 拼接 Prompt
     references: list[dict] = []
@@ -47,30 +42,55 @@ def rag_query(question: str, top_k: int = 3) -> dict:
         content = hit["content"]
         source = hit["source"]
         index = hit["index"]
+        # 引用编号从 1 开始，与前端 References 列表 [1][2] 对齐
+        cite_num = i + 1
 
         references.append({
             "content": content,
             "source": source,
             "index": index,
         })
-        # 给模型看的资料，带编号方便引用
-        context_lines.append(f"[{i}] 来源:{source} 第{index}段\n{content}")
+        # 给模型看的资料：编号 [1]、[2]… 方便在回答里写行内角标
+        context_lines.append(f"[{cite_num}] 来源:{source} 第{index}段\n{content}")
 
     context_block = "\n\n".join(context_lines)
-    # ④ 拼 Prompt：要求模型只根据资料回答，不要编造
+    # 拼 Prompt：约束模型只用资料、用 Markdown 排版、写行内引用角标
     prompt = f"""你是一个知识库问答助手。请严格根据下面「参考资料」回答用户问题。
-             规则：
-             - 只使用参考资料中的信息；
-             - 资料不足以回答时，明确说「根据现有资料无法确定」；
-             - 不要编造参考资料中没有的内容。
-             - 回答要详细，不要只回答一个关键词。
 
-             参考资料：
-             {context_block}
+规则：
+- 只使用参考资料中的信息，不要编造；
+- 资料不足以回答时，明确说「根据现有资料无法确定」；
+- 回答要详细，不要只回答一个关键词；
+- 使用 Markdown 排版：可用 ## 小标题、- 列表、**加粗**、`代码`；
+- 引用某条资料时，在句末标注角标 [1]、[2] 等，编号必须与「参考资料」里的编号一致；
+- 不要输出 References 列表本身，角标写在正文里即可。
 
-             用户问题：{q}
+参考资料：
+{context_block}
 
-             请用中文简洁回答。"""
+用户问题：{q}
+
+请用中文回答。"""
+
+    return references, prompt
+
+
+def rag_query(question: str, top_k: int = 3) -> dict:
+    """
+    基于RAG回答(非流式)
+    参数:
+        question: 用户问题字符串
+        top_k:    检索相似片段数量（默认3）
+    返回:
+        dict: {answer, references}
+    """
+    references, prompt = _retrieve_context(question, top_k)
+
+    if not references:
+        return {
+            "answer": "知识库中没有相关文档，请提供更多信息或知识库更新。",
+            "references": [],
+        }
     
     # 大模型回答
     answer = chat_with_llm(prompt)
@@ -80,3 +100,24 @@ def rag_query(question: str, top_k: int = 3) -> dict:
         "references": references,
     }
 
+def rag_query_stream(question: str, top_k: int = 3):
+    """
+    RAG 流式问答生成器。
+    先 yield references，再 yield 一个个文本 chunk。
+    每个 yield 是一个 dict:
+        {"type": "references", "data": [...]}
+        {"type": "message",   "data": "根据"}
+    """
+    references, prompt = _retrieve_context(question, top_k)
+
+    # 先把引用片段推出去（检索结果，LLM还没开始）
+    yield {"type": "references", "data": references}
+
+    # 知识库为空，直接yield 固定文案，不再调LLM
+    if not references:
+        yield {"type": "message", "data": "知识库中没有相关文档，请提供更多信息或知识库更新。"}
+        return
+
+    # 流式调用大模型
+    for chunk in stream_chat_with_llm(prompt):
+        yield {"type": "message", "data": chunk}

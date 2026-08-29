@@ -4,8 +4,12 @@ RAG 问答 HTTP 接口（≈ Java Controller）。
 不做检索/调模型细节，那些都在 services/rag_service.py。
 """
 import httpx
-from fastapi import APIRouter, HTTPException
+import json
 
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.services.rag_service import rag_query_stream
 from app.schemas.rag import RAGQueryRequest, RAGQueryResponse, RagReference
 from app.services.rag_service import rag_query
 
@@ -33,3 +37,37 @@ def rag_query_api(req: RAGQueryRequest):
 
     except Exception as e:
         raise HTTPException(status_code = 500, detail = f"RAG 回答失败：{e}")
+
+@router.post("/query-stream")
+def rag_query_stream_api(req: RAGQueryRequest):
+    """
+    RAG 流式问答 — 返回 text/event-stream。
+    事件顺序：references → message(多次) → done
+    """
+    def event_generator():
+        try:
+            for item in rag_query_stream(req.question, top_k = req.top_k):
+                if item["type"] == "references":
+                    # references 一次性推 JSON 数组，ensure_ascii=False 中文不转成ascii
+                    payload = json.dumps(item["data"], ensure_ascii=False)
+                    yield f"event: references\ndata: {payload}\n\n" 
+                else:
+                    # message 逐个推字符串；JSON 编码可安全携带换行，避免 SSE 行协议打断
+                    chunk = item["data"]
+                    payload = json.dumps(chunk, ensure_ascii=False)
+                    yield f"event: message\ndata: {payload}\n\n" 
+
+            yield "event: done\ndata: [DONE]\n\n" # \n\n 结束事件 sse规范
+
+        except ValueError as e:
+            yield f"event: error\ndata: {str(e)}\n\n"
+        except httpx.HTTPStatusError as e:
+            yield f"event: error\ndata: 上游 AI 服务错误: {e.response.status_code}\n\n"
+
+    if not req.question.strip():
+        raise HTTPException(status_code = 400, detail = "问题不能为空")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type = "text/event-stream",
+    )

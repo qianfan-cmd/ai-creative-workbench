@@ -542,80 +542,118 @@ formatDate(iso: string): string         // 2026-08-10
 
 | 属性 | 值 |
 |------|-----|
-| **路由** | `/chat`（Phase 2 注册） |
-| **原型文件** | [`PreviewChatPanel.tsx`](../frontend/src/style-guide/components/PreviewChatPanel.tsx) |
-| **建议文件** | `pages/ChatPage.tsx`、`components/chat/ChatPanel.tsx` |
-| **实施周次** | Week 9（SSE 流式输出） |
+| **路由** | `/chat` |
+| **原型文件** | [`PreviewChatEmpty.tsx`](../frontend/src/style-guide/components/PreviewChatEmpty.tsx)（初始空态） |
+| | [`PreviewChatActive.tsx`](../frontend/src/style-guide/components/PreviewChatActive.tsx)（对话态） |
+| | [`PreviewConversationSidebar.tsx`](../frontend/src/style-guide/components/PreviewConversationSidebar.tsx) |
+| | [`PreviewMessageRow.tsx`](../frontend/src/style-guide/components/PreviewMessageRow.tsx) |
+| **建议文件** | `pages/ChatPage.tsx`、`components/chat/ChatHistorySidebar.tsx`、`components/chat/ChatMessageRow.tsx` |
+| **实施周次** | Week 9（SSE 流式输出 + 历史会话） |
+| **参考** | ChatGPT 布局（空态/对话态均保留历史侧栏 + 问候/消息区） |
 
-> **Phase 1 本文档仅定义 UI 规格，不要求实现路由与 API 联调。** 全栈导师 AI 在 Phase 1 不要创建 ChatPage，除非学习者明确进入 Week 9。
+> 业务页 [`ChatPage.tsx`](../frontend/src/pages/ChatPage.tsx) 已有 SSE 基础实现；后续需按本原型补齐 **空态、历史侧栏、Avatar、主流气泡**。
 
 #### 页面目标
 
-用户与 AI 对话，支持 SSE 流式输出、停止生成、历史消息展示。
+用户与 AI 多轮对话，支持历史会话切换、SSE 流式输出、停止生成、复制与重新生成。
 
-#### 布局线框
+#### 4.4.1 初始空态（无消息）
+
+**原型**：`PreviewChatEmpty`  
+**触发条件**：`messages.length === 0`（当前为新对话）
 
 ```
-┌─────────────────────────────────────────┐
-│ 消息列表（flex column, min-height 220）   │
-│                                         │
-│  [你]                                   │
-│  ┌─────────────────────────┐            │
-│  │ 用户消息气泡（右对齐）    │            │
-│  └─────────────────────────┘            │
-│                                         │
-│  [Assistant · SSE]                      │
-│  ┌─────────────────────────┐            │
-│  │ AI 回复气泡（左对齐）     │            │
-│  │ 流式文字...|             │ ← 光标动画 │
-│  └─────────────────────────┘            │
-├─────────────────────────────────────────┤
-│ Composer                                │
-│ [ 输入消息，Enter 发送…              ]  │
-│              [停止生成] [发送]           │
-└─────────────────────────────────────────┘
+┌─────────────┬───────────────────────────────────┐
+│ [+ 新对话]   │                                   │
+│ 历史对话     │      有什么可以帮你？               │
+│   夏日文案…  │   基于 SSE 的 AI 创意助手 Chat     │
+│   活动推送…  │                                   │
+│             │     ┌─────────────────────┐       │
+│             │     │ 输入…          [发送] │       │
+│             │     └─────────────────────┘       │
+└─────────────┴───────────────────────────────────┘
+     260px              flex 1
 ```
 
-#### 消息气泡样式
-
-| 角色 | 样式 |
+| 元素 | 规格 |
 |------|------|
-| 用户 | 右对齐；Light: Ink 底 + -inverse 文字；Dark: subtle 底 |
-| Assistant | 左对齐；subtle 背景 + border；label「Assistant · SSE」 |
-| 流式光标 | 2px 宽 accent 色竖线，blink 动画；`prefers-reduced-motion` 时静态 |
+| 历史侧栏 | **始终显示**（与对话态相同）；`PreviewConversationSidebar` |
+| 新对话 | 点击后进入空态，历史列表无 active 项 |
+| 历史项 | 点击加载对应对话，侧栏该项高亮 |
+| 问候语 | `--text-2xl`，居中于主内容区 |
+| Composer | pill 形，贴主区底部，max-width 640px |
 
-#### Composer
+#### 4.4.2 对话态（含历史侧栏）
 
-| 控件 | 说明 |
+**原型**：`PreviewChatActive`
+
+```
+┌─────────────┬───────────────────────────────────┐
+│ [+ 新对话]   │                                   │
+│ 历史对话     │  [AI]  助手气泡 + 复制/重新生成      │
+│ ● 夏日文案…  │              [你] 用户气泡（右）    │
+│   活动推送…  │  [AI]  流式回复…|                  │
+│             ├───────────────────────────────────┤
+│             │ [ TextArea              ] [停止]  │
+└─────────────┴───────────────────────────────────┘
+     260px              flex 1
+```
+
+**历史侧栏（PreviewConversationSidebar）**：
+
+| 元素 | 规格 |
 |------|------|
-| 输入框 | TextArea 或 Input；Enter 发送，Shift+Enter 换行 |
-| 发送 | primary，生成中 disabled |
-| 停止生成 | 流式进行中显示，点击 AbortController abort |
+| 宽度 | 260px |
+| 新对话 | outline 按钮，Plus 图标 |
+| 列表项 | 首条用户问题 truncate；active 项 accent-subtle + 左侧 2px Teal 条 |
+| 数据 | Week 9：`GET /api/conversations` |
+
+**消息行（PreviewMessageRow）**：
+
+| 角色 | 布局 | 气泡 |
+|------|------|------|
+| 用户 | 右对齐：`content \| Avatar` | accent-subtle 底，圆角 16px，右下小圆角 |
+| AI | 左对齐：`Avatar \| content` | surface + border；Avatar 显示「AI」 |
+| Avatar | 32px 圆形 | 用户 Ink 首字母；AI accent-subtle |
+| 流式 | AI 气泡末尾 | 2px accent 光标 blink |
+| 操作 | 气泡下方 | 复制（全部）；AI 额外「重新生成」 |
+
+**Composer**：
+
+| 状态 | 主按钮 |
+|------|--------|
+| 空闲 | 发送（无输入 disabled） |
+| 流式中 | 停止生成（AbortController） |
+
+Enter 发送，Shift+Enter 换行。
 
 #### 状态机
 
 ```
 idle → sending → streaming → idle
                   ↓ stop
-                 idle（保留已生成 partial 内容）
+                 idle（保留 partial 内容）
 ```
 
-#### Phase 2 API
+#### API
 
 ```
-GET /api/chat/stream?message=xxx   (SSE)
-或 POST /api/chat/stream { message }
-
-GET /api/conversations
-GET /api/conversations/{id}
+GET/POST /api/chat/stream        SSE 流式
+GET /api/conversations           历史列表
+GET /api/conversations/{id}      历史消息
 ```
 
-#### Phase 1 UI 验收（Week 9 时勾选）
+#### 不包含（参考 GPT 但不做）
 
-- [ ] 气泡样式与 PreviewChatPanel 一致
-- [ ] 流式光标动画正常
-- [ ] 停止生成按钮可见且逻辑正确
-- [ ] SSE 联调通过
+图片/资料库/项目/Codex、语音输入、Thinking 模式、Chat/Work 切换、点赞点踩。
+
+#### 验收标准（Week 9）
+
+- [ ] 空态：历史侧栏 + 居中问候 + pill Composer（侧栏与对话态一致）
+- [ ] 对话态：历史侧栏 + Avatar + 用户右气泡 + AI 左气泡
+- [ ] 流式光标、停止生成、复制、重新生成
+- [ ] 视觉与 style-preview 两个 Chat 预览块一致
+- [ ] SSE 与历史会话 API 联调通过
 
 ---
 
@@ -623,65 +661,78 @@ GET /api/conversations/{id}
 
 | 属性 | 值 |
 |------|-----|
-| **路由** | `/knowledge`（Phase 2 注册） |
+| **路由** | `/knowledge` |
 | **原型文件** | [`PreviewKnowledgePanel.tsx`](../frontend/src/style-guide/components/PreviewKnowledgePanel.tsx) |
-| **建议文件** | `pages/KnowledgePage.tsx`、`components/knowledge/KnowledgePanel.tsx` |
+| **建议文件** | `pages/KnowledgePage.tsx`、`components/knowledge/KnowledgeDocSidebar.tsx` |
 | **实施周次** | Week 11（RAG 知识库问答） |
+| **参考** | 飞书知识问答（历史问答 + 宽问题泡 + 文档式回答 + 引用） |
 
-> **Phase 1 本文档仅定义 UI 规格，不要求实现。** 全栈导师 AI 在 Phase 1 不要创建 KnowledgePage。
+> 当前 [`KnowledgePage.tsx`](../frontend/src/pages/KnowledgePage.tsx) 为「顶部搜索 + 回答卡片」结构；**后续需按本原型迁移为线程式 RAG UI**。
 
 #### 页面目标
 
-用户上传知识文档，基于 RAG 检索问答，回答附带引用片段（References）。
+用户上传文档、基于 RAG 连续问答；回答以文档式排版展示，附带行内引用角标与 References 列表。
 
 #### 布局线框
 
 ```
-┌──────────────┬────────────────────────────────────┐
-│ 已索引文档    │  QA 面板                            │
-│ (240px)      │                                    │
-│              │  [🔍 夏日活动推送有什么注意事项？ ]   │
-│ 📄 手册.md   │                                    │
-│    42 chunks │  ┌─ RAG 回答 ─────────────────┐   │
-│              │  │ 建议在版本更新后 48 小时内...  │   │
-│ 📄 指南.pdf  │  └─────────────────────────────┘   │
-│    28 chunks │                                    │
-│              │  引用片段 References                │
-│ 📄 FAQ.txt   │  ┌─ 游戏活动运营手册.md ────────┐   │
-│    15 chunks │  │ 夏日活动推荐在版本更新后...    │   │
-│              │  └─────────────────────────────┘   │
-└──────────────┴────────────────────────────────────┘
+┌──────────────┬────────────────────────────────────────────┐
+│ 文档库        │  [你]  用户问题宽气泡                       │
+│ [上传文档]    │  [AI]  文档式回答 + 列表 + 行内 [1][2]     │
+│ 📄 手册.md   │  ── 引用资料 References（N） ──            │
+│ ───────────  │  [1] source — excerpt                      │
+│ 历史问答      ├────────────────────────────────────────────┤
+│ [+ 新问答]    │ [ 继续提问…                    ] [ 提问 ]   │
+│ ● 夏日活动…   │                                            │
+└──────────────┴────────────────────────────────────────────┘
+     280px                        flex 1
 ```
 
-#### 左栏文档列表
+#### 左栏（双区）
+
+**1. 文档库**
 
 | 元素 | 规格 |
 |------|------|
-| Header | 「已索引文档」，uppercase 12px |
-| DocItem | FileTextOutlined accent 色 + 文件名 + `{n} chunks` mono |
-| Hover | `--color-bg-hover` |
+| Header | 「文档库」uppercase 12px |
+| 上传 | primary 按钮「上传文档」；支持 .txt / .md |
+| DocItem | FileTextOutlined + 文件名 ellipsis + `{n} chunks` mono |
 
-#### 右栏 QA 面板
+**2. 历史问答**（复用 ConversationSidebar 样式）
+
+| 元素 | 规格 |
+|------|------|
+| 新问答 | 「新问答」按钮 |
+| 列表 | 历史问题标题，active 高亮 |
+
+#### 主内容区（线程式，非顶部表单）
 
 | 区块 | 规格 |
 |------|------|
-| 查询输入 | Search icon + 用户问题 |
-| RAG 回答 | accent-subtle 背景 + accent 边框；label「RAG 回答」 |
-| References | label「引用片段 References」；每项含 source（mono accent）+ excerpt |
+| 用户问题 | PreviewMessageRow user；宽气泡 accent-subtle |
+| AI 回答 | Avatar + **文档块**（段落、小标题、列表）；非 heavy 气泡 |
+| 行内引用 | `[1]` `[2]` superscript badge，mono accent 色 |
+| References | 标题「引用资料 References · 共 N 条」；编号 + source + excerpt |
+| Composer | **底部**输入 + 「提问」按钮（连续对话感） |
 
-#### Phase 2 API
+#### API
 
 ```
 POST /api/knowledge/upload     multipart 文档
-GET  /api/knowledge/documents  文档列表
 POST /api/rag/query            { question } → { answer, references[] }
 ```
 
-#### Phase 1 UI 验收（Week 11 时勾选）
+#### 不包含
 
-- [ ] 左右分栏与原型一致
-- [ ] References 卡片可展示多条引用
-- [ ] RAG 联调通过，引用来源可追溯
+飞书最左侧全局 icon rail、参考资料分页、复杂文档预览。
+
+#### 验收标准（Week 11）
+
+- [ ] 左栏：文档库 + 历史问答双区
+- [ ] 主区：问题泡 + 文档式回答 + `[n]` 角标 + References
+- [ ] 底部 Composer 提问（非顶部单行搜索）
+- [ ] 视觉与 PreviewKnowledgePanel 一致
+- [ ] RAG 联调通过，引用可追溯
 
 ---
 
@@ -696,8 +747,11 @@ POST /api/rag/query            { question } → { answer, references[] }
 | PreviewTopBar | AppTopBar | `components/layout/AppTopBar.tsx` |
 | PreviewStatsStrip | AssetStatsStrip | `components/assets/AssetStatsStrip.tsx` |
 | PreviewAssetGrid | AssetGrid | `components/assets/AssetGrid.tsx` |
-| PreviewChatPanel | ChatPanel | `components/chat/ChatPanel.tsx` |
-| PreviewKnowledgePanel | KnowledgePanel | `components/knowledge/KnowledgePanel.tsx` |
+| PreviewChatEmpty | ChatEmptyState | `components/chat/ChatEmptyState.tsx` |
+| PreviewChatActive | ChatActiveLayout | `pages/ChatPage.tsx`（对话态布局） |
+| PreviewConversationSidebar | ChatHistorySidebar | `components/chat/ChatHistorySidebar.tsx` |
+| PreviewMessageRow | ChatMessageRow | `components/chat/ChatMessageRow.tsx` |
+| PreviewKnowledgePanel | KnowledgePanel | `pages/KnowledgePage.tsx`（线程式 RAG） |
 | tokens.css | 全局 tokens | `src/styles/tokens.css` |
 | antdTheme.ts | 主题 | `src/theme/antdTheme.ts` |
 | global.css | 全局样式 | `src/styles/global.css` |
@@ -781,15 +835,20 @@ Step 9  （Phase 2）KnowledgePage + RAG
 - [ ] 上传按钮 → `/assets/upload`
 - [ ] 空状态引导
 
-### 7.6 ChatPage（Phase 2 / Week 9）
+### 7.6 ChatPage（Week 9）
 
-- [ ] UI 与 PreviewChatPanel 一致
-- [ ] SSE 流式 + 停止生成
+- [ ] 空态与 PreviewChatEmpty 一致（历史侧栏 + 问候 + pill Composer）
+- [ ] 对话态与 PreviewChatActive 一致（历史侧栏 + Avatar + 气泡）
+- [ ] 流式光标、停止生成、复制、重新生成
+- [ ] SSE 与历史会话 API 联调通过
 
-### 7.7 KnowledgePage（Phase 2 / Week 11）
+### 7.7 KnowledgePage（Week 11）
 
-- [ ] UI 与 PreviewKnowledgePanel 一致
-- [ ] RAG 回答 + References 展示
+- [x] 左栏文档库 + 历史问答与原型一致
+- [x] 线程式问答：问题泡 + 文档式回答 + `[n]` 角标
+- [x] References 列表 + 底部 Composer
+- [x] RAG 联调通过，引用可追溯
+- [x] 文档列表 API 持久化（Chroma）；历史会话 MySQL 持久化
 
 ---
 
@@ -805,8 +864,11 @@ Step 9  （Phase 2）KnowledgePage + RAG
 | `DesignPreviewPage.tsx`（Assets 区） | 4.3 Assets List |
 | `PreviewStatsStrip.tsx` | 4.3 StatsStrip |
 | `PreviewAssetGrid.tsx` | 4.3 AssetGrid |
-| `PreviewChatPanel.tsx` | 4.4 Chat |
-| `PreviewKnowledgePanel.tsx` | 4.5 Knowledge |
+| `PreviewChatEmpty.tsx` | 4.4.1 Chat 初始空态 |
+| `PreviewChatActive.tsx` | 4.4.2 Chat 对话态 |
+| `PreviewConversationSidebar.tsx` | 4.4.2 / 4.5 历史侧栏 |
+| `PreviewMessageRow.tsx` | 4.4.2 / 4.5 消息行 |
+| `PreviewKnowledgePanel.tsx` | 4.5 Knowledge / RAG |
 | `tokens.css` / `antdTheme.ts` | 第 2 章 |
 
 ### 8.2 Phase 2 待设计 / 待实装模块

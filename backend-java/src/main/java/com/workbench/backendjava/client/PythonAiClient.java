@@ -1,22 +1,39 @@
 package com.workbench.backendjava.client;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.config.AiServiceProperties;
+import com.workbench.backendjava.vo.KnowledgeDocumentVO;
+import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import com.workbench.backendjava.vo.RagQueryVO;
 import com.workbench.backendjava.vo.RagReferenceVO;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -32,6 +49,7 @@ public class PythonAiClient {
 
     private final RestTemplate restTemplate;
     private final AiServiceProperties aiServiceProperties;
+    private final ObjectMapper objectMapper;
 
     /**
      * 调用python  post ai/chat接口，返回模型文本
@@ -133,6 +151,162 @@ public class PythonAiClient {
     }
 
     /**
+     * 调用 Python GET /ai/documents/list，获取已索引文档列表。
+     * Chroma 当前全局共享，未按 userId 隔离。
+     */
+    public List<KnowledgeDocumentVO> listDocuments() {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/list";
+        try {
+            PythonDocumentListResponse response = restTemplate.getForObject(url, PythonDocumentListResponse.class);
+            if (response == null || response.getDocuments() == null) {
+                return List.of();
+            }
+            return response.getDocuments().stream().map(item -> {
+                KnowledgeDocumentVO vo = new KnowledgeDocumentVO();
+                vo.setFilename(item.getFilename());
+                vo.setChunkCount(item.getChunkCount());
+                return vo;
+            }).collect(Collectors.toList());
+        } catch (RestClientException e) {
+            log.error("调用 Python 文档列表失败: {}", e.getMessage(), e);
+            throw new BusinessException(502, "知识库文档列表不可用，请确认 ai-service-python 已启动");
+        }
+    }
+
+    /**
+     * 转发文件到 Python POST /ai/documents/index，完成 RAG 入库。
+     *
+     * @param file Spring 收到的上传文件（MultipartFile ≈ 前端 form-data 的 file）
+     */
+    public KnowledgeUploadVO indexDocument(MultipartFile file) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/index";
+
+        try {
+            // multipart 请求体：字段名必须是 file（和 Python UploadFile = File(...) 一致）
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+
+            // ByteArrayResource：把字节包装成 RestTemplate 能发的「文件 part」
+            ByteArrayResource resource = new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    // 必须重写 getFilename()，否则 Python 收不到原始文件名
+                    return file.getOriginalFilename();
+                }
+            };
+            body.add("file", resource);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            log.info("调用 Python 文档入库: url={}, filename={}, size={}",
+                    url, file.getOriginalFilename(), file.getSize());
+
+            PythonIndexResponse response = restTemplate.postForObject(
+                    url,
+                    entity,
+                    PythonIndexResponse.class
+            );
+
+            if (response == null || response.getIndexedCount() == null || response.getIndexedCount() <= 0) {
+                throw new BusinessException(502, "文档入库失败，未写入向量库");
+            }
+
+            KnowledgeUploadVO vo = new KnowledgeUploadVO();
+            vo.setFilename(response.getFilename());
+            vo.setCharCount(response.getCharCount());
+            vo.setChunkCount(response.getChunkCount());
+            vo.setIndexedCount(response.getIndexedCount());
+            return vo;
+        } catch (RestClientException e) {
+            log.error("调用 Python 文档入库失败: {}", e.getMessage(), e);
+            throw new BusinessException(502, "知识库入库服务不可用，请确认 ai-service-python 已启动");
+        } catch (Exception e) {
+            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 调用 Python POST /ai/rag/query-stream，把 SSE 事件转发到 emitter。
+     * 在异步线程里跑，避免阻塞 Tomcat 请求线程。
+     */
+    public void ragQueryStream(String question, int topK, SseEmitter emitter) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query-stream";
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Map<String, Object> body = new HashMap<>();
+                body.put("question", question);
+                body.put("top_k", topK);
+                String jsonBody = objectMapper.writeValueAsString(body);
+                log.info("转发 Python RAG stream, url={}, jsonBody={}", url, jsonBody);
+
+                // 与非流式 ragQuery 相同，用 RestTemplate 发 JSON，避免 HttpClient body 丢失
+                restTemplate.execute(
+                        url,
+                        HttpMethod.POST,
+                        request -> {
+                            request.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                            request.getBody().write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                        },
+                        response -> {
+                            forwardPythonSse(response, emitter);
+                            return null;
+                        }
+                );
+            } catch (HttpStatusCodeException e) {
+                sendStreamError(emitter, "Python HTTP " + e.getStatusCode().value() + ": " + e.getResponseBodyAsString());
+            } catch (Exception e) {
+                log.error("RAG流式转发失败", e);
+                sendStreamError(emitter, e.getMessage() != null ? e.getMessage() : "RAG 流式服务不可用");
+            }
+        });
+    }
+
+    /** 读取 Python SSE 响应并转发到前端 SseEmitter */
+    private void forwardPythonSse(ClientHttpResponse response, SseEmitter emitter) throws IOException {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+
+            String currentEvent = "";
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("event:")) {
+                    currentEvent = line.substring(6).trim();
+                } else if (line.startsWith("data:")) {
+                    String data = line.substring(5).trim();
+
+                    if ("done".equals(currentEvent) || "[DONE]".equals(data)) {
+                        emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+                    } else if ("error".equals(currentEvent)) {
+                        sendStreamError(emitter, data);
+                        return;
+                    } else {
+                        emitter.send(SseEmitter.event().name(currentEvent).data(data));
+                    }
+                } else if (line.isEmpty()) {
+                    currentEvent = "";
+                }
+            }
+        }
+
+        emitter.complete();
+    }
+
+    /** 向前端推送 SSE error 事件并正常结束流（便于 UI 在 AI 气泡里展示错误） */
+    private void sendStreamError(SseEmitter emitter, String message) {
+        try {
+            emitter.send(SseEmitter.event().name("error").data(message));
+            emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+            emitter.complete();
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+        }
+    }
+
+    /**
      * 探测python是否存活
      */
     public boolean isHealthy() {
@@ -165,5 +339,32 @@ public class PythonAiClient {
         private String content;
         private String source;
         private Integer index;
+    }
+
+    @Data
+    static class PythonIndexResponse {
+        private String filename;
+
+        @JsonProperty("char_count")
+        private Integer charCount;
+
+        @JsonProperty("chunk_count")
+        private Integer chunkCount;
+
+        @JsonProperty("indexed_count")
+        private Integer indexedCount;
+    }
+
+    @Data
+    static class PythonDocumentListResponse {
+        private List<PythonDocumentListItem> documents;
+    }
+
+    @Data
+    static class PythonDocumentListItem {
+        private String filename;
+
+        @JsonProperty("chunk_count")
+        private Integer chunkCount;
     }
 }

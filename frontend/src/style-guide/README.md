@@ -47,8 +47,11 @@ pnpm dev
 
 1. **App Shell** — 侧栏 + 顶栏 + 素材 Assets 页（Grid + Table）
 2. **Auth** — 登录卡片预览
-3. **AI Chat** — SSE 流式对话 mock
-4. **Knowledge** — RAG 知识库问答 + References 引用片段
+3. **AI Chat · 初始空态** — `PreviewChatEmpty`（GPT 式问候 + pill Composer）
+4. **AI Chat · 对话态** — `PreviewChatActive`（历史侧栏 + Avatar + 气泡 + SSE）
+5. **Knowledge / RAG** — `PreviewKnowledgePanel`（飞书式：文档库 + 历史问答 + 线程回答 + References）
+
+共用组件：`PreviewConversationSidebar`、`PreviewMessageRow`
 
 ## Signature 元素
 

@@ -40,6 +40,7 @@ public class AssetService {
 
     private final TagMapper tagMapper;
     private final AssetTagMapper assetTagMapper;
+    private final KnowledgeService knowledgeService;
 
     /**
      * 上传文件落库
@@ -304,7 +305,7 @@ public class AssetService {
         vo.setTotal(total);
         vo.setLast7DaysCount(last7DaysCount);
         vo.setPrev7DaysCount(prev7DaysCount);
-        vo.setKnowledgeDocCount(0L); // 后面再做
+        vo.setKnowledgeDocCount((long) knowledgeService.listDocuments().size());
         return vo;
     }
 

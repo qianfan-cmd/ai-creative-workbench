@@ -57,6 +57,8 @@ def embed_text(text: str) -> list[float]:
 
     return embedding
 
+BATCH_SIZE = 10
+
 def embed_texts(texts: list[str]) -> list[list[float]]:
     """
     批量 Embedding（可选工具函数，本步先不强制用）。
@@ -94,11 +96,19 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         "Authorization": f"Bearer {api_key}",
     }
 
-    with httpx.Client(timeout = 120.0) as client:
-        resp = client.post(url, json = payload, headers = headers)
-        resp.raise_for_status()
-        data = resp.json()
+    all_embeddings: list[list[float]] = []
 
-    items = data.get("data") or []
-    items.sort(key = lambda item: item.get("index", 0))
-    return [item.get("embedding") for item in items]
+    with httpx.Client(timeout = 120.0) as client:
+        for start in range(0, len(cleaned), BATCH_SIZE):
+            batch = cleaned[start: start + BATCH_SIZE] # 列表切片 list[开始索引 : 结束索引]
+            payload = {"model": model, "input": batch}
+
+            resp = client.post(url, json = payload, headers = headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = data.get("data") or []
+            items.sort(key = lambda item: item.get("index", 0))
+            all_embeddings.extend([item.get("embedding") for item in items])
+
+        return all_embeddings

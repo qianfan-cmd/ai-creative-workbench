@@ -12,6 +12,7 @@ import os
 
 # httpx：第三方 HTTP 客户端，用来 POST 请求 DeepSeek（≈ Java RestTemplate / WebClient）
 import httpx
+import json
 
 
 def chat_with_llm(message: str) -> str:
@@ -74,3 +75,51 @@ def chat_with_llm(message: str) -> str:
         raise ValueError("模型返回内容为空")
 
     return content
+
+def stream_chat_with_llm(message: str):
+    """
+    流式调用 DeepSeek Chat Completions。
+    这是一个生成器（generator）：用 yield 一块块返回文本，而不是 return 整段。
+    用法:
+        for chunk in stream_chat_with_llm("你好"):
+            print(chunk, end="", flush=True)
+    """
+    api_key = os.getenv("MODEL_API_KEY")
+    base_url = os.getenv("MODEL_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    model = os.getenv("MODEL_NAME", "deepseek-v4-flash")
+
+    if not api_key:
+        raise ValueError("MODEL_API_KEY 未配置，请检查 .env")
+
+    url = f"{base_url}/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": message}],
+        "thinking": {"type": "disabled"},
+        "stream": True, # 开启流式响应，响应不再是单个JSON，而是多行 data: JSON 串
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # client.stream: httpx 的流式请求方法，返回 AsyncGenerator[bytes, None],在with块内可以iter_lines()逐行读
+    with httpx.Client(timeout=120.0) as client:
+        with client.stream("POST", url, json=payload, headers=headers) as resp:
+            resp.raise_for_status()
+            # DeepSeek 流式格式（OpenAI 兼容）：
+            #   data: {"choices":[{"delta":{"content":"你"}}]}
+            #   data: {"choices":[{"delta":{"content":"好"}}]}
+            #   data: [DONE]
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+
+                obj = json.loads(data)
+                delta = obj["choices"][0]["delta"].get("content")
+                if delta:
+                    yield delta

@@ -34,3 +34,11 @@ class DocumentIndexResponse(BaseModel):
     char_count: int = Field(..., description = "全文总字符数")
     chunk_count: int = Field(..., description = "切分后的 chunk 总数")
     indexed_count: int = Field(..., description = "写入 Chroma 的条数")
+
+class DocumentListItem(BaseModel):
+    """左栏文档库单项：文件名 + 已索引 chunk 数"""
+    filename: str = Field(..., description = "文档文件名")
+    chunk_count: int = Field(..., description = "该文档在向量库中的 chunk 数量")
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentListItem] = Field(default_factory=list, description = "已索引文档列表")
