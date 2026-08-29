@@ -139,13 +139,26 @@ export interface RagStreamHandlers {
     onDone: () => void;
 }
 
+export interface RagStreamOptions {
+    topK?: number
+    /** 同会话 id — Java 从 knowledge_turn 加载 prior Q/A */
+    sessionId?: number
+    /** 重新生成时排除的 turn dbId */
+    excludeTurnId?: number
+    signal?: AbortSignal
+}
+
 export async function ragStreamApi(
     question: string,
     handlers: RagStreamHandlers,
-    topK: number = 3,
-    signal?: AbortSignal,
+    options: RagStreamOptions = {},
   ) {
+    const { topK = 3, sessionId, excludeTurnId, signal } = options
     const token = getToken()
+
+    const body: Record<string, unknown> = { question, topK }
+    if (sessionId != null) body.sessionId = sessionId
+    if (excludeTurnId != null) body.excludeTurnId = excludeTurnId
 
     const res = await fetch('/api/rag/query/stream', {
       method: 'POST',
@@ -153,7 +166,7 @@ export async function ragStreamApi(
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ question, topK }),
+      body: JSON.stringify(body),
       signal,
     })
 

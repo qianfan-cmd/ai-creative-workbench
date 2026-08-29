@@ -11,13 +11,15 @@ Chat 相关的 HTTP 接口（≈ Java 的 ChatController）
   - 和 Spring 一样「按模块拆 Controller」，main.py 只负责组装。
 """
 
+import json
 import os
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
-from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.llm_service import chat_with_llm
+from app.schemas.chat import ChatRequest, ChatResponse, ChatStreamRequest
+from app.services.llm_service import chat_with_llm, stream_chat_with_messages
 
 # APIRouter：一组路由的容器
 # prefix="/ai" → 本 router 下所有路径前都会加 /ai
@@ -62,3 +64,32 @@ def chat(req: ChatRequest):
     except Exception as e:
         # 兜底：其它未预料错误
         raise HTTPException(status_code=500, detail=f"调用失败: {e}")
+
+
+@router.post("/chat/stream")
+def chat_stream(req: ChatStreamRequest):
+    """
+    Chat 流式接口 — 返回 text/event-stream。
+    事件顺序：message(多次) → done；出错时 error → done。
+    chunk 用 JSON 编码，保留 Markdown 换行（与 RAG 一致）。
+    """
+
+    def event_generator():
+        try:
+            # Pydantic 模型转 dict，供 DeepSeek API 使用
+            messages = [item.model_dump() for item in req.messages]
+            for chunk in stream_chat_with_messages(messages):
+                payload = json.dumps(chunk, ensure_ascii=False)
+                yield f"event: message\ndata: {payload}\n\n"
+            yield "event: done\ndata: [DONE]\n\n"
+        except ValueError as e:
+            yield f"event: error\ndata: {str(e)}\n\n"
+            yield "event: done\ndata: [DONE]\n\n"
+        except httpx.HTTPStatusError as e:
+            yield f"event: error\ndata: 上游 AI 服务错误: {e.response.status_code}\n\n"
+            yield "event: done\ndata: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+    )

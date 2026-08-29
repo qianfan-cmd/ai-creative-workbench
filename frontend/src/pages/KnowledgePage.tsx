@@ -494,7 +494,12 @@ export default function KnowledgePage() {
 
     const streamTurn = useCallback(
 
-        async (turnId: string, question: string) => {
+        async (
+            turnId: string,
+            question: string,
+            sessionId: number,
+            excludeTurnId?: number,
+        ) => {
 
             let finalAnswer = ''
 
@@ -566,9 +571,7 @@ export default function KnowledgePage() {
 
                     },
 
-                    3,
-
-                    controller.signal,
+                    { topK: 3, sessionId, excludeTurnId, signal: controller.signal },
 
                 )
 
@@ -754,7 +757,7 @@ export default function KnowledgePage() {
 
 
 
-            const result = await streamTurn(turnId, question)
+            const result = await streamTurn(turnId, question, sessionId)
 
             if (result && (result.answer || result.references.length > 0)) {
 
@@ -786,7 +789,12 @@ export default function KnowledgePage() {
 
         try {
 
-            const result = await streamTurn(turnId, turn.question)
+            const result = await streamTurn(
+                turnId,
+                turn.question,
+                activeSessionId,
+                turn.dbId,
+            )
 
             if (result) {
 

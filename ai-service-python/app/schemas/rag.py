@@ -10,9 +10,15 @@ RAG = Retrieval-Augmented Generation（检索增强生成）：
 """
 from pydantic import BaseModel, Field
 
+class RagHistoryItem(BaseModel):
+    """多轮 RAG 上下文 — 不含 references 全文，仅 Q/A 摘要。"""
+    question: str = Field(..., min_length=1)
+    answer: str = Field(..., min_length=1)
+
 class RAGQueryRequest(BaseModel):
     question: str = Field(..., min_length = 1, description = "用户问题")
-    top_k: int = Field(default = 3, ge = 1, le = 10, description = "返回几条，默认 3") # 检索结果条数，不能少于 1 条、不能超过 10 条
+    top_k: int = Field(default = 3, ge = 1, le = 10, description = "返回几条，默认 3")
+    history: list[RagHistoryItem] = Field(default_factory=list, description="同会话 prior turns")
 
 class RagReference(BaseModel):
     content: str = Field(..., description = "片段内容")

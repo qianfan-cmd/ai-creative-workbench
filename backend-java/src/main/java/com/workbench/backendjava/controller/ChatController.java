@@ -2,6 +2,7 @@ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.dto.ChatRequest;
+import com.workbench.backendjava.dto.ChatStreamRequest;
 import com.workbench.backendjava.service.ChatService;
 import com.workbench.backendjava.vo.ChatReplyVO;
 import jakarta.validation.Valid;
@@ -33,7 +34,7 @@ public class ChatController {
      * @return
      */
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
-        return chatService.streamChat(request.getMessage());
+    public SseEmitter stream(@Valid @RequestBody ChatStreamRequest request) {
+        return chatService.streamChat(request);
     }
 }

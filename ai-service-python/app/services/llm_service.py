@@ -78,10 +78,21 @@ def chat_with_llm(message: str) -> str:
 
 def stream_chat_with_llm(message: str):
     """
-    流式调用 DeepSeek Chat Completions。
-    这是一个生成器（generator）：用 yield 一块块返回文本，而不是 return 整段。
+    流式调用 DeepSeek Chat Completions（单轮快捷入口）。
+    内部转成 messages 数组后委托 stream_chat_with_messages。
+    """
+    yield from stream_chat_with_messages([{"role": "user", "content": message}])
+
+
+def stream_chat_with_messages(messages: list[dict]):
+    """
+    流式调用 DeepSeek Chat Completions（多轮 messages 格式）。
+
+    参数:
+        messages: [{"role": "user"|"assistant"|"system", "content": "..."}, ...]
+
     用法:
-        for chunk in stream_chat_with_llm("你好"):
+        for chunk in stream_chat_with_messages(history):
             print(chunk, end="", flush=True)
     """
     api_key = os.getenv("MODEL_API_KEY")
@@ -91,26 +102,24 @@ def stream_chat_with_llm(message: str):
     if not api_key:
         raise ValueError("MODEL_API_KEY 未配置，请检查 .env")
 
+    if not messages:
+        raise ValueError("messages 不能为空")
+
     url = f"{base_url}/chat/completions"
     payload = {
         "model": model,
-        "messages": [{"role": "user", "content": message}],
+        "messages": messages,
         "thinking": {"type": "disabled"},
-        "stream": True, # 开启流式响应，响应不再是单个JSON，而是多行 data: JSON 串
+        "stream": True,  # 开启流式响应
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    # client.stream: httpx 的流式请求方法，返回 AsyncGenerator[bytes, None],在with块内可以iter_lines()逐行读
     with httpx.Client(timeout=120.0) as client:
         with client.stream("POST", url, json=payload, headers=headers) as resp:
             resp.raise_for_status()
-            # DeepSeek 流式格式（OpenAI 兼容）：
-            #   data: {"choices":[{"delta":{"content":"你"}}]}
-            #   data: {"choices":[{"delta":{"content":"好"}}]}
-            #   data: [DONE]
             for line in resp.iter_lines():
                 if not line or not line.startswith("data:"):
                     continue

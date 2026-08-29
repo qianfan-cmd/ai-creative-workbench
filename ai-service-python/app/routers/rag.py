@@ -18,7 +18,7 @@ router = APIRouter(prefix = "/ai/rag", tags = ["rag"])
 @router.post("/query", response_model = RAGQueryResponse)
 def rag_query_api(req: RAGQueryRequest):
     try:
-        result = rag_query(req.question, top_k = req.top_k)
+        result = rag_query(req.question, top_k = req.top_k, history=[h.model_dump() for h in req.history])
 
         return RAGQueryResponse(
             answer = result["answer"],
@@ -46,7 +46,11 @@ def rag_query_stream_api(req: RAGQueryRequest):
     """
     def event_generator():
         try:
-            for item in rag_query_stream(req.question, top_k = req.top_k):
+            for item in rag_query_stream(
+                req.question,
+                top_k=req.top_k,
+                history=[h.model_dump() for h in req.history],
+            ):
                 if item["type"] == "references":
                     # references 一次性推 JSON 数组，ensure_ascii=False 中文不转成ascii
                     payload = json.dumps(item["data"], ensure_ascii=False)

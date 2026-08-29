@@ -17,4 +17,10 @@ public class RagQueryRequest {
     @Min(1)
     @Max(10)
     private Integer topK = 3;
+
+    /** 知识库会话 id — 有值时 Java 从 knowledge_turn 加载 prior Q/A */
+    private Long sessionId;
+
+    /** 重新生成时排除的 turn id，避免把当前轮算进 history */
+    private Long excludeTurnId;
 }

@@ -3,14 +3,17 @@ package com.workbench.backendjava.service;
 import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.dto.ChatStreamRequest;
 import com.workbench.backendjava.vo.ChatReplyVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -18,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 public class ChatService {
 
     private final PythonAiClient pythonAiClient;
+    private final ConversationService conversationService;
 
     public ChatReplyVO chat(String message) {
         Long userId = LoginUserContext.getUserId();
@@ -34,60 +38,33 @@ public class ChatService {
     }
 
     /**
-     * 流式输出
-     * @param message
-     * @return
+     * 真 SSE 流式 Chat — 转发 Python /ai/chat/stream。
+     * 有 conversationId 时从 DB 加载历史拼多轮 messages。
      */
-    public SseEmitter streamChat(String message) {
+    public SseEmitter streamChat(ChatStreamRequest request) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
             throw new BusinessException(401, "未登录");
         }
 
-        String trimmed = message.trim();
-        log.info("Chat stream 调用 Python AI, userId={}, message={}", userId, trimmed);
+        String trimmed = request.getMessage().trim();
+        log.info("Chat stream, userId={}, conversationId={}, message={}",
+                userId, request.getConversationId(), trimmed);
 
-        /**
-         * SseEmitter是spring提供的sse发射器，代表一条管道
-         * emitter.send(...)推一条事件
-         * emitter.complete，正常结束，关闭连接
-         * emitter.completeWithError(e)出错结束
-         */
-        SseEmitter emitter = new SseEmitter(120_000L); // 120s 超时
+        List<Map<String, String>> messages;
+        if (request.getConversationId() != null) {
+            messages = conversationService.buildMessagesForLlm(request.getConversationId(), trimmed);
+        } else {
+            // 无会话 id：单轮（Phase B 默认路径）
+            messages = new ArrayList<>();
+            Map<String, String> userMsg = new HashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", trimmed);
+            messages.add(userMsg);
+        }
 
-        /**
-         * CompletableFuture java异步工具
-         * runAsync(Runnable)跑异步任务
-         */
-        CompletableFuture.runAsync(() -> {
-            try {
-                // ① 先向 Python 要完整回复（可能等几秒～几十秒）
-                String fullReply = pythonAiClient.chat(trimmed);
-
-                // ② 再逐字 SSE 推给前端（和之前 stub 一样，只是内容变真 AI）
-                for (char ch : fullReply.toCharArray()) {
-                    emitter.send(SseEmitter.event()
-                            .name("message")
-                            .data(String.valueOf(ch)));
-                    Thread.sleep(30);
-                }
-                emitter.send(SseEmitter.event()
-                        .name("done")
-                        .data("[DONE]"));
-                emitter.complete();
-
-            } catch (BusinessException e) {
-                // Python 不可用 / 返回空 等
-                log.error("流式 Chat 调用 AI 失败: {}", e.getMessage());
-                emitter.completeWithError(e);
-            } catch (IOException e) {
-                emitter.completeWithError(e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                emitter.completeWithError(e);
-            }
-        });
-
+        SseEmitter emitter = new SseEmitter(120_000L);
+        pythonAiClient.chatStream(messages, emitter);
         return emitter;
     }
 }

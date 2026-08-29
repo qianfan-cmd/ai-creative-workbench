@@ -3,6 +3,7 @@ package com.workbench.backendjava.service;
 import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.dto.RagHistoryItem;
 import com.workbench.backendjava.dto.RagQueryRequest;
 import com.workbench.backendjava.vo.RagQueryVO;
 import lombok.RequiredArgsConstructor;
@@ -10,26 +11,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
  * RAG 知识库问答业务层（≈ ChatService）。
- *
- * 职责：
- *   1. 校验用户已登录
- *   2. 调用 PythonAiClient 做检索 + 生成
- *   3. 返回 RagQueryVO 给 Controller
  */
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class RagService {
-    private final PythonAiClient pythonAiClient;
 
-    /**
-     * 执行一次 RAG 问答。
-     *
-     * @param request 前端传入的问题 + topK
-     * @return 答案 + 引用片段
-     */
+    private static final int RAG_HISTORY_LIMIT = 10;
+
+    private final PythonAiClient pythonAiClient;
+    private final KnowledgeSessionService knowledgeSessionService;
+
     public RagQueryVO query(RagQueryRequest request) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -42,15 +39,14 @@ public class RagService {
         }
 
         int topK = request.getTopK() != null ? request.getTopK() : 3;
+        List<RagHistoryItem> history = resolveHistory(request);
 
-        log.info("RAG 查询, userId={}, topK={}, question={}", userId, topK, question);
+        log.info("RAG 查询, userId={}, topK={}, historySize={}, question={}",
+                userId, topK, history.size(), question);
 
-        return pythonAiClient.ragQuery(question, topK);
+        return pythonAiClient.ragQuery(question, topK, history);
     }
 
-    /**
-     * RAG 流式回答 - 创建 SseEmitter，交给 pythonAiClient 异步转发
-     */
     public SseEmitter streamQuery(RagQueryRequest request) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -61,11 +57,24 @@ public class RagService {
             throw new BusinessException(400, "问题不能为空");
         }
         int topK = request.getTopK() != null ? request.getTopK() : 3;
+        List<RagHistoryItem> history = resolveHistory(request);
 
-        log.info("RAG 流式查询, userId={}, topK={}, question={}", userId, topK, question);
+        log.info("RAG 流式查询, userId={}, topK={}, historySize={}, question={}",
+                userId, topK, history.size(), question);
 
         SseEmitter emitter = new SseEmitter(120_000L);
-        pythonAiClient.ragQueryStream(question, topK, emitter);
+        pythonAiClient.ragQueryStream(question, topK, history, emitter);
         return emitter;
+    }
+
+    private List<RagHistoryItem> resolveHistory(RagQueryRequest request) {
+        if (request.getSessionId() == null) {
+            return Collections.emptyList();
+        }
+        return knowledgeSessionService.getTurnHistory(
+                request.getSessionId(),
+                request.getExcludeTurnId(),
+                RAG_HISTORY_LIMIT
+        );
     }
 }

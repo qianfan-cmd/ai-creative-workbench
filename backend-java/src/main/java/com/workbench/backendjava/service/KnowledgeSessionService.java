@@ -186,4 +186,41 @@ public class KnowledgeSessionService {
         vo.setReferences(readReferencesJson(turn.getReferencesJson()));
         return vo;
     }
+
+    /**
+     * 读取同会话 prior turns，供 RAG 多轮上下文（不含 references 全文）。
+     *
+     * @param sessionId      会话 id
+     * @param excludeTurnId  重新生成时排除的 turn（可为 null）
+     * @param limit          最多几轮
+     */
+    public List<com.workbench.backendjava.dto.RagHistoryItem> getTurnHistory(
+            Long sessionId,
+            Long excludeTurnId,
+            int limit
+    ) {
+        Long userId = requireUserId();
+        getOwnedSession(sessionId, userId);
+
+        List<KnowledgeTurn> turns = turnMapper.selectList(
+                new LambdaQueryWrapper<KnowledgeTurn>()
+                        .eq(KnowledgeTurn::getSessionId, sessionId)
+                        .ne(excludeTurnId != null, KnowledgeTurn::getId, excludeTurnId)
+                        .orderByDesc(KnowledgeTurn::getCreatedAt)
+                        .last("LIMIT " + limit)
+        );
+        // 倒序取出后反转为时间正序
+        java.util.Collections.reverse(turns);
+
+        return turns.stream()
+                .filter(t -> t.getQuestion() != null && t.getAnswer() != null && !t.getAnswer().isBlank())
+                .map(t -> {
+                    com.workbench.backendjava.dto.RagHistoryItem item =
+                            new com.workbench.backendjava.dto.RagHistoryItem();
+                    item.setQuestion(t.getQuestion());
+                    item.setAnswer(t.getAnswer());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
 }

@@ -36,3 +36,19 @@ class ChatResponse(BaseModel):
 
     reply: str   # 模型生成的文本
     model: str   # 实际使用的模型名，便于调试
+
+
+class ChatMessageItem(BaseModel):
+    """DeepSeek 多轮对话中的一条消息。"""
+
+    role: str = Field(..., description="user | assistant | system")
+    content: str = Field(..., min_length=1, description="消息正文")
+
+
+class ChatStreamRequest(BaseModel):
+    """
+    POST /ai/chat/stream 的请求体。
+    messages 直接使用 OpenAI/DeepSeek 格式，Java 从 DB 拼好后转发。
+    """
+
+    messages: list[ChatMessageItem] = Field(..., min_length=1, description="多轮对话历史")

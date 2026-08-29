@@ -6,33 +6,101 @@ export interface ChatRelyVO {
     reply: string;
 }
 
+/** 历史会话侧栏项 */
+export interface ConversationVO {
+    id: number
+    title: string
+    updatedAt?: string
+}
+
+export interface MessageVO {
+    id: number
+    role: 'user' | 'assistant'
+    content: string
+}
+
+export interface ConversationDetailVO {
+    id: number
+    title: string
+    messages: MessageVO[]
+}
+
 export async function chatApi(message: string) {
     const res = await request.post<ApiResponse<ChatRelyVO>>('/chat', { message });
     return res.data.data;
 }
 
-/**处理流式响应的回调函数 
- * 为什么用fetch请求而不是axios，因为axios默认把响应当 一整份json处理，不适合边收边读。
-sse是text/event-stream长连接，需要读response.body流。
-Res.body: ReadableStream
-.getReader():一段段读
-*/
-export interface ChatStreamHandlers {
-    onChunk: (chunk: string) => void; // 处理流式响应的每一块数据
-    onDone: () => void; // 处理流式响应完成
+/** 历史会话列表（侧栏只读展示，Phase C 接线切换） */
+export async function listConversationsApi() {
+    const res = await request.get<ApiResponse<ConversationVO[]>>('/conversations')
+    return res.data.data
 }
 
-export async function chatStreamApi(message: string, handlers: ChatStreamHandlers, signal?: AbortSignal) {
+export async function createConversationApi() {
+    const res = await request.post<ApiResponse<ConversationVO>>('/conversations')
+    return res.data.data
+}
+
+export async function getConversationApi(conversationId: number) {
+    const res = await request.get<ApiResponse<ConversationDetailVO>>(
+        `/conversations/${conversationId}`,
+    )
+    return res.data.data
+}
+
+/** 流式结束后批量写入 user + assistant（Phase C 接线） */
+export async function saveChatMessagesApi(
+    conversationId: number,
+    payload: { userContent: string; assistantContent: string },
+) {
+    await request.post<ApiResponse<null>>(
+        `/conversations/${conversationId}/messages`,
+        payload,
+    )
+}
+
+/** 重新生成后更新 assistant 消息（Phase C 接线） */
+export async function updateChatAssistantApi(
+    conversationId: number,
+    messageId: number,
+    assistantContent: string,
+) {
+    await request.put<ApiResponse<null>>(
+        `/conversations/${conversationId}/messages/${messageId}`,
+        { assistantContent },
+    )
+}
+
+/** 流式请求参数 */
+export interface ChatStreamOptions {
+    /** 可选：有值时 Java 从 DB 加载历史做多轮 LLM（Phase C 接线） */
+    conversationId?: number
+    onChunk: (chunk: string) => void
+    onDone: () => void
+}
+
+/**
+ * Chat SSE 流式接口。
+ * message 事件 data 为 JSON 编码的 chunk（保留 Markdown 换行）。
+ */
+export async function chatStreamApi(
+    message: string,
+    options: ChatStreamOptions,
+    signal?: AbortSignal,
+) {
     const token = getToken();
-    
+
     const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ message }),
-        signal, // 传给fetch，外部AbortController.signal触发abort时用，用于停止生成
+        body: JSON.stringify({
+            message,
+            ...(options.conversationId != null ? { conversationId: options.conversationId } : {}),
+        }),
+        signal,
     })
 
     if (!res.ok) {
@@ -40,42 +108,23 @@ export async function chatStreamApi(message: string, handlers: ChatStreamHandler
         throw new Error(errBody?.message || `请求失败 (${res.status})`);
     }
 
-    /**
-     * res.body响应体流，不是一次性字符串
-     * getReader()拿到ReadableStreamDefaultReader，用来read()
-     * reader.read()每次读一块二进制Uint8Array，直到读到done:true
-     */
     const reader = res.body?.getReader();
     if (!reader) {
         throw new Error('浏览器不支持流式响应');
     }
 
-    const decoder = new TextDecoder(); // 把字节Uint8Array转成字符串UTF-8
+    const decoder = new TextDecoder();
     let buffer = '';
     let currentEvent = '';
 
     while (true) {
-        const { done, value } = await reader.read(); /**后端complete后done会变成true */
+        const { done, value } = await reader.read();
         if (done) break;
 
-/**把字节解码成字符串，stream: true多字节字符可能被拆在两个chunk里，解码器自动判断边界 */
-        buffer += decoder.decode(value, { stream: true }); 
+        buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // pop()从数组中删除最后一个元素，并返回元素的值。最后一行可能不完整，先暂存到buffer
+        buffer = lines.pop() || '';
 
-
-        /**
-         * event: message
-           data: 收
-
-           event: message
-           data: 到
-
-           event: done
-           data: [DONE]
-
-           判断是否是事件类型行，是的话去掉event:
-         */
         for (const line of lines) {
             if (line.startsWith('event:')) {
                 currentEvent = line.slice(6).trim();
@@ -86,9 +135,18 @@ export async function chatStreamApi(message: string, handlers: ChatStreamHandler
                 const data = line.slice(5).trim();
 
                 if (currentEvent === 'done' || data === '[DONE]') {
-                    handlers.onDone();
-                } else {
-                    handlers.onChunk(data);
+                    options.onDone();
+                } else if (currentEvent === 'error') {
+                    throw new Error(data);
+                } else if (currentEvent === 'message') {
+                    // Python json.dumps 包装 chunk，还原含换行的 Markdown
+                    let chunk = data;
+                    try {
+                        chunk = JSON.parse(data) as string;
+                    } catch {
+                        // 兼容旧格式裸文本
+                    }
+                    options.onChunk(chunk);
                 }
                 continue;
             }
@@ -99,5 +157,5 @@ export async function chatStreamApi(message: string, handlers: ChatStreamHandler
         }
     }
 
-    handlers.onDone();
+    options.onDone();
 }

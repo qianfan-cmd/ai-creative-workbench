@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.config.AiServiceProperties;
+import com.workbench.backendjava.dto.RagHistoryItem;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import com.workbench.backendjava.vo.RagQueryVO;
@@ -101,13 +102,13 @@ public class PythonAiClient {
      * @param question 用户问题
      * @param topK     检索条数，传给 Python 的 top_k
      */
-    public RagQueryVO ragQuery(String question, int topK) {
+    public RagQueryVO ragQuery(String question, int topK, List<RagHistoryItem> history) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query";
 
-        // python 字段名是top_k，用 Map 避免 Java camelCase 序列化问题
         Map<String, Object> body = new HashMap<>();
         body.put("question", question);
         body.put("top_k", topK);
+        body.put("history", history != null ? history : List.of());
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -228,10 +229,45 @@ public class PythonAiClient {
     }
 
     /**
+     * 调用 Python POST /ai/chat/stream，把 SSE 事件转发到 emitter。
+     * messages 为 DeepSeek 多轮格式 [{role, content}, ...]。
+     */
+    public void chatStream(List<Map<String, String>> messages, SseEmitter emitter) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/chat/stream";
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Map<String, Object> body = new HashMap<>();
+                body.put("messages", messages);
+                String jsonBody = objectMapper.writeValueAsString(body);
+                log.info("转发 Python Chat stream, url={}, messageCount={}", url, messages.size());
+
+                restTemplate.execute(
+                        url,
+                        HttpMethod.POST,
+                        request -> {
+                            request.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                            request.getBody().write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                        },
+                        response -> {
+                            forwardPythonSse(response, emitter);
+                            return null;
+                        }
+                );
+            } catch (HttpStatusCodeException e) {
+                sendStreamError(emitter, "Python HTTP " + e.getStatusCode().value() + ": " + e.getResponseBodyAsString());
+            } catch (Exception e) {
+                log.error("Chat 流式转发失败", e);
+                sendStreamError(emitter, e.getMessage() != null ? e.getMessage() : "Chat 流式服务不可用");
+            }
+        });
+    }
+
+    /**
      * 调用 Python POST /ai/rag/query-stream，把 SSE 事件转发到 emitter。
      * 在异步线程里跑，避免阻塞 Tomcat 请求线程。
      */
-    public void ragQueryStream(String question, int topK, SseEmitter emitter) {
+    public void ragQueryStream(String question, int topK, List<RagHistoryItem> history, SseEmitter emitter) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query-stream";
 
         CompletableFuture.runAsync(() -> {
@@ -239,6 +275,7 @@ public class PythonAiClient {
                 Map<String, Object> body = new HashMap<>();
                 body.put("question", question);
                 body.put("top_k", topK);
+                body.put("history", history != null ? history : List.of());
                 String jsonBody = objectMapper.writeValueAsString(body);
                 log.info("转发 Python RAG stream, url={}, jsonBody={}", url, jsonBody);
 
