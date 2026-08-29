@@ -1,0 +1,79 @@
+.card {
+  max-width: 420px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--color-bg-subtle);
+}
+
+.coverFill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    var(--color-accent-subtle) 0%,
+    var(--color-bg-subtle) 50%,
+    var(--color-bg-muted) 100%
+  );
+}
+
+.coverBadge {
+  position: absolute;
+  bottom: var(--space-2);
+  right: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
+[data-theme='light'] .coverBadge {
+  background: rgba(24, 24, 27, 0.7);
+}
+
+.body {
+  padding: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+  line-height: 1.4;
+}
+
+.excerpt {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-3);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tag {
+  display: inline-block;
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.footer {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}

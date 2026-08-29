@@ -736,6 +736,181 @@ POST /api/rag/query            { question } → { answer, references[] }
 
 ---
 
+### 4.8 抠图工作台 Matting
+
+| 属性 | 值 |
+|------|-----|
+| **路由** | `/ops/matting` |
+| **原型文件** | `PreviewMattingWelcome.tsx`、`PreviewMattingStepSource/Config/Candidates/Save.tsx`、`PreviewMattingDialogs.tsx`、`PreviewImageSourcePanel.tsx` |
+| **建议文件** | `pages/MattingPage.tsx`、`components/ops/TaskSidebar.tsx`、`components/ops/CandidateGallery.tsx` |
+| **实施周次** | Week 12+（Phase 2 图文运营） |
+| **参考** | ai-center 美术机台任务侧栏/历史/候选画廊（布局与能力，非暗色 UI） |
+
+#### 页面目标
+
+运营人员选择源图（上传或素材库），配置抠图模板与 Prompt，生成多候选透明 PNG，选中后保存到 Assets（`matted` 标签）。
+
+#### 图片来源（步骤 ①，与 Campaign 共用组件）
+
+| 顶层路径 | 子路径 | 说明 |
+|----------|--------|------|
+| **直接上传** | — | Dropzone + 已选缩略图条 |
+| **素材库** | **已有素材** | mini 网格 Picker，带 `matted`/`reference` 标签 |
+| **素材库** | **AI 生图入库** | Prompt → 生成 4 张 → 选候选 → `PreviewTagAssetDialog` 打标入库 |
+
+原型：`PreviewImageSourcePanel`（`mode`: upload / library-existing / library-ai）；三态对比见 `PreviewMattingDialogs` 底部并排区块。
+
+#### 布局线框
+
+```
+┌────────────┬──────────────────────────────────────────────────┐
+│ TaskSidebar│ PreviewStepNav: ①源图 → ②配置 → ③候选 → ④保存   │
+│ 260px      ├──────────────────────────────────────────────────┤
+│ 新建任务/组 │ [当前步骤内容区]                                    │
+│ 置顶/分组   │  ③ 候选: CandidateGallery（checkerboard）         │
+│            ├──────────────────────────────────────────────────┤
+│            │ footer: [取消]  [保存到 Assets · matted]          │
+└────────────┴──────────────────────────────────────────────────┘
+```
+
+#### 空态（PreviewMattingWelcome）
+
+| 元素 | 规格 |
+|------|------|
+| 左栏 | TaskSidebar（新建任务/分组、置顶、未分组、文件夹折叠） |
+| 右区 | 居中 Scissor 图标 + 「抠图工作台 Matting」+ 引导文案 |
+
+#### 工作态四步流（各为独立预览块）
+
+| 步骤 | 原型文件 | 内容 |
+|------|----------|------|
+| ① 源图 | `PreviewMattingStepSource` | `PreviewImageSourcePanel`（默认 upload 态） |
+| ② 配置 | `PreviewMattingStepConfig` | 源图只读条 + 模板/Prompt/模型 + 「框选区域」 |
+| ③ 候选 | `PreviewMattingStepCandidates` | CandidateGallery + 重新生成/历史 |
+| ④ 保存 | `PreviewMattingStepSave` | 已选大图预览 + 标签 + 保存说明 |
+
+外壳组件：`PreviewMattingStepFrame`（TaskSidebar + StepNav + footer 按步变化）
+
+#### 共用组件
+
+| 原型 | 业务 | 说明 |
+|------|------|------|
+| PreviewTaskSidebar | TaskSidebar | 260px，任务行 active/running/done |
+| PreviewStepNav | StepNav | 水平四步条 |
+| PreviewCandidateGallery | CandidateGallery | checkerboard、选中勾、已选计数 |
+| PreviewOpsDialog | OpsDialog | 新建/重命名任务 |
+| PreviewHistoryDrawer | HistoryDrawer | 右侧历史生成列表 |
+| PreviewImageSourcePanel | ImageSourcePanel | 上传 / 素材库·已有 / 素材库·AI 入库 |
+| PreviewTagAssetDialog | TagAssetDialog | AI 候选打标入库 |
+| PreviewMattingStepFrame | MattingStepFrame | 四步共用外壳 |
+
+#### API 占位
+
+```
+POST /api/ops/matting/tasks          新建任务
+POST /api/ops/matting/{id}/generate    生成候选
+POST /api/ops/matting/{id}/save        保存到 Assets
+GET  /api/ops/matting/{id}/history     历史生成
+```
+
+#### 验收标准（Week 12+）
+
+- [ ] 空态：TaskSidebar + welcome 与 PreviewMattingWelcome 一致
+- [ ] 四步各块独立可见，StepNav 高亮对应步骤
+- [ ] 图片来源三态（upload / library-existing / library-ai）+ 打标入库 Dialog
+- [ ] 对话框/历史 drawer 与 PreviewMattingDialogs 一致
+- [ ] **非 Chat 气泡**主布局；Studio Neutral 色板
+- [ ] 模块 A 独立路由，不嵌入 Campaign Tab
+
+---
+
+### 4.9 活动帖工作流 Campaign
+
+| 属性 | 值 |
+|------|-----|
+| **路由** | `/ops/campaign` |
+| **原型文件** | `PreviewCampaignWorkspace.tsx`、`PreviewCampaignPostCard.tsx`、`PreviewCampaignImageSources.tsx`、`PreviewImageSourcePanel.tsx` |
+| **建议文件** | `pages/CampaignPage.tsx`、`components/ops/CampaignPostCard.tsx` |
+| **实施周次** | Week 12+（Phase 2 图文运营） |
+| **参考** | Brief §5 活动帖双栏 + Tab 工作流 |
+
+#### 页面目标
+
+运营填写活动信息，生成配图候选与推送文案，预览牛客帖卡片，导出草稿包或 zip。
+
+#### 布局线框
+
+```
+┌─────────────────────┬────────────────────────────────────────┐
+│ 活动信息（表单）~360px│  Tab: [配图] [文案] [预览]              │
+│ 主题/时间/受众/福利  │  配图: ImageSourcePanel + 生候选 + Gallery │
+│ 风格/画幅/禁用词     │  文案: 生成初稿 + 风格模板 + prose 块     │
+│ [保存草稿]          │  预览: CampaignPostCard + 下载/草稿包     │
+└─────────────────────┴────────────────────────────────────────┘
+```
+
+#### 左栏表单字段
+
+| 字段 | 类型 | 必填 |
+|------|------|------|
+| 活动主题 | Input | 是 |
+| 活动时间 | DateRange | 否 |
+| 目标受众 | Input | 否 |
+| 福利亮点 | TextArea | 否 |
+| 视觉风格 | Select | 否 |
+| 画幅比例 | Select | 否 |
+| 禁用词 | TextArea | 否 |
+
+#### 配图 Tab 图片来源
+
+与 Matting 步骤 ① 共用 `PreviewImageSourcePanel`（contextLabel=`参考图`）：
+
+1. **直接上传** 或 **素材库**（已有素材 / AI 生图打标入库）
+2. 参考图选定后 → 「生成 4 张候选」→ CandidateGallery
+3. 选中配图进入草稿包；可另存 Assets · `generated`
+
+独立三态对比：`PreviewCampaignImageSources`（三列并排）
+
+#### 右栏 Tab
+
+| Tab | 内容 |
+|-----|------|
+| 配图 | ImageSourcePanel + 「生成 4 张候选」+ CandidateGallery + 选用说明 |
+| 文案 | 「生成初稿」+ 风格模板 Select + 「优化」；**prose 文档块**（非 Chat 气泡） |
+| 预览 | CampaignPostCard（16:9 封面 + 标题 + 正文 + #活动）+ 下载 zip / 保存草稿包 |
+
+#### 草稿包结构（MVP）
+
+```json
+{
+  "title": "...",
+  "body": "...",
+  "coverAssetId": "...",
+  "tags": ["活动"],
+  "exportedAt": "ISO8601"
+}
+```
+
+#### API 占位
+
+```
+POST /api/ops/campaign/draft           保存草稿
+POST /api/ops/campaign/generate-images 生成配图
+POST /api/ops/campaign/generate-copy    生成/优化文案
+GET  /api/ops/campaign/{id}/export      导出 zip
+```
+
+#### 验收标准（Week 12+）
+
+- [ ] 左表单 + 右三 Tab 与 PreviewCampaignWorkspace 一致
+- [ ] 配图 Tab 含 ImageSourcePanel + 生图候选；三态预览块可对照
+- [ ] 预览 Tab 牛客帖卡片与 PreviewCampaignPostCard 一致
+- [ ] 文案区为 prose 块，**不用** PreviewMessageRow 气泡
+- [ ] 模块 B 独立路由 `/ops/campaign`
+- [ ] MVP 底部提示「复制到牛客手动发布」
+
+---
+
 ## 5. 组件复用与文件映射
 
 从原型复制到业务组件，**禁止**业务代码 `import Preview*`。
@@ -752,6 +927,22 @@ POST /api/rag/query            { question } → { answer, references[] }
 | PreviewConversationSidebar | ChatHistorySidebar | `components/chat/ChatHistorySidebar.tsx` |
 | PreviewMessageRow | ChatMessageRow | `components/chat/ChatMessageRow.tsx` |
 | PreviewKnowledgePanel | KnowledgePanel | `pages/KnowledgePage.tsx`（线程式 RAG） |
+| PreviewTaskSidebar | TaskSidebar | `components/ops/TaskSidebar.tsx` |
+| PreviewStepNav | StepNav | `components/ops/StepNav.tsx` |
+| PreviewCandidateGallery | CandidateGallery | `components/ops/CandidateGallery.tsx` |
+| PreviewOpsDialog | OpsDialog | `components/ops/OpsDialog.tsx` |
+| PreviewHistoryDrawer | HistoryDrawer | `components/ops/HistoryDrawer.tsx` |
+| PreviewMattingWelcome | MattingEmptyState | `pages/MattingPage.tsx`（空态） |
+| PreviewMattingStepSource | MattingStepSource | `pages/MattingPage.tsx`（步骤 ①） |
+| PreviewMattingStepConfig | MattingStepConfig | `pages/MattingPage.tsx`（步骤 ②） |
+| PreviewMattingStepCandidates | MattingStepCandidates | `pages/MattingPage.tsx`（步骤 ③） |
+| PreviewMattingStepSave | MattingStepSave | `pages/MattingPage.tsx`（步骤 ④） |
+| PreviewMattingStepFrame | MattingStepFrame | `components/ops/MattingStepFrame.tsx` |
+| PreviewImageSourcePanel | ImageSourcePanel | `components/ops/ImageSourcePanel.tsx` |
+| PreviewTagAssetDialog | TagAssetDialog | `components/ops/TagAssetDialog.tsx` |
+| PreviewCampaignWorkspace | CampaignPage | `pages/CampaignPage.tsx` |
+| PreviewCampaignImageSources | — | 配图来源三态参考（实现时并入 ImageSourcePanel） |
+| PreviewCampaignPostCard | CampaignPostCard | `components/ops/CampaignPostCard.tsx` |
 | tokens.css | 全局 tokens | `src/styles/tokens.css` |
 | antdTheme.ts | 主题 | `src/theme/antdTheme.ts` |
 | global.css | 全局样式 | `src/styles/global.css` |
@@ -779,6 +970,8 @@ POST /api/rag/query            { question } → { answer, references[] }
 | `/assets/upload` | AssetUploadPage | Phase 2（占位保留） |
 | `/chat` | — | Phase 2 新增 |
 | `/knowledge` | — | Phase 2 新增 |
+| `/ops/matting` | — | Phase 2 新增（Week 12+） |
+| `/ops/campaign` | — | Phase 2 新增（Week 12+） |
 
 ### 6.2 推荐实施顺序
 
@@ -792,6 +985,7 @@ Step 6  实现 AssetListPage（Stats + Toolbar + Grid + Table）
 Step 7  （Phase 2）AssetUploadPage
 Step 8  （Phase 2）ChatPage + SSE
 Step 9  （Phase 2）KnowledgePage + RAG
+Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 ```
 
 **导师 AI 执行原则**：每次只做一个 Step，完成后对照第 7 章验收清单，再进入下一步。
@@ -850,6 +1044,20 @@ Step 9  （Phase 2）KnowledgePage + RAG
 - [x] RAG 联调通过，引用可追溯
 - [x] 文档列表 API 持久化（Chroma）；历史会话 MySQL 持久化
 
+### 7.8 MattingPage（Week 12+）
+
+- [ ] 空态与 PreviewMattingWelcome 一致
+- [ ] 四步各块独立，StepNav 高亮对应步骤
+- [ ] 图片来源三态 + TagAssetDialog + 候选画廊 checkerboard
+- [ ] 保存到 Assets API 联调
+
+### 7.9 CampaignPage（Week 12+）
+
+- [ ] 左表单 + 右三 Tab 与 PreviewCampaignWorkspace 一致
+- [ ] 配图 Tab：ImageSourcePanel + 生图候选；三态预览可对照
+- [ ] 文案 prose 块（非 Chat 气泡）
+- [ ] 预览 Tab PostCard + 导出草稿包
+
 ---
 
 ## 8. 附录
@@ -869,6 +1077,18 @@ Step 9  （Phase 2）KnowledgePage + RAG
 | `PreviewConversationSidebar.tsx` | 4.4.2 / 4.5 历史侧栏 |
 | `PreviewMessageRow.tsx` | 4.4.2 / 4.5 消息行 |
 | `PreviewKnowledgePanel.tsx` | 4.5 Knowledge / RAG |
+| `PreviewMattingWelcome.tsx` | 4.8 Matting 空态 |
+| `PreviewMattingStepSource.tsx` | 4.8 Matting 步骤 ① 源图 |
+| `PreviewMattingStepConfig.tsx` | 4.8 Matting 步骤 ② 配置 |
+| `PreviewMattingStepCandidates.tsx` | 4.8 Matting 步骤 ③ 候选 |
+| `PreviewMattingStepSave.tsx` | 4.8 Matting 步骤 ④ 保存 |
+| `PreviewMattingDialogs.tsx` | 4.8 Matting 对话框/历史/图片来源三态 |
+| `PreviewImageSourcePanel.tsx` | 4.8 / 4.9 图片来源 |
+| `PreviewTagAssetDialog.tsx` | 4.8 / 4.9 AI 打标入库 |
+| `PreviewCampaignImageSources.tsx` | 4.9 Campaign 参考图三态 |
+| `PreviewCampaignWorkspace.tsx` | 4.9 Campaign 工作台 |
+| `PreviewCampaignPostCard.tsx` | 4.9 Campaign 发帖预览 |
+| `PreviewTaskSidebar.tsx` 等 Ops 共用 | 4.8 / 4.9 |
 | `tokens.css` / `antdTheme.ts` | 第 2 章 |
 
 ### 8.2 Phase 2 待设计 / 待实装模块
@@ -884,6 +1104,8 @@ Step 9  （Phase 2）KnowledgePage + RAG
 | 虚拟列表 | Chat / Assets | 长列表性能优化 |
 | Dark 主题持久化 | 全局 | localStorage + ThemeToggle |
 
+> **图文运营（Matting / Campaign）** 设计稿已完成，见 style-preview.html Ops 区块；需求见 §4.8 / §4.9。
+
 ### 8.3 给全栈导师 AI 的执行提示
 
 1. **开始任何页面前**：阅读本文档对应章节 + 打开 style-preview 对照 + 阅读 frontend-style-guide.md
@@ -891,7 +1113,8 @@ Step 9  （Phase 2）KnowledgePage + RAG
 3. **保留现有 API 逻辑**：Login/Register 的 `onFinish` 已可用，只迁移 UI
 4. **不要 import Preview* 到 pages/**：复制样式与结构到业务组件
 5. **Phase 2 模块不要提前创建**：Chat/Knowledge/Upload 除非学习者进入对应 Week
-6. **完成后**：提醒学习者勾选第 7 章验收清单，并 `pnpm dev` 自测
+6. **Ops 模块**：Matting / Campaign 独立路由；禁止 import Preview*；抠图侧栏可参考 ai-center 交互清单，React 用简化 state
+7. **完成后**：提醒学习者勾选第 7 章验收清单，并 `pnpm dev` 自测
 
 ### 8.4 相关文档
 

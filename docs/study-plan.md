@@ -3434,6 +3434,9 @@ POST /api/knowledge/upload
 
 # 第 12 周：AI 工作流、Prompt 模板、评估日志
 
+> **产品说明（图文运营双模块、抠图/活动帖工作流、ai-center 参考映射）：** 见 [`graphic-ops-workflow-brief.md`](graphic-ops-workflow-brief.md)  
+> **技术架构（分层、表结构、API 契约、Phase 路线图）：** 见 [`week12-ops-architecture.md`](week12-ops-architecture.md)
+
 
 
 ## 目标

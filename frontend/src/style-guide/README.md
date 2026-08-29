@@ -50,8 +50,10 @@ pnpm dev
 3. **AI Chat · 初始空态** — `PreviewChatEmpty`（GPT 式问候 + pill Composer）
 4. **AI Chat · 对话态** — `PreviewChatActive`（历史侧栏 + Avatar + 气泡 + SSE）
 5. **Knowledge / RAG** — `PreviewKnowledgePanel`（飞书式：文档库 + 历史问答 + 线程回答 + References）
+6. **抠图 Matting** — 四步独立预览（Source/Config/Candidates/Save）+ Dialogs（含图片来源三态 + 打标入库）
+7. **活动帖 Campaign** — `PreviewCampaignImageSources`（参考图三态）+ `PreviewCampaignWorkspace` + PostCard
 
-共用组件：`PreviewConversationSidebar`、`PreviewMessageRow`
+共用组件：`PreviewConversationSidebar`、`PreviewMessageRow`（Chat/Knowledge）；`PreviewTaskSidebar`、`PreviewCandidateGallery`、`PreviewStepNav`、`PreviewOpsDialog`、`PreviewHistoryDrawer`、`PreviewImageSourcePanel`、`PreviewTagAssetDialog`（Ops）
 
 ## Signature 元素
 

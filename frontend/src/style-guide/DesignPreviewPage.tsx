@@ -13,6 +13,14 @@ import PreviewAssetGrid from './components/PreviewAssetGrid'
 import PreviewChatEmpty from './components/PreviewChatEmpty'
 import PreviewChatActive from './components/PreviewChatActive'
 import PreviewKnowledgePanel from './components/PreviewKnowledgePanel'
+import PreviewMattingWelcome from './components/PreviewMattingWelcome'
+import PreviewMattingStepSource from './components/PreviewMattingStepSource'
+import PreviewMattingStepConfig from './components/PreviewMattingStepConfig'
+import PreviewMattingStepCandidates from './components/PreviewMattingStepCandidates'
+import PreviewMattingStepSave from './components/PreviewMattingStepSave'
+import PreviewMattingDialogs from './components/PreviewMattingDialogs'
+import PreviewCampaignImageSources from './components/PreviewCampaignImageSources'
+import PreviewCampaignWorkspace from './components/PreviewCampaignWorkspace'
 import ThemeToggle from './components/ThemeToggle'
 import styles from './DesignPreviewPage.module.css'
 
@@ -186,6 +194,14 @@ export default function DesignPreviewPage() {
         <PreviewChatEmpty />
         <PreviewChatActive />
         <PreviewKnowledgePanel />
+        <PreviewMattingWelcome />
+        <PreviewMattingStepSource />
+        <PreviewMattingStepConfig />
+        <PreviewMattingStepCandidates />
+        <PreviewMattingStepSave />
+        <PreviewMattingDialogs />
+        <PreviewCampaignImageSources />
+        <PreviewCampaignWorkspace />
       </div>
     </ConfigProvider>
   )

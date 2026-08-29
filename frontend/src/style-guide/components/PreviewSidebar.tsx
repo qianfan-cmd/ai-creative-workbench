@@ -3,6 +3,8 @@ import {
   AppstoreOutlined,
   BookOutlined,
   MessageOutlined,
+  RocketOutlined,
+  ScissorOutlined,
   SettingOutlined,
   TagsOutlined,
 } from '@ant-design/icons'
@@ -20,6 +22,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'tags', label: '标签 Tags', icon: <TagsOutlined /> },
   { key: 'chat', label: 'AI 对话 Chat', icon: <MessageOutlined /> },
   { key: 'knowledge', label: '知识库 Knowledge', icon: <BookOutlined /> },
+  { key: 'matting', label: '抠图 Matting', icon: <ScissorOutlined /> },
+  { key: 'campaign', label: '活动帖 Campaign', icon: <RocketOutlined /> },
   { key: 'settings', label: '设置 Settings', icon: <SettingOutlined /> },
 ]
 

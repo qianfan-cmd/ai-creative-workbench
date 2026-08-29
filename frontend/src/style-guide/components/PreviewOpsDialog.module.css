@@ -1,0 +1,102 @@
+.wrap {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.dialog {
+  position: relative;
+  z-index: 1;
+  width: 360px;
+  max-width: calc(100% - var(--space-8));
+  margin: var(--space-10) auto;
+  padding: var(--space-6);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-5);
+}
+
+.field {
+  margin-bottom: var(--space-4);
+}
+
+.label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+}
+
+.inputMock {
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-5);
+  cursor: default;
+}
+
+.checkboxBox {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-bg-surface);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.cancelBtn,
+.primaryBtn {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: default;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.primaryBtn {
+  background: var(--color-ink);
+  color: var(--color-inverse);
+  border-color: var(--color-ink);
+}
+
+[data-theme='dark'] .primaryBtn {
+  background: var(--color-accent);
+  color: var(--color-canvas);
+  border-color: var(--color-accent);
+}
