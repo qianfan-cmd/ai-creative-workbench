@@ -1,19 +1,21 @@
-package com.workbench.backendjava.dto;
+package com.workbench.backendjava.vo;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 框选区域查询结果（对齐美术机台 crop/list：仅坐标与 useOriginal，供刷新/切任务恢复 UI）。
+ */
 @Data
-public class MattingCropSaveRequest {
-    private List<CropRegionItem> regions;
+public class MattingCropRegionsVO {
     private Boolean useOriginal;
-    /** true：草稿自动保存，仅持久化坐标，不清空后续阶段数据 */
-    private Boolean draft;
+    private List<RegionItem> regions = new ArrayList<>();
 
     @Data
-    public static class CropRegionItem {
+    public static class RegionItem {
         private String id;
         @JsonProperty("xPct")
         private Double xPct;
@@ -23,6 +25,5 @@ public class MattingCropSaveRequest {
         private Double wPct;
         @JsonProperty("hPct")
         private Double hPct;
-        private Long subAssetId;
     }
 }

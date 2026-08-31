@@ -19,31 +19,54 @@
   gap: var(--space-1);
 }
 
+/* 对齐美术机台 .cut-canvas__frame：相对定位 + overlay inset 0 */
 .canvas {
   position: relative;
   width: 100%;
-  height: 360px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-bg-subtle);
   overflow: hidden;
   cursor: crosshair;
   user-select: none;
+  touch-action: none;
 }
 
+.canvasPlaceholder {
+  min-height: 200px;
+  height: 360px;
+}
+
+.canvasAspect {
+  height: auto;
+  margin: 0 auto;
+}
+
+.canvasFull {
+  min-height: 200px;
+  margin: 0 auto;
+}
+
+.canvasReadonly {
+  cursor: default;
+}
+
+/* 对齐美术机台 .cut-canvas__frame img：铺满画框，与 overlay 共用同一百分比坐标系 */
 .sourceImg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  display: block;
+  user-select: none;
   pointer-events: none;
 }
 
-.sourceImgSmall {
-  max-width: 100%;
-  max-height: 240px;
-  object-fit: contain;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--color-border);
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .regionBox {
@@ -51,35 +74,156 @@
   border: 2px solid var(--color-accent);
   background: rgba(13, 148, 136, 0.12);
   box-sizing: border-box;
+  pointer-events: auto;
+  cursor: move;
+}
+
+.regionSelected {
+  border-width: 2px;
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.45);
+  background: rgba(13, 148, 136, 0.18);
 }
 
 .regionDraft {
   border-style: dashed;
+  pointer-events: none;
+  cursor: crosshair;
+}
+
+.regionOriginal {
+  border-color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+  cursor: default;
+}
+
+.regionBadge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 8px;
+  min-height: 20px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(13, 148, 136, 0.85);
+  line-height: 1.2;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.badgeOriginal {
+  background: rgba(34, 197, 94, 0.9);
 }
 
 .regionDelete {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   border: none;
-  background: var(--color-surface);
-  border-radius: var(--radius-sm);
-  padding: 2px 4px;
+  background: #ef4444;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-size: 12px;
-  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
 }
 
-.regionList {
+.regionHandle {
+  position: absolute;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--color-accent);
+  padding: 0;
   margin: 0;
-  padding-left: var(--space-4);
+}
+
+.handle_nw {
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  cursor: nwse-resize;
+}
+
+.handle_n {
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ns-resize;
+}
+
+.handle_ne {
+  top: 0;
+  right: 0;
+  transform: translate(50%, -50%);
+  cursor: nesw-resize;
+}
+
+.handle_e {
+  top: 50%;
+  right: 0;
+  transform: translate(50%, -50%);
+  cursor: ew-resize;
+}
+
+.handle_se {
+  bottom: 0;
+  right: 0;
+  transform: translate(50%, 50%);
+  cursor: nwse-resize;
+}
+
+.handle_s {
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  cursor: ns-resize;
+}
+
+.handle_sw {
+  bottom: 0;
+  left: 0;
+  transform: translate(-50%, 50%);
+  cursor: nesw-resize;
+}
+
+.handle_w {
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+}
+
+.status {
+  margin: 0;
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
 }
 
+.statusLimit {
+  color: #b45309;
+}
+
 .originalPreview {
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.modalHint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }

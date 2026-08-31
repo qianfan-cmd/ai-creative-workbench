@@ -1,5 +1,6 @@
 package com.workbench.backendjava.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -20,9 +21,13 @@ public class MattingConfig {
     @Data
     public static class CropRegion {
         private String id;
+        @JsonProperty("xPct")
         private Double xPct;
+        @JsonProperty("yPct")
         private Double yPct;
+        @JsonProperty("wPct")
         private Double wPct;
+        @JsonProperty("hPct")
         private Double hPct;
         private Long subAssetId;
         private String subAssetUrl;

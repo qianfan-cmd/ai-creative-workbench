@@ -9,6 +9,31 @@ export interface CropRectPct {
   hPct: number
 }
 
+/** 将 API / config_json 中的区域字段规范化为 CropRectPct（兼容缺失字段与越界值） */
+export function normalizeCropRegion(
+  raw: Record<string, unknown>,
+  index: number,
+): CropRectPct | null {
+  const xPct = clampPct(Number(raw.xPct ?? raw.x_pct ?? 0))
+  const yPct = clampPct(Number(raw.yPct ?? raw.y_pct ?? 0))
+  let wPct = clampPct(Number(raw.wPct ?? raw.w_pct ?? 0))
+  let hPct = clampPct(Number(raw.hPct ?? raw.h_pct ?? 0))
+  if (!Number.isFinite(xPct) || !Number.isFinite(yPct) || !Number.isFinite(wPct) || !Number.isFinite(hPct)) {
+    return null
+  }
+  if (wPct <= 0 || hPct <= 0) return null
+  if (xPct + wPct > 100) wPct = 100 - xPct
+  if (yPct + hPct > 100) hPct = 100 - yPct
+  if (wPct <= 0 || hPct <= 0) return null
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `r_restored_${index}`
+  return { id, xPct, yPct, wPct, hPct }
+}
+
+function clampPct(v: number) {
+  if (!Number.isFinite(v)) return 0
+  return Math.max(0, Math.min(100, v))
+}
+
 export async function cropImageToFile(
   imageUrl: string,
   rect: CropRectPct,
@@ -54,9 +79,15 @@ export function displayPointToImagePct(
   const rect = container.getBoundingClientRect()
   const cw = rect.width
   const ch = rect.height
+  if (cw <= 0 || ch <= 0 || naturalW <= 0 || naturalH <= 0) {
+    return { xPct: 0, yPct: 0 }
+  }
   const scale = Math.min(cw / naturalW, ch / naturalH)
   const dispW = naturalW * scale
   const dispH = naturalH * scale
+  if (dispW <= 0 || dispH <= 0) {
+    return { xPct: 0, yPct: 0 }
+  }
   const ox = (cw - dispW) / 2
   const oy = (ch - dispH) / 2
   const lx = clientX - rect.left - ox
@@ -66,22 +97,29 @@ export function displayPointToImagePct(
   return { xPct, yPct }
 }
 
-export function imagePctRectToDisplayStyle(
-  r: CropRectPct,
+/** 与美术机台 getRegionStyle 一致：overlay 内 CSS 百分比定位 */
+export function pctRectToCssStyle(r: CropRectPct): CSSProperties {
+  return {
+    left: `${r.xPct}%`,
+    top: `${r.yPct}%`,
+    width: `${r.wPct}%`,
+    height: `${r.hPct}%`,
+  }
+}
+
+/** 画框按原图 natural 宽高比布局时的 frame 样式（inline / 完整图弹层共用） */
+export function buildNaturalAspectFrameStyle(
   naturalW: number,
   naturalH: number,
-  containerW: number,
-  containerH: number,
-): CSSProperties {
-  const scale = Math.min(containerW / naturalW, containerH / naturalH)
-  const dispW = naturalW * scale
-  const dispH = naturalH * scale
-  const ox = (containerW - dispW) / 2
-  const oy = (containerH - dispH) / 2
+  opts?: { maxHeight?: string; maxWidth?: string },
+): CSSProperties | undefined {
+  if (naturalW <= 0 || naturalH <= 0) return undefined
+  const maxH = opts?.maxHeight ?? 'min(360px, 50vh)'
+  const maxW = opts?.maxWidth ?? '100%'
   return {
-    left: `${ox + (r.xPct / 100) * dispW}px`,
-    top: `${oy + (r.yPct / 100) * dispH}px`,
-    width: `${(r.wPct / 100) * dispW}px`,
-    height: `${(r.hPct / 100) * dispH}px`,
+    aspectRatio: `${naturalW} / ${naturalH}`,
+    width: `min(${maxW}, calc(${maxH} * ${naturalW} / ${naturalH}))`,
+    maxHeight: maxH,
+    height: 'auto',
   }
 }

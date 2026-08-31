@@ -12,6 +12,7 @@ import com.workbench.backendjava.dto.MattingTaskPatchRequest;
 import com.workbench.backendjava.service.MattingTaskService;
 import com.workbench.backendjava.vo.AssetVO;
 import com.workbench.backendjava.vo.GenerationJobVO;
+import com.workbench.backendjava.vo.MattingCropRegionsVO;
 import com.workbench.backendjava.vo.MattingElementsVO;
 import com.workbench.backendjava.vo.MattingExtractStatusVO;
 import com.workbench.backendjava.vo.MattingTaskVO;
@@ -46,6 +47,11 @@ public class OpsMattingController {
     @PatchMapping("/{id}")
     public Result<MattingTaskVO> patch(@PathVariable Long id, @RequestBody MattingTaskPatchRequest request) {
         return Result.ok(mattingTaskService.patchTask(id, request));
+    }
+
+    @GetMapping("/{id}/crop-regions")
+    public Result<MattingCropRegionsVO> getCropRegions(@PathVariable Long id) {
+        return Result.ok(mattingTaskService.getCropRegions(id));
     }
 
     @PutMapping("/{id}/crop-regions")

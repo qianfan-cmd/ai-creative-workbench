@@ -11,6 +11,7 @@ import {
   confirmMattingCropApi,
   confirmMattingExtractApi,
   createMattingTaskApi,
+  getMattingCropRegionsApi,
   getMattingElementsApi,
   getMattingExtractStatusApi,
   getMattingTaskApi,
@@ -28,20 +29,58 @@ import ElementListPanel from '@/components/ops/ElementListPanel'
 import ImageSourcePanel from '@/components/ops/ImageSourcePanel'
 import StepNav from '@/components/ops/StepNav'
 import TaskSidebar from '@/components/ops/TaskSidebar'
-import { cropImageToFile, type CropRectPct } from '@/utils/cropImage'
+import { useMattingCropDraftPersist } from '@/hooks/useMattingCropDraftPersist'
+import { cropImageToFile, normalizeCropRegion, type CropRectPct } from '@/utils/cropImage'
 import styles from '@/pages/MattingPage.module.css'
 
 const POLL_MS = 5000
 const MAX_POLL = 500
+const SESSION_KEY = 'matting:activeTaskId'
+
+function parseConfigSummary(configJson?: string | null) {
+  if (!configJson) {
+    return { hasElements: false, hasExtract: false, hasCrop: false }
+  }
+  try {
+    const cfg = JSON.parse(configJson) as {
+      elements?: unknown[]
+      elementImages?: unknown[]
+      cropRegions?: unknown[]
+    }
+    return {
+      hasElements: (cfg.elements?.length ?? 0) > 0,
+      hasExtract: (cfg.elementImages?.length ?? 0) > 0,
+      hasCrop: (cfg.cropRegions?.length ?? 0) > 0,
+    }
+  } catch {
+    return { hasElements: false, hasExtract: false, hasCrop: false }
+  }
+}
+
+function confirmDestructive(title: string, content: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title,
+      content,
+      okText: '确认清空并继续',
+      cancelText: '取消',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
+  })
+}
 
 export default function MattingPage() {
   const [tasks, setTasks] = useState<MattingTaskVO[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [task, setTask] = useState<MattingTaskVO | null>(null)
+  const [viewStage, setViewStage] = useState(1)
   const [elements, setElements] = useState<MattingElementsVO | null>(null)
   const [extractStatus, setExtractStatus] = useState<MattingExtractStatusVO | null>(null)
   const [cropRegions, setCropRegions] = useState<CropRectPct[]>([])
   const [useOriginal, setUseOriginal] = useState(false)
+  /** GET crop-regions 完成后才允许草稿回写，避免刷新/loadTask 时用 [] 覆盖服务端 */
+  const [cropHydrated, setCropHydrated] = useState(false)
   const [candidateCount, setCandidateCount] = useState(2)
   const [detecting, setDetecting] = useState(false)
   const [confirmingCrop, setConfirmingCrop] = useState(false)
@@ -51,11 +90,94 @@ export default function MattingPage() {
   const pollRef = useRef(0)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const activeIdRef = useRef<number | null>(null)
+  const cropDraftRef = useRef<ReturnType<typeof useMattingCropDraftPersist> | null>(null)
+  const cropLoadSeqRef = useRef(0)
+  const initialSessionRestoreRef = useRef(false)
+
+  const farthestStage = task?.stage ?? 1
+  const canPreviewSave =
+    farthestStage >= 4 &&
+    (extractStatus?.extractStatus === 'done' || extractStatus?.extractStatus === 'partial_failed')
 
   const refreshTasks = useCallback(async () => {
     const list = await listMattingTasksApi()
     setTasks(list)
   }, [])
+
+  /** 仅解析与框选无关的 config 字段（框选坐标走 GET crop-regions） */
+  const applyTaskMetaFromConfig = useCallback((t: MattingTaskVO) => {
+    if (!t.configJson) return
+    try {
+      const cfg = JSON.parse(t.configJson) as { candidateCount?: number }
+      if (cfg.candidateCount) setCandidateCount(cfg.candidateCount)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const handleCropDraftSaved = useCallback((configJson: string) => {
+    setTask((prev) => (prev ? { ...prev, configJson } : prev))
+  }, [])
+
+  const cropDraft = useMattingCropDraftPersist({
+    taskId: task?.id ?? null,
+    regions: cropRegions,
+    useOriginal,
+    enabled: !!task?.sourceAssetId,
+    hydrated: cropHydrated,
+    onSaved: handleCropDraftSaved,
+  })
+
+  useEffect(() => {
+    cropDraftRef.current = cropDraft
+    activeIdRef.current = activeId
+  }, [cropDraft, activeId])
+
+  /**
+   * GET crop-regions 恢复框选 UI（进入步骤②时调用；PUT 草稿由 useMattingCropDraftPersist 负责）
+   */
+  const hydrateCropRegions = useCallback(async (taskId: number) => {
+    const seq = ++cropLoadSeqRef.current
+    cropDraftRef.current?.pausePersist()
+    setCropHydrated(false)
+
+    try {
+      const data = await getMattingCropRegionsApi(taskId)
+      if (seq !== cropLoadSeqRef.current) return
+
+      setUseOriginal(!!data.useOriginal)
+      const restored = (data.regions ?? [])
+        .map((r, idx) => normalizeCropRegion(r as unknown as Record<string, unknown>, idx))
+        .filter((r): r is CropRectPct => r != null)
+      setCropRegions(restored)
+
+      if (import.meta.env.DEV) {
+        console.debug(`[crop] GET hydrate task=${taskId} regions=${restored.length}`)
+      }
+
+      if (seq !== cropLoadSeqRef.current) return
+      cropDraftRef.current?.syncLastSavedPayload({
+        regions: restored,
+        useOriginal: !!data.useOriginal,
+      })
+    } catch {
+      if (seq !== cropLoadSeqRef.current) return
+      setCropRegions([])
+      setUseOriginal(false)
+      cropDraftRef.current?.syncLastSavedPayload({ regions: [], useOriginal: false })
+    }
+
+    if (seq !== cropLoadSeqRef.current) return
+    setCropHydrated(true)
+    cropDraftRef.current?.resumePersist()
+  }, [])
+
+  /** 每次进入步骤②且已选源图时 GET 一次（切任务回来 / 刷新后点步骤②） */
+  useEffect(() => {
+    if (viewStage !== 2 || !task?.id || !task.sourceAssetId) return
+    void hydrateCropRegions(task.id)
+  }, [viewStage, task?.id, task?.sourceAssetId, hydrateCropRegions])
 
   const loadElements = useCallback(async (id: number) => {
     setLoadingElements(true)
@@ -83,43 +205,54 @@ export default function MattingPage() {
 
   const loadTask = useCallback(
     async (id: number) => {
+      const prevId = activeIdRef.current
+      if (prevId != null && prevId !== id) {
+        await cropDraftRef.current?.flushDraft()
+      }
+      cropDraftRef.current?.pausePersist()
+      setCropHydrated(false)
+
       const t = await getMattingTaskApi(id)
       setTask(t)
       setActiveId(id)
-      if (t.configJson) {
-        try {
-          const cfg = JSON.parse(t.configJson) as {
-            cropRegions?: Array<CropRectPct & { useOriginal?: boolean }>
-            candidateCount?: number
-          }
-          if (cfg.cropRegions?.length) {
-            setUseOriginal(cfg.cropRegions.some((r) => r.useOriginal) || cfg.cropRegions[0]?.id === 'r_original')
-            setCropRegions(
-              cfg.cropRegions
-                .filter((r) => !r.useOriginal)
-                .map((r) => ({
-                  id: r.id,
-                  xPct: r.xPct ?? 0,
-                  yPct: r.yPct ?? 0,
-                  wPct: r.wPct ?? 0,
-                  hPct: r.hPct ?? 0,
-                })),
-            )
-          }
-          if (cfg.candidateCount) setCandidateCount(cfg.candidateCount)
-        } catch {
-          /* ignore */
-        }
+      activeIdRef.current = id
+      setViewStage(t.stage)
+      applyTaskMetaFromConfig(t)
+
+      sessionStorage.setItem(SESSION_KEY, String(id))
+
+      if (!t.sourceAssetId) {
+        setCropRegions([])
+        setUseOriginal(false)
+        setCropHydrated(false)
+      } else if (t.stage === 2 && id === prevId) {
+        // 同任务再次选中且落在步骤②：effect 不会因 viewStage/id 变化触发，此处 GET 一次
+        await hydrateCropRegions(id)
+      } else {
+        setCropRegions([])
+        setUseOriginal(false)
+        setCropHydrated(false)
       }
+      // 切到其他任务且 viewStage===2 时，由 useEffect 触发 hydrateCropRegions
+
       if (t.stage >= 3) await loadElements(id)
       if (t.stage >= 4) await loadExtractStatus(id)
     },
-    [loadElements, loadExtractStatus],
+    [applyTaskMetaFromConfig, hydrateCropRegions, loadElements, loadExtractStatus],
   )
 
   useEffect(() => {
-    void refreshTasks()
-  }, [refreshTasks])
+    if (initialSessionRestoreRef.current) return
+    initialSessionRestoreRef.current = true
+    void (async () => {
+      await refreshTasks()
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      const id = raw ? Number.parseInt(raw, 10) : NaN
+      if (Number.isFinite(id) && id > 0) {
+        await loadTask(id)
+      }
+    })()
+  }, [refreshTasks, loadTask])
 
   const stopPoll = () => {
     if (pollTimerRef.current) {
@@ -164,19 +297,30 @@ export default function MattingPage() {
     }
   }, [task?.stage, task?.status, activeId, schedulePoll])
 
+  const handleStepClick = (step: number) => {
+    if (!task) return
+    const allowed = step <= farthestStage || (step === 5 && canPreviewSave)
+    if (!allowed) return
+    setViewStage(step)
+    if (step >= 3 && !elements) void loadElements(task.id)
+    if (step >= 4 && !extractStatus) void loadExtractStatus(task.id)
+  }
+
   const handleNewTask = () => {
     Modal.confirm({
       title: '新建抠图任务',
-      content: <input id="matting-new-title" placeholder="任务名称" defaultValue="抠图任务" className={styles.modalInput} />,
+      content: (
+        <input id="matting-new-title" placeholder="任务名称" defaultValue="抠图任务" className={styles.modalInput} />
+      ),
       onOk: async () => {
         const input = document.getElementById('matting-new-title') as HTMLInputElement | null
         const title = input?.value?.trim() || '抠图任务'
         const created = await createMattingTaskApi(title)
         await refreshTasks()
-        setCropRegions([])
-        setUseOriginal(false)
+        sessionStorage.setItem(SESSION_KEY, String(created.id))
         setElements(null)
         setExtractStatus(null)
+        setViewStage(1)
         await loadTask(created.id)
       },
     })
@@ -184,19 +328,55 @@ export default function MattingPage() {
 
   const handleSelectAsset = async (asset: AssetVO) => {
     if (!task) return
+    const cfg = parseConfigSummary(task.configJson)
+    if (task.stage >= 2 && (cfg.hasCrop || cfg.hasElements || cfg.hasExtract)) {
+      const ok = await confirmDestructive(
+        '更换源图',
+        '更换源图将清空框选、元素清单与提取结果，是否继续？',
+      )
+      if (!ok) return
+    }
     const updated = await patchMattingTaskApi(task.id, {
       sourceAssetId: asset.id,
       stage: 2,
     })
     setTask(updated)
+    setElements(null)
+    setExtractStatus(null)
+    setViewStage(2)
     message.success('已选择源图')
+  }
+
+  const handleGoToCrop = async () => {
+    if (!task) return
+    if (task.stage < 2) {
+      const updated = await patchMattingTaskApi(task.id, { stage: 2 })
+      setTask(updated)
+    }
+    setViewStage(2)
   }
 
   const handleConfirmCrop = async () => {
     if (!task?.sourceAssetUrl) return
+    const cfg = parseConfigSummary(task.configJson)
+    if (task.stage >= 3 && (cfg.hasElements || cfg.hasExtract)) {
+      const ok = await confirmDestructive(
+        '重新识别元素',
+        '将清空元素清单、提取候选与保存结果，是否继续？',
+      )
+      if (!ok) return
+    }
+
     setConfirmingCrop(true)
     try {
-      let regionsPayload: { id: string; xPct: number; yPct: number; wPct: number; hPct: number; subAssetId: number }[] = []
+      const regionsPayload: {
+        id: string
+        xPct: number
+        yPct: number
+        wPct: number
+        hPct: number
+        subAssetId: number
+      }[] = []
 
       if (!useOriginal) {
         if (cropRegions.length === 0) {
@@ -221,12 +401,15 @@ export default function MattingPage() {
       await saveMattingCropRegionsApi(task.id, {
         useOriginal,
         regions: useOriginal ? undefined : regionsPayload,
+        // 正式保存：含 subAssetId，确认前全量写入（非 draft）
       })
 
       setDetecting(true)
       const updated = await confirmMattingCropApi(task.id)
       setTask(updated)
+      setViewStage(3)
       await loadElements(task.id)
+      setExtractStatus(null)
       message.success('元素识别完成')
     } catch (e) {
       message.error(e instanceof Error ? e.message : '框选确认失败')
@@ -285,10 +468,20 @@ export default function MattingPage() {
 
   const handleConfirmExtract = async () => {
     if (!task) return
+    const cfg = parseConfigSummary(task.configJson)
+    if (task.stage >= 4 && cfg.hasExtract) {
+      const ok = await confirmDestructive(
+        '重新提取',
+        '将清空已有提取候选，是否继续？',
+      )
+      if (!ok) return
+    }
+
     setExtracting(true)
     try {
       const updated = await confirmMattingExtractApi(task.id, candidateCount)
       setTask(updated)
+      setViewStage(4)
       await loadExtractStatus(task.id)
       schedulePoll(task.id)
       message.info('已开始提取，请稍候…')
@@ -349,8 +542,6 @@ export default function MattingPage() {
     }
   }
 
-  const stage = task?.stage ?? 0
-
   return (
     <div className={styles.page}>
       <TaskSidebar
@@ -374,9 +565,14 @@ export default function MattingPage() {
           </div>
         ) : (
           <>
-            <StepNav current={stage} />
+            <StepNav
+              viewStage={viewStage}
+              farthestStage={farthestStage}
+              canPreviewSave={canPreviewSave}
+              onStepClick={handleStepClick}
+            />
             <div className={styles.content}>
-              {stage === 1 && (
+              {viewStage === 1 && (
                 <>
                   <ImageSourcePanel
                     contextLabel="源图"
@@ -385,14 +581,14 @@ export default function MattingPage() {
                     onSelectAsset={(a) => void handleSelectAsset(a)}
                   />
                   {task.sourceAssetId && (
-                    <Button type="primary" onClick={() => void patchMattingTaskApi(task.id, { stage: 2 }).then(setTask)}>
+                    <Button type="primary" onClick={() => void handleGoToCrop()}>
                       下一步：框选区域
                     </Button>
                   )}
                 </>
               )}
 
-              {stage === 2 && task.sourceAssetUrl && (
+              {viewStage === 2 && task.sourceAssetUrl && (
                 <div className={styles.stepBlock}>
                   <CropRegionEditor
                     imageUrl={task.sourceAssetUrl}
@@ -411,7 +607,7 @@ export default function MattingPage() {
                 </div>
               )}
 
-              {stage === 3 && (
+              {viewStage === 3 && (
                 <div className={styles.stepBlock}>
                   <ElementListPanel
                     data={elements}
@@ -428,7 +624,7 @@ export default function MattingPage() {
                 </div>
               )}
 
-              {stage >= 4 && stage < 5 && (
+              {viewStage === 4 && (
                 <div className={styles.stepBlock}>
                   {extractStatus?.extractStatus === 'failed' && extractStatus.extractError && (
                     <Alert type="error" message={extractStatus.extractError} showIcon className={styles.alert} />
@@ -439,16 +635,11 @@ export default function MattingPage() {
                     onSelectSlot={handleSelectSlot}
                   />
                   <div className={styles.toolbar}>
-                    <Button
-                      disabled={extractStatus?.extractStatus === 'running'}
-                      onClick={() => void patchMattingTaskApi(task.id, { stage: 3 }).then(setTask)}
-                    >
-                      返回元素清单
-                    </Button>
+                    <Button onClick={() => setViewStage(3)}>返回元素清单</Button>
                     <Button
                       type="primary"
                       disabled={extractStatus?.extractStatus === 'running'}
-                      onClick={() => void patchMattingTaskApi(task.id, { stage: 5 }).then(setTask)}
+                      onClick={() => setViewStage(5)}
                     >
                       下一步：保存
                     </Button>
@@ -456,16 +647,19 @@ export default function MattingPage() {
                 </div>
               )}
 
-              {stage >= 5 && (
+              {viewStage === 5 && (
                 <div className={styles.saveBlock}>
                   <p className={styles.saveHint}>确认每个元素已选候选，批量保存到 Assets（标签 matted）。</p>
                   <ElementCandidateGallery
                     status={extractStatus}
                     onSelectSlot={handleSelectSlot}
                   />
-                  <Button type="primary" loading={saving} onClick={() => void handleSaveAll()}>
-                    保存到 Assets · matted
-                  </Button>
+                  <div className={styles.toolbar}>
+                    <Button onClick={() => setViewStage(4)}>返回候选</Button>
+                    <Button type="primary" loading={saving} onClick={() => void handleSaveAll()}>
+                      保存到 Assets · matted
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

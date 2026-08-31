@@ -1,22 +1,141 @@
-import { BorderOutlined, DeleteOutlined } from '@ant-design/icons'
-import { Button, Checkbox, message } from 'antd'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { BorderOutlined, ExpandOutlined } from '@ant-design/icons'
+import { Button, Checkbox, Modal } from 'antd'
+import { useCallback, useState } from 'react'
+import {
+  CROP_HANDLES,
+  useMattingCropRegions,
+  type CropHandle,
+} from '@/hooks/useMattingCropRegions'
 import type { CropRectPct } from '@/utils/cropImage'
-import { displayPointToImagePct, imagePctRectToDisplayStyle } from '@/utils/cropImage'
+import { buildNaturalAspectFrameStyle } from '@/utils/cropImage'
 import styles from '@/components/ops/CropRegionEditor.module.css'
 
-const MAX_REGIONS = 6
+/** 按 URL 缓存 natural 尺寸，切任务回来可立刻恢复画框比例（对齐机台 registerCutImageNaturalSize） */
+const naturalSizeCache = new Map<string, { w: number; h: number }>()
 
 interface CropRegionEditorProps {
   imageUrl: string
   regions: CropRectPct[]
   useOriginal: boolean
-  onRegionsChange: (regions: CropRectPct[]) => void
+  onRegionsChange: (regions: CropRectPct[] | ((prev: CropRectPct[]) => CropRectPct[])) => void
   onUseOriginalChange: (v: boolean) => void
 }
 
-function genId() {
-  return `r_${Math.random().toString(36).slice(2, 9)}`
+function RegionOverlay({
+  regions,
+  selectedRegionId,
+  draftRect,
+  useOriginal,
+  getRegionStyle,
+  onRegionPointerDown,
+  onHandlePointerDown,
+  onDelete,
+}: {
+  regions: CropRectPct[]
+  selectedRegionId: string | null
+  draftRect: CropRectPct | null
+  useOriginal: boolean
+  getRegionStyle: (r: CropRectPct) => React.CSSProperties
+  onRegionPointerDown: (id: string, e: React.PointerEvent) => void
+  onHandlePointerDown: (id: string, handle: CropHandle, e: React.PointerEvent) => void
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className={styles.overlay}>
+      {regions.map((r, idx) => {
+        const selected = selectedRegionId === r.id
+        return (
+          <div
+            key={r.id}
+            className={[styles.regionBox, selected ? styles.regionSelected : ''].join(' ')}
+            style={getRegionStyle(r)}
+            onPointerDown={(e) => onRegionPointerDown(r.id, e)}
+          >
+            <span className={styles.regionBadge}>区域 {idx + 1}</span>
+            {selected && !useOriginal && (
+              <>
+                <button
+                  type="button"
+                  className={styles.regionDelete}
+                  aria-label="删除区域"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(r.id)
+                  }}
+                >
+                  ×
+                </button>
+                {CROP_HANDLES.map((handle) => (
+                  <button
+                    key={handle}
+                    type="button"
+                    className={[styles.regionHandle, styles[`handle_${handle}`]].join(' ')}
+                    aria-label="调整区域大小"
+                    onPointerDown={(e) => onHandlePointerDown(r.id, handle, e)}
+                  />
+                ))}
+              </>
+            )}
+          </div>
+        )
+      })}
+      {draftRect && draftRect.wPct > 0 && (
+        <div
+          className={[styles.regionBox, styles.regionDraft].join(' ')}
+          style={getRegionStyle(draftRect)}
+        />
+      )}
+    </div>
+  )
+}
+
+function CropCanvas({
+  imageUrl,
+  canvasRef,
+  frameStyle,
+  frameClassName,
+  onImageLoad,
+  onCanvasPointerDown,
+  children,
+}: {
+  imageUrl: string
+  canvasRef: React.RefObject<HTMLDivElement | null>
+  frameStyle?: React.CSSProperties
+  frameClassName?: string
+  onImageLoad: (w: number, h: number) => void
+  onCanvasPointerDown: (e: React.PointerEvent) => void
+  children: React.ReactNode
+}) {
+  const handleImgRef = (el: HTMLImageElement | null) => {
+    if (el?.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
+      onImageLoad(el.naturalWidth, el.naturalHeight)
+    }
+  }
+
+  return (
+    <div
+      ref={canvasRef}
+      className={[styles.canvas, frameClassName ?? ''].filter(Boolean).join(' ')}
+      style={frameStyle}
+      onPointerDown={onCanvasPointerDown}
+    >
+      <img
+        ref={handleImgRef}
+        src={imageUrl}
+        alt="源图"
+        className={styles.sourceImg}
+        draggable={false}
+        onLoad={(e) => {
+          const t = e.currentTarget
+          if (t.naturalWidth > 0 && t.naturalHeight > 0) {
+            onImageLoad(t.naturalWidth, t.naturalHeight)
+          }
+        }}
+      />
+      {children}
+    </div>
+  )
 }
 
 export default function CropRegionEditor({
@@ -26,127 +145,147 @@ export default function CropRegionEditor({
   onRegionsChange,
   onUseOriginalChange,
 }: CropRegionEditorProps) {
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const [naturalSize, setNaturalSize] = useState({ w: 1, h: 1 })
-  const [containerSize, setContainerSize] = useState({ w: 400, h: 300 })
-  const [drawing, setDrawing] = useState<{ startX: number; startY: number; id: string } | null>(null)
-  const [draftRect, setDraftRect] = useState<CropRectPct | null>(null)
+  const cached = naturalSizeCache.get(imageUrl)
+  const [naturalSize, setNaturalSize] = useState(cached ?? { w: 0, h: 0 })
 
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
-    img.src = imageUrl
-  }, [imageUrl])
-
-  useEffect(() => {
-    const el = canvasRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => {
-      setContainerSize({ w: el.clientWidth, h: el.clientHeight })
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (useOriginal || !canvasRef.current) return
-    const pt = displayPointToImagePct(e.clientX, e.clientY, canvasRef.current, naturalSize.w, naturalSize.h)
-    const id = genId()
-    setDrawing({ startX: pt.xPct, startY: pt.yPct, id })
-    setDraftRect({ id, xPct: pt.xPct, yPct: pt.yPct, wPct: 0, hPct: 0 })
-  }
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!drawing || !canvasRef.current) return
-    const pt = displayPointToImagePct(e.clientX, e.clientY, canvasRef.current, naturalSize.w, naturalSize.h)
-    const xPct = Math.min(drawing.startX, pt.xPct)
-    const yPct = Math.min(drawing.startY, pt.yPct)
-    const wPct = Math.abs(pt.xPct - drawing.startX)
-    const hPct = Math.abs(pt.yPct - drawing.startY)
-    setDraftRect({ id: drawing.id, xPct, yPct, wPct, hPct })
-  }
-
-  const onMouseUp = () => {
-    if (!draftRect || draftRect.wPct < 2 || draftRect.hPct < 2) {
-      setDrawing(null)
-      setDraftRect(null)
-      return
-    }
-    if (regions.length >= MAX_REGIONS) {
-      message.warning(`最多 ${MAX_REGIONS} 个区域`)
-    } else {
-      onRegionsChange([...regions, draftRect])
-    }
-    setDrawing(null)
-    setDraftRect(null)
-  }
-
-  const removeRegion = (id: string) => {
-    onRegionsChange(regions.filter((r) => r.id !== id))
-  }
-
-  const rectStyle = useCallback(
-    (r: CropRectPct) =>
-      imagePctRectToDisplayStyle(r, naturalSize.w, naturalSize.h, containerSize.w, containerSize.h),
-    [naturalSize, containerSize],
+  /** 对齐 Stage2CutPanel.onCardImageLoad → registerCutImageNaturalSize */
+  const registerNaturalSize = useCallback(
+    (w: number, h: number) => {
+      const nw = Math.floor(w)
+      const nh = Math.floor(h)
+      if (nw <= 0 || nh <= 0) return
+      naturalSizeCache.set(imageUrl, { w: nw, h: nh })
+      setNaturalSize((prev) => (prev.w === nw && prev.h === nh ? prev : { w: nw, h: nh }))
+    },
+    [imageUrl],
   )
+
+  const crop = useMattingCropRegions({
+    regions,
+    useOriginal,
+    onRegionsChange,
+  })
+
+  const hasAspect = naturalSize.w > 0 && naturalSize.h > 0
+  const inlineFrameStyle = hasAspect
+    ? buildNaturalAspectFrameStyle(naturalSize.w, naturalSize.h, {
+        maxHeight: 'min(360px, 50vh)',
+      })
+    : undefined
+  const fullFrameStyle = hasAspect
+    ? buildNaturalAspectFrameStyle(naturalSize.w, naturalSize.h, {
+        maxHeight: 'min(64vh, calc(100dvh - 260px))',
+        maxWidth: 'min(92vw, calc(100vw - 40px))',
+      })
+    : undefined
+
+  const overlayProps = {
+    regions,
+    selectedRegionId: crop.selectedRegionId,
+    draftRect: crop.draftRect,
+    useOriginal,
+    getRegionStyle: crop.getRegionStyle,
+    onRegionPointerDown: (id: string, e: React.PointerEvent) =>
+      crop.startEdit(id, 'move', 'inline', e),
+    onHandlePointerDown: (id: string, handle: CropHandle, e: React.PointerEvent) =>
+      crop.startEdit(id, handle, 'inline', e),
+    onDelete: crop.deleteRegion,
+  }
+
+  const fullOverlayProps = {
+    ...overlayProps,
+    onRegionPointerDown: (id: string, e: React.PointerEvent) =>
+      crop.startEdit(id, 'move', 'full', e),
+    onHandlePointerDown: (id: string, handle: CropHandle, e: React.PointerEvent) =>
+      crop.startEdit(id, handle, 'full', e),
+  }
 
   return (
     <div className={styles.wrap}>
       <div className={styles.toolbar}>
-        <Checkbox checked={useOriginal} onChange={(e) => onUseOriginalChange(e.target.checked)}>
+        <Checkbox
+          checked={useOriginal}
+          onChange={(e) => {
+            onUseOriginalChange(e.target.checked)
+            if (e.target.checked) onRegionsChange([])
+          }}
+        >
           使用原图（不框选）
         </Checkbox>
         {!useOriginal && (
-          <span className={styles.hint}>
-            <BorderOutlined /> 在图上拖拽绘制区域（{regions.length}/{MAX_REGIONS}）
-          </span>
+          <>
+            <Button type="link" icon={<ExpandOutlined />} onClick={() => crop.setFullCutOpen(true)}>
+              完整图裁剪
+            </Button>
+            <span className={styles.hint}>
+              <BorderOutlined /> 拖拽绘制 · 拖动移动 · 控点缩放（{regions.length}/{6}）
+            </span>
+          </>
         )}
       </div>
 
-      {!useOriginal && (
+      {!useOriginal ? (
         <>
-          <div
-            ref={canvasRef}
-            className={styles.canvas}
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseUp}
+          <CropCanvas
+            imageUrl={imageUrl}
+            canvasRef={crop.inlineCanvasRef}
+            frameStyle={inlineFrameStyle}
+            frameClassName={hasAspect ? styles.canvasAspect : styles.canvasPlaceholder}
+            onImageLoad={registerNaturalSize}
+            onCanvasPointerDown={(e) => crop.onCanvasPointerDown('inline', e)}
           >
-            <img src={imageUrl} alt="源图" className={styles.sourceImg} draggable={false} />
-            {regions.map((r) => (
-              <div key={r.id} className={styles.regionBox} style={rectStyle(r)}>
-                <button type="button" className={styles.regionDelete} onClick={() => removeRegion(r.id)}>
-                  <DeleteOutlined />
-                </button>
-              </div>
-            ))}
-            {draftRect && draftRect.wPct > 0 && (
-              <div className={[styles.regionBox, styles.regionDraft].join(' ')} style={rectStyle(draftRect)} />
-            )}
-          </div>
-
-          {/* {regions.length > 0 && (
-            <ul className={styles.regionList}>
-              {regions.map((r, i) => (
-                <li key={r.id}>
-                  区域 {i + 1} — {r.wPct.toFixed(0)}% × {r.hPct.toFixed(0)}%
-                  <Button type="link" size="small" danger onClick={() => removeRegion(r.id)}>
-                    删除
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )} */}
+            <RegionOverlay {...overlayProps} />
+          </CropCanvas>
+          <p
+            className={[
+              styles.status,
+              crop.isLimitReached ? styles.statusLimit : '',
+            ].join(' ')}
+          >
+            {crop.statusText}
+          </p>
         </>
-      )}
-
-      {useOriginal && (
+      ) : (
         <div className={styles.originalPreview}>
-          <img src={imageUrl} alt="原图" className={styles.sourceImgSmall} />
+          <CropCanvas
+            imageUrl={imageUrl}
+            canvasRef={crop.inlineCanvasRef}
+            frameStyle={inlineFrameStyle}
+            frameClassName={[styles.canvasReadonly, hasAspect ? styles.canvasAspect : ''].join(' ')}
+            onImageLoad={registerNaturalSize}
+            onCanvasPointerDown={() => {}}
+          >
+            <div className={styles.overlay}>
+              <div className={[styles.regionBox, styles.regionOriginal].join(' ')} style={{ inset: 0 }}>
+                <span className={[styles.regionBadge, styles.badgeOriginal].join(' ')}>原图</span>
+              </div>
+            </div>
+          </CropCanvas>
+          <p className={styles.status}>{crop.statusText}</p>
         </div>
       )}
+
+      <Modal
+        title="完整图裁剪"
+        open={crop.fullCutOpen}
+        onCancel={() => crop.setFullCutOpen(false)}
+        footer={null}
+        width="auto"
+        centered
+        destroyOnClose={false}
+      >
+        <p className={styles.modalHint}>在大图模式下框选、拖动或缩放区域，关闭后保留已选区域。</p>
+        <CropCanvas
+          imageUrl={imageUrl}
+          canvasRef={crop.fullCanvasRef}
+          frameStyle={fullFrameStyle}
+          frameClassName={[styles.canvasFull, hasAspect ? styles.canvasAspect : styles.canvasPlaceholder].join(' ')}
+          onImageLoad={registerNaturalSize}
+          onCanvasPointerDown={(e) => crop.onCanvasPointerDown('full', e)}
+        >
+          <RegionOverlay {...fullOverlayProps} />
+        </CropCanvas>
+      </Modal>
     </div>
   )
 }

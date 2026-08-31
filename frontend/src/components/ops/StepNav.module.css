@@ -13,6 +13,15 @@
   border-radius: var(--radius-control);
   color: var(--color-text-tertiary);
   font-size: var(--text-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.step:disabled,
+.stepDisabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .stepActive {

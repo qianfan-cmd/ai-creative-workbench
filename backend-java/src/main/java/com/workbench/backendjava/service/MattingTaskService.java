@@ -28,6 +28,7 @@ import com.workbench.backendjava.vo.AssetVO;
 import com.workbench.backendjava.vo.GenerationJobVO;
 import com.workbench.backendjava.vo.MattingElementsVO;
 import com.workbench.backendjava.vo.MattingExtractStatusVO;
+import com.workbench.backendjava.vo.MattingCropRegionsVO;
 import com.workbench.backendjava.vo.MattingTaskVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -88,6 +89,9 @@ public class MattingTaskService {
     public MattingTaskVO patchTask(Long id, MattingTaskPatchRequest request) {
         Long userId = requireUserId();
         OpsMattingTask task = getOwnedTask(id, userId);
+        MattingConfig config = parseConfig(task.getConfigJson());
+        boolean sourceChanged = false;
+
         if (request.getTitle() != null) {
             task.setTitle(request.getTitle().trim());
         }
@@ -95,7 +99,11 @@ public class MattingTaskService {
             task.setStage(request.getStage());
         }
         if (request.getSourceAssetId() != null) {
-            task.setSourceAssetId(request.getSourceAssetId());
+            Long newSourceId = request.getSourceAssetId();
+            if (task.getSourceAssetId() == null || !task.getSourceAssetId().equals(newSourceId)) {
+                sourceChanged = true;
+            }
+            task.setSourceAssetId(newSourceId);
         }
         if (request.getConfigJson() != null) {
             task.setConfigJson(request.getConfigJson());
@@ -106,9 +114,24 @@ public class MattingTaskService {
         if (request.getStatus() != null) {
             task.setStatus(request.getStatus());
         }
+
+        if (sourceChanged) {
+            clearConfigFrom(config, 2);
+            task.setConfigJson(writeJson(config));
+            task.setStage(2);
+            task.setSelectedCandidate(null);
+            task.setStatus("draft");
+        }
+
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
         return toVO(task);
+    }
+
+    /** 查询已保存的框选坐标（草稿或确认后均可恢复 UI，对齐美术机台 crop/list） */
+    public MattingCropRegionsVO getCropRegions(Long taskId) {
+        OpsMattingTask task = getOwnedTask(taskId, requireUserId());
+        return buildCropRegionsVO(parseConfig(task.getConfigJson()));
     }
 
     @Transactional
@@ -120,6 +143,33 @@ public class MattingTaskService {
         }
 
         MattingConfig config = parseConfig(task.getConfigJson());
+        boolean draft = Boolean.TRUE.equals(request.getDraft());
+
+        // 正式保存（确认框选前上传裁切图）：重做框选时清空③+ 数据
+        if (!draft && task.getStage() != null && task.getStage() >= 3) {
+            clearConfigFrom(config, 3);
+        }
+
+        if (draft) {
+            // 草稿：仅持久化百分比坐标，不碰 elements/extract，刷新或切任务后可恢复
+            applyDraftCropRegions(config, request, userId);
+        } else {
+            replaceCropRegions(config, request, userId);
+        }
+
+        task.setConfigJson(writeJson(config));
+        if (!draft) {
+            task.setStage(2);
+        } else if (task.getStage() == null || task.getStage() < 2) {
+            task.setStage(2);
+        }
+        task.setUpdatedAt(LocalDateTime.now());
+        mattingTaskMapper.updateById(task);
+        return toVO(task);
+    }
+
+    /** 全量替换 cropRegions（含 subAssetId，用于确认框选前的正式保存） */
+    private void replaceCropRegions(MattingConfig config, MattingCropSaveRequest request, Long userId) {
         config.setCropRegions(new ArrayList<>());
 
         if (Boolean.TRUE.equals(request.getUseOriginal())) {
@@ -127,35 +177,111 @@ public class MattingTaskService {
             region.setId("r_original");
             region.setUseOriginal(true);
             config.getCropRegions().add(region);
-        } else {
-            List<MattingCropSaveRequest.CropRegionItem> items = request.getRegions();
-            if (items == null || items.isEmpty()) {
-                throw new BusinessException(400, "请至少框选一个区域，或选择使用原图");
-            }
-            if (items.size() > MAX_REGIONS) {
-                throw new BusinessException(400, "最多 " + MAX_REGIONS + " 个切割区域");
-            }
-            for (MattingCropSaveRequest.CropRegionItem item : items) {
-                CropRegion region = new CropRegion();
-                region.setId(item.getId() != null ? item.getId() : "r_" + UUID.randomUUID().toString().substring(0, 8));
-                region.setXPct(item.getXPct());
-                region.setYPct(item.getYPct());
-                region.setWPct(item.getWPct());
-                region.setHPct(item.getHPct());
-                region.setSubAssetId(item.getSubAssetId());
-                if (item.getSubAssetId() != null) {
-                    region.setSubAssetUrl(assetService.getPublicUrlForOwnedAsset(item.getSubAssetId(), userId));
-                }
-                region.setUseOriginal(false);
-                config.getCropRegions().add(region);
-            }
+            return;
         }
 
-        task.setConfigJson(writeJson(config));
-        task.setStage(2);
-        task.setUpdatedAt(LocalDateTime.now());
-        mattingTaskMapper.updateById(task);
-        return toVO(task);
+        List<MattingCropSaveRequest.CropRegionItem> items = request.getRegions();
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException(400, "请至少框选一个区域，或选择使用原图");
+        }
+        if (items.size() > MAX_REGIONS) {
+            throw new BusinessException(400, "最多 " + MAX_REGIONS + " 个切割区域");
+        }
+        for (MattingCropSaveRequest.CropRegionItem item : items) {
+            config.getCropRegions().add(toCropRegion(item, userId, null));
+        }
+    }
+
+    /**
+     * 草稿保存：按 region id 合并坐标；若请求未带 subAssetId 则保留 config 里已有裁切图引用。
+     * 允许空 regions（用户删光框选），与美术机台「仅保存切割数据、不推进阶段」一致。
+     */
+    private void applyDraftCropRegions(MattingConfig config, MattingCropSaveRequest request, Long userId) {
+        Map<String, CropRegion> existingById = config.getCropRegions().stream()
+                .filter(r -> r.getId() != null)
+                .collect(Collectors.toMap(CropRegion::getId, r -> r, (a, b) -> a, LinkedHashMap::new));
+
+        config.setCropRegions(new ArrayList<>());
+
+        if (Boolean.TRUE.equals(request.getUseOriginal())) {
+            CropRegion region = new CropRegion();
+            region.setId("r_original");
+            region.setUseOriginal(true);
+            config.getCropRegions().add(region);
+            return;
+        }
+
+        List<MattingCropSaveRequest.CropRegionItem> items = request.getRegions();
+        if (items == null) {
+            items = List.of();
+        }
+        if (items.size() > MAX_REGIONS) {
+            throw new BusinessException(400, "最多 " + MAX_REGIONS + " 个切割区域");
+        }
+        for (MattingCropSaveRequest.CropRegionItem item : items) {
+            CropRegion prev = item.getId() != null ? existingById.get(item.getId()) : null;
+            config.getCropRegions().add(toCropRegion(item, userId, prev));
+        }
+    }
+
+    private CropRegion toCropRegion(
+            MattingCropSaveRequest.CropRegionItem item,
+            Long userId,
+            CropRegion prev) {
+        CropRegion region = new CropRegion();
+        region.setId(item.getId() != null ? item.getId() : "r_" + UUID.randomUUID().toString().substring(0, 8));
+        region.setXPct(item.getXPct());
+        region.setYPct(item.getYPct());
+        region.setWPct(item.getWPct());
+        region.setHPct(item.getHPct());
+        region.setUseOriginal(false);
+
+        Long subAssetId = item.getSubAssetId();
+        if (subAssetId == null && prev != null) {
+            subAssetId = prev.getSubAssetId();
+        }
+        region.setSubAssetId(subAssetId);
+        if (subAssetId != null) {
+            try {
+                region.setSubAssetUrl(assetService.getPublicUrlForOwnedAsset(subAssetId, userId));
+            } catch (BusinessException ignored) {
+                region.setSubAssetUrl(prev != null ? prev.getSubAssetUrl() : null);
+            }
+        }
+        return region;
+    }
+
+    private MattingCropRegionsVO buildCropRegionsVO(MattingConfig config) {
+        MattingCropRegionsVO vo = new MattingCropRegionsVO();
+        List<CropRegion> stored = config.getCropRegions();
+        if (stored == null || stored.isEmpty()) {
+            vo.setUseOriginal(false);
+            vo.setRegions(new ArrayList<>());
+            return vo;
+        }
+
+        boolean useOriginal = stored.stream()
+                .anyMatch(r -> Boolean.TRUE.equals(r.getUseOriginal()) || "r_original".equals(r.getId()));
+        vo.setUseOriginal(useOriginal);
+        if (useOriginal) {
+            vo.setRegions(new ArrayList<>());
+            return vo;
+        }
+
+        List<MattingCropRegionsVO.RegionItem> items = stored.stream()
+                .filter(r -> !Boolean.TRUE.equals(r.getUseOriginal()))
+                .map(r -> {
+                    MattingCropRegionsVO.RegionItem item = new MattingCropRegionsVO.RegionItem();
+                    item.setId(r.getId());
+                    item.setXPct(r.getXPct());
+                    item.setYPct(r.getYPct());
+                    item.setWPct(r.getWPct());
+                    item.setHPct(r.getHPct());
+                    return item;
+                })
+                .collect(Collectors.toList());
+        vo.setRegions(items);
+        return vo;
     }
 
     @Transactional
@@ -172,9 +298,9 @@ public class MattingTaskService {
             throw new BusinessException(400, "请先保存框选区域");
         }
 
+        clearConfigFrom(config, 3);
         config.setDetectStatus("running");
         config.setDetectError(null);
-        config.setElements(new ArrayList<>());
         task.setConfigJson(writeJson(config));
         task.setStatus("running");
         mattingTaskMapper.updateById(task);
@@ -318,9 +444,9 @@ public class MattingTaskService {
             throw new BusinessException(400, "候选数量需在 1–4 之间");
         }
         config.setCandidateCount(count);
+        clearConfigFrom(config, 4);
         config.setExtractStatus("running");
         config.setExtractError(null);
-        config.setElementImages(new ArrayList<>());
         task.setConfigJson(writeJson(config));
         task.setStage(4);
         task.setStatus("running");
@@ -596,5 +722,25 @@ public class MattingTaskService {
     private static String truncate(String s, int max) {
         if (s == null) return null;
         return s.length() > max ? s.substring(0, max) : s;
+    }
+
+    /** 从指定阶段起清空 config 后续数据（含该阶段之后的内容） */
+    private void clearConfigFrom(MattingConfig config, int fromStage) {
+        if (fromStage <= 2) {
+            config.setCropRegions(new ArrayList<>());
+        }
+        if (fromStage <= 3) {
+            config.setElements(new ArrayList<>());
+            config.setDetectStatus("idle");
+            config.setDetectError(null);
+        }
+        if (fromStage <= 4) {
+            config.setElementImages(new ArrayList<>());
+            config.setExtractStatus("idle");
+            config.setExtractError(null);
+        }
+        if (fromStage <= 5) {
+            // selectedCandidate 存在 task 表字段，由调用方清 task.setSelectedCandidate
+        }
     }
 }

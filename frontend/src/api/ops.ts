@@ -279,6 +279,18 @@ export interface MattingCropRegionItem {
   subAssetId?: number
 }
 
+/** GET crop-regions：从 config_json 恢复框选 UI（对齐美术机台 crop/list） */
+export interface MattingCropRegionsVO {
+  useOriginal?: boolean
+  regions?: MattingCropRegionItem[]
+}
+
+/** GET crop-regions：只读，从 config_json 恢复框选 UI（进入步骤②时调用一次） */
+export async function getMattingCropRegionsApi(id: number) {
+  const res = await request.get<ApiResponse<MattingCropRegionsVO>>(`/ops/matting/tasks/${id}/crop-regions`)
+  return res.data.data
+}
+
 export async function generateOpsImageApi(body: { prompt: string; count?: number; sourceUrl?: string }) {
   const res = await request.post<ApiResponse<GenerationJobVO>>('/ops/image-gen', body, { timeout: 180000 })
   return res.data.data
@@ -286,7 +298,7 @@ export async function generateOpsImageApi(body: { prompt: string; count?: number
 
 export async function saveMattingCropRegionsApi(
   id: number,
-  body: { regions?: MattingCropRegionItem[]; useOriginal?: boolean },
+  body: { regions?: MattingCropRegionItem[]; useOriginal?: boolean; /** 草稿 PUT：仅保存坐标；正式保存勿带 draft */ draft?: boolean },
 ) {
   const res = await request.put<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}/crop-regions`, body)
   return res.data.data
