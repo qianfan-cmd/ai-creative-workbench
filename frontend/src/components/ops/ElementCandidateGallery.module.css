@@ -1,0 +1,103 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.empty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-text-tertiary);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+.errorBox {
+  padding: var(--space-3);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-control);
+  color: #b91c1c;
+  font-size: var(--text-sm);
+}
+
+.runningHint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.elementSection {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  background: var(--color-surface);
+}
+
+.elementHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.elementTitle {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.groupTag {
+  font-weight: 400;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.slotGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+}
+
+.slot {
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-2);
+  background: repeating-conic-gradient(#e5e5e5 0% 25%, #f5f5f5 0% 50%) 50% / 16px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 120px;
+  justify-content: center;
+}
+
+.slotSelected {
+  border-color: var(--color-accent);
+}
+
+.slotFailed {
+  border-color: #f87171;
+  cursor: not-allowed;
+}
+
+.slotImg {
+  max-width: 100%;
+  max-height: 100px;
+  object-fit: contain;
+}
+
+.slotLabel {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.failedText {
+  font-size: var(--text-xs);
+  color: #b91c1c;
+}

@@ -1,0 +1,102 @@
+.page {
+  display: flex;
+  min-height: calc(100vh - var(--header-height));
+  margin: calc(-1 * var(--space-6));
+  background: var(--color-bg-canvas);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-6);
+  min-width: 0;
+}
+
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  text-align: center;
+  padding: var(--space-8);
+}
+
+.welcomeIcon {
+  font-size: 48px;
+  color: var(--color-accent);
+}
+
+.welcomeTitle {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+
+.welcomeHint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  max-width: 360px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+}
+
+.configBlock,
+.candidateBlock,
+.saveBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fieldLabel {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.toolbar {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.history {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.previewLarge {
+  max-width: 320px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+}
+
+.stepBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.alert {
+  margin-bottom: var(--space-2);
+}
+
+.saveHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.modalInput {
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}

@@ -13,10 +13,7 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
+import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -344,6 +341,126 @@ public class PythonAiClient {
     }
 
     /**
+     * 提示词 流式渲染
+     * @param template
+     * @param variables
+     * @return
+     */
+    public String renderPrompt(String template, Map<String, String> variables) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/render-prompt";
+        Map<String, Object> body = new HashMap<>();
+        body.put("template", template);
+        body.put("variables", variables);
+
+        try {
+            ResponseEntity<Map> resp = restTemplate.postForEntity(url, body, Map.class);
+            Map data = resp.getBody();
+            if (data == null || data.get("prompt") == null) {
+                throw new BusinessException(502, "Prompt 渲染失败");
+            }
+            return data.get("prompt").toString();
+        } catch (RestClientException e) {
+            throw new BusinessException(502, "Prompt 渲染服务不可用");
+        }
+    }
+
+    public void opsCopyStream(String prompt, SseEmitter emitter) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/copy/stream";
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Map<String, Object> body = Map.of("prompt", prompt);
+                String jsonBody = objectMapper.writeValueAsString(body);
+
+                restTemplate.execute(
+                        url,
+                        HttpMethod.POST,
+                        request -> {
+                            request.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                            request.getBody().write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                        },
+                        response -> {
+                            forwardPythonSse(response, emitter);
+                            return null;
+                        }
+                );
+            } catch (Exception e) {
+                log.error("Ops copy stream 转发失败", e);
+                sendStreamError(emitter, e.getMessage() != null ? e.getMessage() : "文案流式服务不可用");
+            }
+        });
+    }
+
+    /** 调用 Python POST /ai/ops/image-gen */
+    public PythonImageGenerateResponse opsImageGen(String prompt, String sourceUrl, int count, String aspectRatio) {
+        return callImageEndpoint("/ai/ops/image-gen", prompt, sourceUrl, count, aspectRatio);
+    }
+
+    /** 调用 Python POST /ai/ops/matting */
+    public PythonImageGenerateResponse opsMatting(String prompt, String sourceUrl, int count, String aspectRatio) {
+        return callImageEndpoint("/ai/ops/matting", prompt, sourceUrl, count, aspectRatio);
+    }
+
+    /** 视觉元素识别 POST /ai/ops/detect-elements */
+    @SuppressWarnings("unchecked")
+    public Map<String, List<String>> opsDetectElements(String imageUrl, String prompt) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/detect-elements";
+        Map<String, Object> body = Map.of("imageUrl", imageUrl, "prompt", prompt);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<Map> resp = restTemplate.postForEntity(
+                    url, new HttpEntity<>(body, headers), Map.class);
+            Map data = resp.getBody();
+            if (data == null || data.get("groups") == null) {
+                throw new BusinessException(502, "元素识别未返回 groups");
+            }
+            return (Map<String, List<String>>) data.get("groups");
+        } catch (HttpStatusCodeException e) {
+            String msg = e.getResponseBodyAsString();
+            throw new BusinessException(502, msg != null && !msg.isBlank() ? msg : "元素识别服务调用失败");
+        } catch (RestClientException e) {
+            throw new BusinessException(502, "元素识别服务不可用");
+        }
+    }
+
+    /** 元素提取 POST /ai/ops/extract-element */
+    public PythonImageGenerateResponse opsExtractElement(String sourceUrl, String prompt, int count) {
+        return callImageEndpoint("/ai/ops/extract-element", prompt, sourceUrl, count, null);
+    }
+
+    private PythonImageGenerateResponse callImageEndpoint(
+            String path, String prompt, String sourceUrl, int count, String aspectRatio
+    ) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + path;
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("prompt", prompt);
+        if (sourceUrl != null && !sourceUrl.isBlank()) {
+            body.put("sourceUrl", sourceUrl);
+        }
+        body.put("count", count);
+        if (aspectRatio != null && !aspectRatio.isBlank()) {
+            body.put("aspectRatio", aspectRatio);
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<PythonImageGenerateResponse> resp = restTemplate.postForEntity(
+                    url, new HttpEntity<>(body, headers), PythonImageGenerateResponse.class);
+            PythonImageGenerateResponse data = resp.getBody();
+            if (data == null || data.getCandidates() == null || data.getCandidates().isEmpty()) {
+                throw new BusinessException(502, "图像服务未返回候选");
+            }
+            return data;
+        } catch (HttpStatusCodeException e) {
+            String msg = e.getResponseBodyAsString();
+            throw new BusinessException(502, msg != null && !msg.isBlank() ? msg : "图像服务调用失败");
+        } catch (RestClientException e) {
+            throw new BusinessException(502, "图像服务不可用");
+        }
+    }
+
+    /**
      * 探测python是否存活
      */
     public boolean isHealthy() {
@@ -403,5 +520,17 @@ public class PythonAiClient {
 
         @JsonProperty("chunk_count")
         private Integer chunkCount;
+    }
+
+    @Data
+    public static class PythonImageGenerateResponse {
+        private String provider;
+        private List<PythonImageCandidate> candidates;
+    }
+
+    @Data
+    public static class PythonImageCandidate {
+        private String url;
+        private Integer index;
     }
 }

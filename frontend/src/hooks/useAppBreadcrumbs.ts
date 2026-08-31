@@ -32,7 +32,14 @@ export function useAppBreadcrumbs(): BreadcrumbItem[] {
     if (pathname === '/knowledge') {
         return [home, { label: '知识库 Knowledge', href: '/knowledge' }];
     }
+    
+    if (pathname === '/ops/matting') {
+        return [home, { label: '抠图 Matting', href: '/ops/matting' }]
+    }
 
+    if (pathname === '/ops/campaign') {
+        return [home, { label: '活动帖 Campaign', href: '/ops/campaign' }]
+    }
     return [home, { label: 'Workbench' }];
     }, [pathname])
 }

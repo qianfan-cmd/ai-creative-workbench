@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
+import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import styles from '@/components/layout/AppTopBar.module.css'
 import { Button, Dropdown, Avatar } from 'antd'
@@ -7,9 +8,11 @@ import type { BreadcrumbItem } from '@/hooks/useAppBreadcrumbs'
 
 interface AppTopBarProps {
   items: BreadcrumbItem[]
+  sidebarCollapsed: boolean
+  onToggleSidebar: () => void
 }
 
-export default function AppTopBar({ items }: AppTopBarProps) {
+export default function AppTopBar({ items, sidebarCollapsed, onToggleSidebar }: AppTopBarProps) {
   const navigate = useNavigate()
   const user = useAuthStore((state) => state.user)
   const clearAuth = useAuthStore((state) => state.clearAuth)
@@ -35,7 +38,17 @@ export default function AppTopBar({ items }: AppTopBarProps) {
 
   return (
     <header className={styles.topBar}>
-      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+      <div className={styles.leading}>
+        <button
+          type="button"
+          className={styles.sidebarToggle}
+          onClick={onToggleSidebar}
+          aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
+          aria-expanded={!sidebarCollapsed}
+        >
+          {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        </button>
+        <nav className={styles.breadcrumb} aria-label="Breadcrumb">
         {items.map((item, index) => (
           <span key={`${item.label}-${index}`} className={styles.breadcrumbSegment}>
             {index > 0 && <span className={styles.breadcrumbSep}>/</span>}
@@ -48,7 +61,8 @@ export default function AppTopBar({ items }: AppTopBarProps) {
             )}
           </span>
         ))}
-      </nav>
+        </nav>
+      </div>
 
       <div className={styles.actions}>
         <Button type="default" size="small">文档 Docs</Button>

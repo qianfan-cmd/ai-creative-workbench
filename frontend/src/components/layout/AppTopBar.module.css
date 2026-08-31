@@ -9,6 +9,35 @@
     flex-shrink: 0;
 }
 
+.leading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+}
+
+.sidebarToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 16px;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebarToggle:hover {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text-primary);
+}
+
 .breadcrumb {
     display: flex;
     align-items: center;

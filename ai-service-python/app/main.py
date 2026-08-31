@@ -25,6 +25,7 @@ from app.routers.chat import router as chat_router
 from app.routers.document import router as document_router
 from app.routers.embedding import router as embedding_router
 from app.routers.rag import router as rag_router
+from app.routers.ops import router as ops_router
 
 # 必须在读 os.getenv 之前调用；通常放在 main.py 最前面
 load_dotenv()
@@ -40,7 +41,7 @@ app.include_router(chat_router)
 app.include_router(document_router)
 app.include_router(embedding_router)
 app.include_router(rag_router)
-
+app.include_router(ops_router)
 
 @app.get("/health")
 def health():

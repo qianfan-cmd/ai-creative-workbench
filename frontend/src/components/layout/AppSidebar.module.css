@@ -6,6 +6,12 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    transition: width var(--transition-fast);
+    overflow: hidden;
+}
+
+.sidebarCollapsed {
+    width: var(--sidebar-width-collapsed);
 }
 
 .logo {
@@ -116,6 +122,32 @@
 .navItemDisabled:hover {
     background-color: transparent;
     color: var(--color-text-secondary);
+}
+
+.navLabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebarCollapsed .logo {
+    justify-content: center;
+    padding-inline: var(--space-2);
+}
+
+.sidebarCollapsed .nav {
+    padding-inline: var(--space-2);
+}
+
+.sidebarCollapsed .navItem {
+    justify-content: center;
+    padding-inline: var(--space-2);
+    gap: 0;
+}
+
+.sidebarCollapsed .navLabel {
+    display: none;
 }
 
 @media (max-width: 768px) {

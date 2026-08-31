@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
@@ -400,5 +401,68 @@ public class AssetService {
         }
 
         log.info("素材标签更新, userId={}, assetId={}, tagIds={}", userId, assetId, tagIds);
+    }
+
+    /** 当前用户素材的公网可访问 URL — 供 Python 图像 API 作 sourceUrl */
+    public String getPublicUrlForOwnedAsset(Long assetId, Long userId) {
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+        return buildFullUrl(asset.getUrl());
+    }
+
+    /**
+     * 从外部 URL 下载并入库 — Matting 保存 / Ops 候选打标用
+     */
+    @Transactional
+    public AssetVO importFromUrl(String imageUrl, String name, List<String> tagNames) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+        byte[] bytes = new RestTemplate().getForObject(imageUrl, byte[].class);
+        if (bytes == null || bytes.length == 0) {
+            throw new BusinessException(400, "无法下载图片");
+        }
+        String fileName = name != null && !name.isBlank() ? name : "ops-import.png";
+        if (!fileName.contains(".")) {
+            fileName = fileName + ".png";
+        }
+        String path = fileStorageService.storeFromBytes(fileName, bytes, "image/png");
+
+        Asset asset = new Asset();
+        asset.setUserId(userId);
+        asset.setName(fileName);
+        asset.setType("image/png");
+        asset.setUrl(path);
+        asset.setSize((long) bytes.length);
+        asset.setCreatedAt(LocalDateTime.now());
+        asset.setUpdatedAt(LocalDateTime.now());
+        assetMapper.insert(asset);
+
+        if (tagNames != null && !tagNames.isEmpty()) {
+            List<Long> tagIds = tagNames.stream().map(this::findOrCreateTagId).collect(Collectors.toList());
+            AssetTagsUpdateRequest req = new AssetTagsUpdateRequest();
+            req.setTagIds(tagIds);
+            replaceTags(asset.getId(), req);
+        }
+        return toAssetVO(asset);
+    }
+
+    private Long findOrCreateTagId(String name) {
+        Tag exist = tagMapper.selectOne(
+                new LambdaQueryWrapper<Tag>().eq(Tag::getName, name).last("LIMIT 1")
+        );
+        if (exist != null) {
+            return exist.getId();
+        }
+        Tag tag = new Tag();
+        tag.setName(name);
+        tag.setColor("#0D9488");
+        tag.setCreatedAt(LocalDateTime.now());
+        tag.setUpdatedAt(LocalDateTime.now());
+        tagMapper.insert(tag);
+        return tag.getId();
     }
 }

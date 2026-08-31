@@ -81,4 +81,33 @@ public class FileStorageService {
         }
         return filename.substring(filename.lastIndexOf(".") + 1);
     }
+
+    /**
+     * 外部 URL 下载的字节写入磁盘 — Ops 候选图入库用
+     */
+    public String storeFromBytes(String originalName, byte[] bytes, String contentType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new BusinessException(400, "文件不能为空");
+        }
+        if (bytes.length > uploadProperties.getMaxSize()) {
+            throw new BusinessException(400, "文件不能大于50M");
+        }
+        String ext = getExtension(originalName).toLowerCase();
+        if (!uploadProperties.getAllowedExtensions().contains(ext)) {
+            throw new BusinessException(400, "不支持文件类型");
+        }
+        String uuid = UUID.randomUUID().toString().replace("-", "");
+        String storedName = uuid + "." + ext;
+        Path dir = Paths.get(uploadProperties.getDir());
+        try {
+            Files.createDirectories(dir);
+            Path target = dir.resolve(storedName);
+            Files.write(target, bytes);
+            log.info("字节流保存成功, storedName={}, size={}", storedName, bytes.length);
+            return "/uploads/" + storedName;
+        } catch (IOException e) {
+            log.error("字节流保存失败", e);
+            throw new BusinessException(500, "文件保存失败");
+        }
+    }
 }
