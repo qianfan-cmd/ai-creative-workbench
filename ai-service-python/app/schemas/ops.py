@@ -88,7 +88,7 @@ class ImageGenerateRequest(BaseModel):
 
     source_url: Optional[str] = Field(None, alias="sourceUrl")
 
-    count: int = Field(default=4, ge=1, le=4)
+    count: int = Field(default=4, ge=1, le=6)
 
     aspect_ratio: Optional[str] = Field(None, alias="aspectRatio")
 

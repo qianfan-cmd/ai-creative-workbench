@@ -7,6 +7,9 @@ import com.workbench.backendjava.dto.MattingElementsSaveRequest;
 import com.workbench.backendjava.dto.MattingExtractConfirmRequest;
 import com.workbench.backendjava.dto.MattingGenerateRequest;
 import com.workbench.backendjava.dto.MattingSaveRequest;
+import com.workbench.backendjava.dto.MattingSourceConfirmRequest;
+import com.workbench.backendjava.dto.MattingSourceGenerateRequest;
+import com.workbench.backendjava.dto.MattingSourceSchemesPatchRequest;
 import com.workbench.backendjava.dto.MattingTaskCreateRequest;
 import com.workbench.backendjava.dto.MattingTaskPatchRequest;
 import com.workbench.backendjava.service.MattingTaskService;
@@ -15,6 +18,7 @@ import com.workbench.backendjava.vo.GenerationJobVO;
 import com.workbench.backendjava.vo.MattingCropRegionsVO;
 import com.workbench.backendjava.vo.MattingElementsVO;
 import com.workbench.backendjava.vo.MattingExtractStatusVO;
+import com.workbench.backendjava.vo.MattingSourceSchemesVO;
 import com.workbench.backendjava.vo.MattingTaskVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -92,6 +96,32 @@ public class OpsMattingController {
     @PostMapping("/{id}/elements/save")
     public Result<List<AssetVO>> saveElements(@PathVariable Long id, @RequestBody MattingElementsSaveRequest request) {
         return Result.ok(mattingTaskService.saveElements(id, request));
+    }
+
+    @GetMapping("/{id}/source/schemes")
+    public Result<MattingSourceSchemesVO> getSourceSchemes(@PathVariable Long id) {
+        return Result.ok(mattingTaskService.getSourceSchemes(id));
+    }
+
+    @PostMapping("/{id}/source/generate")
+    public Result<MattingSourceSchemesVO> generateSource(
+            @PathVariable Long id,
+            @Valid @RequestBody MattingSourceGenerateRequest request) {
+        return Result.ok(mattingTaskService.generateSourceSchemes(id, request));
+    }
+
+    @PatchMapping("/{id}/source/schemes")
+    public Result<MattingSourceSchemesVO> patchSourceSchemes(
+            @PathVariable Long id,
+            @RequestBody MattingSourceSchemesPatchRequest request) {
+        return Result.ok(mattingTaskService.patchSourceSchemes(id, request));
+    }
+
+    @PostMapping("/{id}/source/confirm")
+    public Result<MattingTaskVO> confirmSource(
+            @PathVariable Long id,
+            @RequestBody MattingSourceConfirmRequest request) {
+        return Result.ok(mattingTaskService.confirmSource(id, request));
     }
 
     @PostMapping("/{id}/generate")

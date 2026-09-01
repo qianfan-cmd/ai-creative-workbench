@@ -6,6 +6,7 @@ import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.config.AppProperties;
+import com.workbench.backendjava.config.UploadProperties;
 import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
 import com.workbench.backendjava.dto.AssetUpdateRequest;
 import com.workbench.backendjava.entity.Asset;
@@ -22,9 +23,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -38,6 +47,7 @@ public class AssetService {
     private final AssetMapper assetMapper;
     private final FileStorageService fileStorageService;
     private final AppProperties appProperties;
+    private final UploadProperties uploadProperties;
 
     private final TagMapper tagMapper;
     private final AssetTagMapper assetTagMapper;
@@ -403,6 +413,20 @@ public class AssetService {
         log.info("素材标签更新, userId={}, assetId={}, tagIds={}", userId, assetId, tagIds);
     }
 
+    /** 按标签名批量替换素材标签（不存在则创建） */
+    @Transactional
+    public void replaceTagsByNames(Long assetId, List<String> tagNames) {
+        List<String> names = tagNames != null ? tagNames : List.of();
+        List<Long> tagIds = names.stream()
+                .filter(n -> n != null && !n.isBlank())
+                .map(String::trim)
+                .map(this::findOrCreateTagId)
+                .collect(Collectors.toList());
+        AssetTagsUpdateRequest req = new AssetTagsUpdateRequest();
+        req.setTagIds(tagIds);
+        replaceTags(assetId, req);
+    }
+
     /** 当前用户素材的公网可访问 URL — 供 Python 图像 API 作 sourceUrl */
     public String getPublicUrlForOwnedAsset(Long assetId, Long userId) {
         Asset asset = assetMapper.selectById(assetId);
@@ -410,6 +434,69 @@ public class AssetService {
             throw new BusinessException(404, "素材不存在");
         }
         return buildFullUrl(asset.getUrl());
+    }
+
+    /** 读取当前用户已入库素材的原始字节（服务端裁切用） */
+    public byte[] readOwnedAssetBytes(Long assetId, Long userId) {
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+        return readBytesFromStoredPath(asset.getUrl());
+    }
+
+    /** 从外链下载图片字节（Matting 服务端裁切读图源） */
+    public byte[] downloadImageBytes(String imageUrl) {
+        return downloadBytesFromUrl(imageUrl);
+    }
+
+    /** 将 PNG 字节入库为当前用户的素材，返回 assetId */
+    @Transactional
+    public Long createOwnedPngAsset(Long userId, byte[] pngBytes, String name) {
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+        if (pngBytes == null || pngBytes.length == 0) {
+            throw new BusinessException(400, "裁切结果为空");
+        }
+        String fileName = name != null && !name.isBlank() ? name : "matting-crop.png";
+        if (!fileName.toLowerCase().endsWith(".png")) {
+            fileName = fileName + ".png";
+        }
+        String path = fileStorageService.storeFromBytes(fileName, pngBytes, "image/png");
+        Asset asset = new Asset();
+        asset.setUserId(userId);
+        asset.setName(fileName);
+        asset.setType("image/png");
+        asset.setUrl(path);
+        asset.setSize((long) pngBytes.length);
+        asset.setCreatedAt(LocalDateTime.now());
+        asset.setUpdatedAt(LocalDateTime.now());
+        assetMapper.insert(asset);
+        return asset.getId();
+    }
+
+    private byte[] readBytesFromStoredPath(String storedUrl) {
+        if (storedUrl == null || storedUrl.isBlank()) {
+            throw new BusinessException(400, "素材路径无效");
+        }
+        String relative = storedUrl.startsWith("/uploads/")
+                ? storedUrl.substring("/uploads/".length())
+                : storedUrl.startsWith("uploads/")
+                        ? storedUrl.substring("uploads/".length())
+                        : storedUrl.replaceFirst("^/", "");
+        Path file = Paths.get(uploadProperties.getDir()).resolve(relative);
+        try {
+            if (!Files.isRegularFile(file)) {
+                throw new BusinessException(404, "素材文件不存在");
+            }
+            return Files.readAllBytes(file);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (IOException e) {
+            log.error("读取素材文件失败 path={}", file, e);
+            throw new BusinessException(500, "读取素材文件失败");
+        }
     }
 
     /**
@@ -421,10 +508,7 @@ public class AssetService {
         if (userId == null) {
             throw new BusinessException(401, "未登录");
         }
-        byte[] bytes = new RestTemplate().getForObject(imageUrl, byte[].class);
-        if (bytes == null || bytes.length == 0) {
-            throw new BusinessException(400, "无法下载图片");
-        }
+        byte[] bytes = downloadBytesFromUrl(imageUrl);
         String fileName = name != null && !name.isBlank() ? name : "ops-import.png";
         if (!fileName.contains(".")) {
             fileName = fileName + ".png";
@@ -448,6 +532,48 @@ public class AssetService {
             replaceTags(asset.getId(), req);
         }
         return toAssetVO(asset);
+    }
+
+    /** 从外链下载图片字节（不带 Authorization，避免 TOS 签名 URL 被 RestTemplate 破坏） */
+    private byte[] downloadBytesFromUrl(String imageUrl) {
+        String url = imageUrl != null ? imageUrl.trim() : "";
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            throw new BusinessException(400, "图片 URL 无效");
+        }
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(15))
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(120))
+                    .header("Accept", "image/*,*/*")
+                    .header("User-Agent", "AICreativeWorkbench/1.0")
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() >= 400) {
+                log.warn("下载图片失败 status={} url={}", response.statusCode(), abbreviateUrl(url));
+                throw new BusinessException(400, "下载图片失败: HTTP " + response.statusCode());
+            }
+            byte[] body = response.body();
+            if (body == null || body.length == 0) {
+                throw new BusinessException(400, "无法下载图片");
+            }
+            return body;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(400, "下载图片被中断");
+        } catch (Exception e) {
+            log.warn("下载图片异常 url={}", abbreviateUrl(url), e);
+            throw new BusinessException(400, "下载图片失败: " + e.getMessage());
+        }
+    }
+
+    private static String abbreviateUrl(String url) {
+        return url.length() > 120 ? url.substring(0, 120) + "..." : url;
     }
 
     private Long findOrCreateTagId(String name) {

@@ -48,7 +48,7 @@ class DashScopeWanxAdapter(ImageProvider):
             "model": self._model(),
             "input": {"messages": [{"role": "user", "content": content}]},
             "parameters": {
-                "n": max(1, min(count, 4)),
+                "n": max(1, min(count, 6)),
                 "size": size or "2K",
                 "watermark": False,
             },
@@ -91,5 +91,5 @@ class DashScopeWanxAdapter(ImageProvider):
 
         return [
             ImageCandidate(url=url, index=i)
-            for i, url in enumerate(urls[: max(1, min(count, 4))])
+            for i, url in enumerate(urls[: max(1, min(count, 6))])
         ]

@@ -17,10 +17,38 @@ public class MattingConfig {
     private String extractStatus = "idle";
     private String detectError;
     private String extractError;
+    private List<SourceScheme> sourceSchemes = new ArrayList<>();
+    private List<ConfirmedSource> confirmedSources = new ArrayList<>();
+
+    @Data
+    public static class ConfirmedSource {
+        private String id;
+        private String schemeId;
+        private Long sourceAssetId;
+        /** AI 生图等外链（入库失败或未入库时用于框选/识别） */
+        private String sourceImageUrl;
+        private String label;
+        private Integer sortOrder;
+        /** 该来源是否「使用原图」 */
+        private Boolean useOriginal;
+    }
+
+    @Data
+    public static class SourceScheme {
+        private String id;
+        private String imageUrl;
+        private String prompt;
+        private String aspectRatio;
+        private List<String> referenceUrls;
+        private Boolean selected;
+        private Long generationJobId;
+    }
 
     @Data
     public static class CropRegion {
         private String id;
+        /** 关联 ConfirmedSource.id */
+        private String sourceId;
         @JsonProperty("xPct")
         private Double xPct;
         @JsonProperty("yPct")

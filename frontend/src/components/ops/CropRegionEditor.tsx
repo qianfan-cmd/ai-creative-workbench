@@ -1,16 +1,15 @@
-import { BorderOutlined, ExpandOutlined } from '@ant-design/icons'
-import { Button, Checkbox, Modal } from 'antd'
-import { useCallback, useState } from 'react'
+import { Modal } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
 import {
   CROP_HANDLES,
   useMattingCropRegions,
   type CropHandle,
 } from '@/hooks/useMattingCropRegions'
 import type { CropRectPct } from '@/utils/cropImage'
-import { buildNaturalAspectFrameStyle } from '@/utils/cropImage'
+import { buildNaturalAspectFrameStyle, shouldSuggestFullImageCut } from '@/utils/cropImage'
 import styles from '@/components/ops/CropRegionEditor.module.css'
 
-/** 按 URL 缓存 natural 尺寸，切任务回来可立刻恢复画框比例（对齐机台 registerCutImageNaturalSize） */
+/** 按 URL 缓存 natural 尺寸，切任务回来可立刻恢复画框比例 */
 const naturalSizeCache = new Map<string, { w: number; h: number }>()
 
 interface CropRegionEditorProps {
@@ -19,12 +18,17 @@ interface CropRegionEditorProps {
   useOriginal: boolean
   onRegionsChange: (regions: CropRectPct[] | ((prev: CropRectPct[]) => CropRectPct[])) => void
   onUseOriginalChange: (v: boolean) => void
+  variant?: 'default' | 'card'
+  fullCutOpen?: boolean
+  onFullCutOpenChange?: (open: boolean) => void
+  onSuggestFullCutChange?: (suggest: boolean) => void
 }
 
 function RegionOverlay({
   regions,
   selectedRegionId,
   draftRect,
+  draftStyle,
   useOriginal,
   getRegionStyle,
   onRegionPointerDown,
@@ -34,6 +38,7 @@ function RegionOverlay({
   regions: CropRectPct[]
   selectedRegionId: string | null
   draftRect: CropRectPct | null
+  draftStyle: React.CSSProperties | null
   useOriginal: boolean
   getRegionStyle: (r: CropRectPct) => React.CSSProperties
   onRegionPointerDown: (id: string, e: React.PointerEvent) => void
@@ -80,10 +85,10 @@ function RegionOverlay({
           </div>
         )
       })}
-      {draftRect && draftRect.wPct > 0 && (
+      {draftRect && draftRect.wPct > 0 && draftStyle && (
         <div
           className={[styles.regionBox, styles.regionDraft].join(' ')}
-          style={getRegionStyle(draftRect)}
+          style={draftStyle}
         />
       )}
     </div>
@@ -95,16 +100,20 @@ function CropCanvas({
   canvasRef,
   frameStyle,
   frameClassName,
+  imgClassName,
   onImageLoad,
   onCanvasPointerDown,
+  locked,
   children,
 }: {
   imageUrl: string
   canvasRef: React.RefObject<HTMLDivElement | null>
   frameStyle?: React.CSSProperties
   frameClassName?: string
+  imgClassName?: string
   onImageLoad: (w: number, h: number) => void
   onCanvasPointerDown: (e: React.PointerEvent) => void
+  locked?: boolean
   children: React.ReactNode
 }) {
   const handleImgRef = (el: HTMLImageElement | null) => {
@@ -116,7 +125,13 @@ function CropCanvas({
   return (
     <div
       ref={canvasRef}
-      className={[styles.canvas, frameClassName ?? ''].filter(Boolean).join(' ')}
+      className={[
+        styles.canvas,
+        frameClassName ?? '',
+        locked ? styles.canvasLocked : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={frameStyle}
       onPointerDown={onCanvasPointerDown}
     >
@@ -124,7 +139,7 @@ function CropCanvas({
         ref={handleImgRef}
         src={imageUrl}
         alt="源图"
-        className={styles.sourceImg}
+        className={[styles.sourceImg, imgClassName ?? ''].filter(Boolean).join(' ')}
         draggable={false}
         onLoad={(e) => {
           const t = e.currentTarget
@@ -143,12 +158,18 @@ export default function CropRegionEditor({
   regions,
   useOriginal,
   onRegionsChange,
-  onUseOriginalChange,
+  variant = 'default',
+  fullCutOpen: controlledFullCutOpen,
+  onFullCutOpenChange,
+  onSuggestFullCutChange,
 }: CropRegionEditorProps) {
   const cached = naturalSizeCache.get(imageUrl)
   const [naturalSize, setNaturalSize] = useState(cached ?? { w: 0, h: 0 })
+  const [internalFullCutOpen, setInternalFullCutOpen] = useState(false)
 
-  /** 对齐 Stage2CutPanel.onCardImageLoad → registerCutImageNaturalSize */
+  const fullCutOpen = controlledFullCutOpen ?? internalFullCutOpen
+  const setFullCutOpen = onFullCutOpenChange ?? setInternalFullCutOpen
+
   const registerNaturalSize = useCallback(
     (w: number, h: number) => {
       const nw = Math.floor(w)
@@ -163,15 +184,18 @@ export default function CropRegionEditor({
   const crop = useMattingCropRegions({
     regions,
     useOriginal,
+    naturalSize,
     onRegionsChange,
   })
 
+  const suggestFullCut =
+    naturalSize.w > 0 && naturalSize.h > 0 && shouldSuggestFullImageCut(naturalSize.w, naturalSize.h)
+
+  useEffect(() => {
+    onSuggestFullCutChange?.(suggestFullCut)
+  }, [suggestFullCut, onSuggestFullCutChange])
+
   const hasAspect = naturalSize.w > 0 && naturalSize.h > 0
-  const inlineFrameStyle = hasAspect
-    ? buildNaturalAspectFrameStyle(naturalSize.w, naturalSize.h, {
-        maxHeight: 'min(360px, 50vh)',
-      })
-    : undefined
   const fullFrameStyle = hasAspect
     ? buildNaturalAspectFrameStyle(naturalSize.w, naturalSize.h, {
         maxHeight: 'min(64vh, calc(100dvh - 260px))',
@@ -179,12 +203,13 @@ export default function CropRegionEditor({
       })
     : undefined
 
-  const overlayProps = {
+  const inlineOverlayProps = {
     regions,
     selectedRegionId: crop.selectedRegionId,
-    draftRect: crop.draftRect,
+    draftRect: crop.draftSurface === 'inline' ? crop.draftRect : null,
+    draftStyle: crop.getDraftStyle('inline'),
     useOriginal,
-    getRegionStyle: crop.getRegionStyle,
+    getRegionStyle: crop.getInlineRegionStyle,
     onRegionPointerDown: (id: string, e: React.PointerEvent) =>
       crop.startEdit(id, 'move', 'inline', e),
     onHandlePointerDown: (id: string, handle: CropHandle, e: React.PointerEvent) =>
@@ -193,54 +218,46 @@ export default function CropRegionEditor({
   }
 
   const fullOverlayProps = {
-    ...overlayProps,
+    ...inlineOverlayProps,
+    draftRect: crop.draftSurface === 'full' ? crop.draftRect : null,
+    draftStyle: crop.getDraftStyle('full'),
+    getRegionStyle: crop.getFullRegionStyle,
     onRegionPointerDown: (id: string, e: React.PointerEvent) =>
       crop.startEdit(id, 'move', 'full', e),
     onHandlePointerDown: (id: string, handle: CropHandle, e: React.PointerEvent) =>
       crop.startEdit(id, handle, 'full', e),
   }
 
-  return (
-    <div className={styles.wrap}>
-      <div className={styles.toolbar}>
-        <Checkbox
-          checked={useOriginal}
-          onChange={(e) => {
-            onUseOriginalChange(e.target.checked)
-            if (e.target.checked) onRegionsChange([])
-          }}
-        >
-          使用原图（不框选）
-        </Checkbox>
-        {!useOriginal && (
-          <>
-            <Button type="link" icon={<ExpandOutlined />} onClick={() => crop.setFullCutOpen(true)}>
-              完整图裁剪
-            </Button>
-            <span className={styles.hint}>
-              <BorderOutlined /> 拖拽绘制 · 拖动移动 · 控点缩放（{regions.length}/{6}）
-            </span>
-          </>
-        )}
-      </div>
+  const isCard = variant === 'card'
 
+  return (
+    <div className={[styles.wrap, isCard ? styles.wrapCard : ''].filter(Boolean).join(' ')}>
       {!useOriginal ? (
         <>
+          {suggestFullCut && isCard && (
+            <p className={styles.non916Hint}>
+              当前图比例与 9:16 不一致，预览仅为局部放大。请使用「完整图裁剪」查看整张原图后再框选。
+            </p>
+          )}
           <CropCanvas
             imageUrl={imageUrl}
             canvasRef={crop.inlineCanvasRef}
-            frameStyle={inlineFrameStyle}
-            frameClassName={hasAspect ? styles.canvasAspect : styles.canvasPlaceholder}
+            frameClassName={styles.canvasInline916}
             onImageLoad={registerNaturalSize}
             onCanvasPointerDown={(e) => crop.onCanvasPointerDown('inline', e)}
+            locked={crop.isLimitReached}
           >
-            <RegionOverlay {...overlayProps} />
+            <RegionOverlay {...inlineOverlayProps} />
           </CropCanvas>
           <p
             className={[
               styles.status,
+              isCard ? styles.statusCard : '',
               crop.isLimitReached ? styles.statusLimit : '',
-            ].join(' ')}
+              useOriginal ? styles.statusOriginal : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             {crop.statusText}
           </p>
@@ -250,8 +267,7 @@ export default function CropRegionEditor({
           <CropCanvas
             imageUrl={imageUrl}
             canvasRef={crop.inlineCanvasRef}
-            frameStyle={inlineFrameStyle}
-            frameClassName={[styles.canvasReadonly, hasAspect ? styles.canvasAspect : ''].join(' ')}
+            frameClassName={[styles.canvasInline916, styles.canvasReadonly].join(' ')}
             onImageLoad={registerNaturalSize}
             onCanvasPointerDown={() => {}}
           >
@@ -261,30 +277,38 @@ export default function CropRegionEditor({
               </div>
             </div>
           </CropCanvas>
-          <p className={styles.status}>{crop.statusText}</p>
+          <p className={[styles.status, isCard ? styles.statusCard : '', styles.statusOriginal].join(' ')}>
+            {crop.statusText}
+          </p>
         </div>
       )}
 
       <Modal
         title="完整图裁剪"
-        open={crop.fullCutOpen}
-        onCancel={() => crop.setFullCutOpen(false)}
+        open={fullCutOpen}
+        onCancel={() => setFullCutOpen(false)}
         footer={null}
         width="auto"
         centered
         destroyOnClose={false}
+        className={styles.fullCutModal}
       >
-        <p className={styles.modalHint}>在大图模式下框选、拖动或缩放区域，关闭后保留已选区域。</p>
+        <p className={styles.modalHint}>
+          下方区域按<strong>原图像素比例</strong>完整显示，可直接框选；与卡片 9:16 预览中的选区实时对应。
+        </p>
         <CropCanvas
           imageUrl={imageUrl}
           canvasRef={crop.fullCanvasRef}
           frameStyle={fullFrameStyle}
           frameClassName={[styles.canvasFull, hasAspect ? styles.canvasAspect : styles.canvasPlaceholder].join(' ')}
+          imgClassName={styles.sourceImgFill}
           onImageLoad={registerNaturalSize}
           onCanvasPointerDown={(e) => crop.onCanvasPointerDown('full', e)}
+          locked={crop.isLimitReached}
         >
           <RegionOverlay {...fullOverlayProps} />
         </CropCanvas>
+        <p className={styles.modalFoot}>{crop.statusText}</p>
       </Modal>
     </div>
   )

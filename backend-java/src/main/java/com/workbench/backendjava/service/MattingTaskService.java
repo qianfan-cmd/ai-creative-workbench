@@ -6,14 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
-import com.workbench.backendjava.dto.MattingCropSaveRequest;
-import com.workbench.backendjava.dto.MattingElementsPatchRequest;
-import com.workbench.backendjava.dto.MattingElementsSaveRequest;
-import com.workbench.backendjava.dto.MattingExtractConfirmRequest;
-import com.workbench.backendjava.dto.MattingGenerateRequest;
-import com.workbench.backendjava.dto.MattingSaveRequest;
-import com.workbench.backendjava.dto.MattingTaskCreateRequest;
-import com.workbench.backendjava.dto.MattingTaskPatchRequest;
+import com.workbench.backendjava.dto.*;
 import com.workbench.backendjava.entity.AiCallLog;
 import com.workbench.backendjava.entity.OpsMattingTask;
 import com.workbench.backendjava.entity.PromptTemplate;
@@ -21,38 +14,35 @@ import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.mapper.OpsMattingTaskMapper;
 import com.workbench.backendjava.mapper.PromptTemplateMapper;
 import com.workbench.backendjava.model.MattingConfig;
+import com.workbench.backendjava.model.MattingConfig.ConfirmedSource;
 import com.workbench.backendjava.model.MattingConfig.CropRegion;
 import com.workbench.backendjava.model.MattingConfig.ElementImage;
 import com.workbench.backendjava.model.MattingConfig.ElementItem;
-import com.workbench.backendjava.vo.AssetVO;
-import com.workbench.backendjava.vo.GenerationJobVO;
-import com.workbench.backendjava.vo.MattingElementsVO;
-import com.workbench.backendjava.vo.MattingExtractStatusVO;
-import com.workbench.backendjava.vo.MattingCropRegionsVO;
-import com.workbench.backendjava.vo.MattingTaskVO;
+import com.workbench.backendjava.model.MattingConfig.SourceScheme;
+import com.workbench.backendjava.vo.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /** 抠图任务 CRUD + 框选/识别/提取/保存编排 */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class MattingTaskService {
 
     private static final int MAX_REGIONS = 6;
+    private static final String LEGACY_SOURCE_ID = "legacy";
 
     private final OpsMattingTaskMapper mattingTaskMapper;
     private final AssetService assetService;
     private final GenerationJobService generationJobService;
     private final MattingExtractService mattingExtractService;
+    private final MattingImageCropService mattingImageCropService;
     private final PromptTemplateMapper promptTemplateMapper;
     private final PythonAiClient pythonAiClient;
     private final AiCallLogMapper aiCallLogMapper;
@@ -89,8 +79,6 @@ public class MattingTaskService {
     public MattingTaskVO patchTask(Long id, MattingTaskPatchRequest request) {
         Long userId = requireUserId();
         OpsMattingTask task = getOwnedTask(id, userId);
-        MattingConfig config = parseConfig(task.getConfigJson());
-        boolean sourceChanged = false;
 
         if (request.getTitle() != null) {
             task.setTitle(request.getTitle().trim());
@@ -99,11 +87,7 @@ public class MattingTaskService {
             task.setStage(request.getStage());
         }
         if (request.getSourceAssetId() != null) {
-            Long newSourceId = request.getSourceAssetId();
-            if (task.getSourceAssetId() == null || !task.getSourceAssetId().equals(newSourceId)) {
-                sourceChanged = true;
-            }
-            task.setSourceAssetId(newSourceId);
+            task.setSourceAssetId(request.getSourceAssetId());
         }
         if (request.getConfigJson() != null) {
             task.setConfigJson(request.getConfigJson());
@@ -115,14 +99,6 @@ public class MattingTaskService {
             task.setStatus(request.getStatus());
         }
 
-        if (sourceChanged) {
-            clearConfigFrom(config, 2);
-            task.setConfigJson(writeJson(config));
-            task.setStage(2);
-            task.setSelectedCandidate(null);
-            task.setStatus("draft");
-        }
-
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
         return toVO(task);
@@ -131,30 +107,37 @@ public class MattingTaskService {
     /** 查询已保存的框选坐标（草稿或确认后均可恢复 UI，对齐美术机台 crop/list） */
     public MattingCropRegionsVO getCropRegions(Long taskId) {
         OpsMattingTask task = getOwnedTask(taskId, requireUserId());
-        return buildCropRegionsVO(parseConfig(task.getConfigJson()));
+        MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
+        return buildCropRegionsVO(config);
     }
 
     @Transactional
     public MattingTaskVO saveCropRegions(Long taskId, MattingCropSaveRequest request) {
         Long userId = requireUserId();
         OpsMattingTask task = getOwnedTask(taskId, userId);
-        if (task.getSourceAssetId() == null) {
+        MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
+        if (config.getConfirmedSources().isEmpty()) {
             throw new BusinessException(400, "请先选择源图");
         }
 
-        MattingConfig config = parseConfig(task.getConfigJson());
         boolean draft = Boolean.TRUE.equals(request.getDraft());
 
-        // 正式保存（确认框选前上传裁切图）：重做框选时清空③+ 数据
         if (!draft && task.getStage() != null && task.getStage() >= 3) {
             clearConfigFrom(config, 3);
         }
 
         if (draft) {
-            // 草稿：仅持久化百分比坐标，不碰 elements/extract，刷新或切任务后可恢复
-            applyDraftCropRegions(config, request, userId);
+            if (request.getSourceId() == null || request.getSourceId().isBlank()) {
+                throw new BusinessException(400, "草稿保存需指定 sourceId");
+            }
+            applyDraftCropForSource(config, request.getSourceId(), request.getUseOriginal(),
+                    request.getRegions(), userId);
+        } else if (request.getSources() != null && !request.getSources().isEmpty()) {
+            replaceAllSourceCrops(config, request.getSources(), userId);
         } else {
-            replaceCropRegions(config, request, userId);
+            throw new BusinessException(400, "请提供 sources 或 draft+sourceId");
         }
 
         task.setConfigJson(writeJson(config));
@@ -168,59 +151,55 @@ public class MattingTaskService {
         return toVO(task);
     }
 
-    /** 全量替换 cropRegions（含 subAssetId，用于确认框选前的正式保存） */
-    private void replaceCropRegions(MattingConfig config, MattingCropSaveRequest request, Long userId) {
+    private void replaceAllSourceCrops(MattingConfig config,
+                                       List<MattingCropSaveRequest.SourceCropItem> sources,
+                                       Long userId) {
         config.setCropRegions(new ArrayList<>());
-
-        if (Boolean.TRUE.equals(request.getUseOriginal())) {
-            CropRegion region = new CropRegion();
-            region.setId("r_original");
-            region.setUseOriginal(true);
-            config.getCropRegions().add(region);
-            return;
-        }
-
-        List<MattingCropSaveRequest.CropRegionItem> items = request.getRegions();
-        if (items == null || items.isEmpty()) {
-            throw new BusinessException(400, "请至少框选一个区域，或选择使用原图");
-        }
-        if (items.size() > MAX_REGIONS) {
-            throw new BusinessException(400, "最多 " + MAX_REGIONS + " 个切割区域");
-        }
-        for (MattingCropSaveRequest.CropRegionItem item : items) {
-            config.getCropRegions().add(toCropRegion(item, userId, null));
+        for (MattingCropSaveRequest.SourceCropItem src : sources) {
+            applySourceCrop(config, src.getSourceId(), src.getUseOriginal(), src.getRegions(), userId, true);
         }
     }
 
-    /**
-     * 草稿保存：按 region id 合并坐标；若请求未带 subAssetId 则保留 config 里已有裁切图引用。
-     * 允许空 regions（用户删光框选），与美术机台「仅保存切割数据、不推进阶段」一致。
-     */
-    private void applyDraftCropRegions(MattingConfig config, MattingCropSaveRequest request, Long userId) {
+    private void applyDraftCropForSource(MattingConfig config, String sourceId, Boolean useOriginal,
+                                         List<MattingCropSaveRequest.CropRegionItem> items, Long userId) {
+        applySourceCrop(config, sourceId, useOriginal, items, userId, false);
+    }
+
+    private void applySourceCrop(MattingConfig config, String sourceId, Boolean useOriginal,
+                                 List<MattingCropSaveRequest.CropRegionItem> items, Long userId,
+                                 boolean requireRegions) {
+        ConfirmedSource src = findConfirmedSource(config, sourceId);
+        src.setUseOriginal(Boolean.TRUE.equals(useOriginal));
+
         Map<String, CropRegion> existingById = config.getCropRegions().stream()
-                .filter(r -> r.getId() != null)
+                .filter(r -> sourceId.equals(r.getSourceId()) && r.getId() != null)
                 .collect(Collectors.toMap(CropRegion::getId, r -> r, (a, b) -> a, LinkedHashMap::new));
 
-        config.setCropRegions(new ArrayList<>());
+        config.getCropRegions().removeIf(r -> sourceId.equals(r.getSourceId()));
 
-        if (Boolean.TRUE.equals(request.getUseOriginal())) {
+        if (Boolean.TRUE.equals(useOriginal)) {
             CropRegion region = new CropRegion();
-            region.setId("r_original");
+            region.setId("r_original_" + sourceId);
+            region.setSourceId(sourceId);
             region.setUseOriginal(true);
             config.getCropRegions().add(region);
             return;
         }
 
-        List<MattingCropSaveRequest.CropRegionItem> items = request.getRegions();
         if (items == null) {
             items = List.of();
         }
+        if (requireRegions && items.isEmpty()) {
+            throw new BusinessException(400, src.getLabel() + "：请至少框选一个区域，或选择使用原图");
+        }
         if (items.size() > MAX_REGIONS) {
-            throw new BusinessException(400, "最多 " + MAX_REGIONS + " 个切割区域");
+            throw new BusinessException(400, src.getLabel() + "：最多 " + MAX_REGIONS + " 个切割区域");
         }
         for (MattingCropSaveRequest.CropRegionItem item : items) {
             CropRegion prev = item.getId() != null ? existingById.get(item.getId()) : null;
-            config.getCropRegions().add(toCropRegion(item, userId, prev));
+            CropRegion region = toCropRegion(item, userId, prev);
+            region.setSourceId(sourceId);
+            config.getCropRegions().add(region);
         }
     }
 
@@ -253,34 +232,35 @@ public class MattingTaskService {
 
     private MattingCropRegionsVO buildCropRegionsVO(MattingConfig config) {
         MattingCropRegionsVO vo = new MattingCropRegionsVO();
-        List<CropRegion> stored = config.getCropRegions();
-        if (stored == null || stored.isEmpty()) {
-            vo.setUseOriginal(false);
-            vo.setRegions(new ArrayList<>());
+        List<MattingCropRegionsVO.SourceCropVO> sourceItems = new ArrayList<>();
+        if (config.getConfirmedSources() == null) {
+            vo.setSources(sourceItems);
             return vo;
         }
-
-        boolean useOriginal = stored.stream()
-                .anyMatch(r -> Boolean.TRUE.equals(r.getUseOriginal()) || "r_original".equals(r.getId()));
-        vo.setUseOriginal(useOriginal);
-        if (useOriginal) {
-            vo.setRegions(new ArrayList<>());
-            return vo;
+        for (ConfirmedSource cs : config.getConfirmedSources()) {
+            MattingCropRegionsVO.SourceCropVO sc = new MattingCropRegionsVO.SourceCropVO();
+            sc.setSourceId(cs.getId());
+            sc.setUseOriginal(Boolean.TRUE.equals(cs.getUseOriginal()));
+            List<MattingCropRegionsVO.RegionItem> regionItems = new ArrayList<>();
+            if (config.getCropRegions() != null) {
+                regionItems = config.getCropRegions().stream()
+                        .filter(r -> cs.getId().equals(r.getSourceId()))
+                        .filter(r -> !Boolean.TRUE.equals(r.getUseOriginal()))
+                        .map(r -> {
+                            MattingCropRegionsVO.RegionItem item = new MattingCropRegionsVO.RegionItem();
+                            item.setId(r.getId());
+                            item.setXPct(r.getXPct());
+                            item.setYPct(r.getYPct());
+                            item.setWPct(r.getWPct());
+                            item.setHPct(r.getHPct());
+                            return item;
+                        })
+                        .collect(Collectors.toList());
+            }
+            sc.setRegions(regionItems);
+            sourceItems.add(sc);
         }
-
-        List<MattingCropRegionsVO.RegionItem> items = stored.stream()
-                .filter(r -> !Boolean.TRUE.equals(r.getUseOriginal()))
-                .map(r -> {
-                    MattingCropRegionsVO.RegionItem item = new MattingCropRegionsVO.RegionItem();
-                    item.setId(r.getId());
-                    item.setXPct(r.getXPct());
-                    item.setYPct(r.getYPct());
-                    item.setWPct(r.getWPct());
-                    item.setHPct(r.getHPct());
-                    return item;
-                })
-                .collect(Collectors.toList());
-        vo.setRegions(items);
+        vo.setSources(sourceItems);
         return vo;
     }
 
@@ -288,15 +268,15 @@ public class MattingTaskService {
     public MattingTaskVO confirmCrop(Long taskId) {
         Long userId = requireUserId();
         OpsMattingTask task = getOwnedTask(taskId, userId);
-        if (task.getSourceAssetId() == null) {
+        MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
+        if (config.getConfirmedSources().isEmpty()) {
             throw new BusinessException(400, "请先选择源图");
         }
-        String sourceUrl = assetService.getPublicUrlForOwnedAsset(task.getSourceAssetId(), userId);
-        MattingConfig config = parseConfig(task.getConfigJson());
 
-        if (config.getCropRegions().isEmpty()) {
-            throw new BusinessException(400, "请先保存框选区域");
-        }
+        validateAllSourcesHaveCrop(config);
+
+        ensureRegionSubAssets(config, userId);
 
         clearConfigFrom(config, 3);
         config.setDetectStatus("running");
@@ -310,7 +290,7 @@ public class MattingTaskService {
 
         try {
             for (CropRegion region : config.getCropRegions()) {
-                String imageUrl = resolveRegionImageUrl(region, sourceUrl, userId);
+                String imageUrl = resolveRegionImageUrl(region, config, userId);
                 long t0 = System.currentTimeMillis();
                 Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt);
                 writeDetectLog(userId, "matting_detect", regionPrompt, "success",
@@ -346,12 +326,56 @@ public class MattingTaskService {
         return toVO(task);
     }
 
+    private void ensureRegionSubAssets(MattingConfig config, Long userId) {
+        if (config.getCropRegions() == null) {
+            return;
+        }
+        for (CropRegion region : config.getCropRegions()) {
+            ensureRegionSubAsset(config, region, userId);
+        }
+    }
+
+    private void ensureRegionSubAsset(MattingConfig config, CropRegion region, Long userId) {
+        if (Boolean.TRUE.equals(region.getUseOriginal())) {
+            return;
+        }
+        if (region.getSubAssetId() != null) {
+            return;
+        }
+        ConfirmedSource source = findConfirmedSource(config, region.getSourceId());
+        String name = "matting-crop-" + region.getId() + ".png";
+        MattingImageCropService.CropAssetResult result =
+                mattingImageCropService.cropRegionFromSource(userId, source, region, name);
+        region.setSubAssetId(result.getAssetId());
+        region.setSubAssetUrl(result.getPublicUrl());
+    }
+
+    private void validateAllSourcesHaveCrop(MattingConfig config) {
+        for (ConfirmedSource cs : config.getConfirmedSources()) {
+            if (Boolean.TRUE.equals(cs.getUseOriginal())) {
+                boolean hasOriginal = config.getCropRegions().stream()
+                        .anyMatch(r -> cs.getId().equals(r.getSourceId()) && Boolean.TRUE.equals(r.getUseOriginal()));
+                if (!hasOriginal) {
+                    throw new BusinessException(400, cs.getLabel() + "：请先保存框选或使用原图");
+                }
+                continue;
+            }
+            long count = config.getCropRegions().stream()
+                    .filter(r -> cs.getId().equals(r.getSourceId()))
+                    .filter(r -> !Boolean.TRUE.equals(r.getUseOriginal()))
+                    .count();
+            if (count == 0) {
+                throw new BusinessException(400, cs.getLabel() + "：请至少框选一个区域，或选择使用原图");
+            }
+        }
+    }
+
     @Transactional
     public MattingTaskVO reDetectRegion(Long taskId, String regionId) {
         Long userId = requireUserId();
         OpsMattingTask task = getOwnedTask(taskId, userId);
-        String sourceUrl = assetService.getPublicUrlForOwnedAsset(task.getSourceAssetId(), userId);
         MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
 
         CropRegion region = config.getCropRegions().stream()
                 .filter(r -> regionId.equals(r.getId()))
@@ -363,9 +387,13 @@ public class MattingTaskService {
         task.setConfigJson(writeJson(config));
         mattingTaskMapper.updateById(task);
 
+        ensureRegionSubAsset(config, region, userId);
+        task.setConfigJson(writeJson(config));
+        mattingTaskMapper.updateById(task);
+
         String regionPrompt = loadPromptTemplate("matting_region");
         try {
-            String imageUrl = resolveRegionImageUrl(region, sourceUrl, userId);
+            String imageUrl = resolveRegionImageUrl(region, config, userId);
             Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt);
             int sort = config.getElements().stream()
                     .mapToInt(e -> e.getSortOrder() != null ? e.getSortOrder() : 0)
@@ -400,6 +428,7 @@ public class MattingTaskService {
     public MattingElementsVO getElements(Long taskId) {
         OpsMattingTask task = getOwnedTask(taskId, requireUserId());
         MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
         return buildElementsVO(config, task.getUserId());
     }
 
@@ -483,7 +512,249 @@ public class MattingTaskService {
         task.setSelectedCandidate(writeJson(saved.stream().map(a -> Map.of("assetId", a.getId(), "url", a.getUrl())).toList()));
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
+
+        if (Boolean.TRUE.equals(request.getSaveSourceToAssets())) {
+            MattingConfig config = parseConfig(task.getConfigJson());
+            ensureConfirmedSources(config, task);
+            List<String> tags = request.getSourceTags();
+            if (tags == null || tags.isEmpty()) {
+                tags = List.of("generated", "reference");
+            }
+            if (config.getConfirmedSources() != null && !config.getConfirmedSources().isEmpty()) {
+                for (ConfirmedSource cs : config.getConfirmedSources()) {
+                    if (cs.getSourceAssetId() != null) {
+                        assetService.replaceTagsByNames(cs.getSourceAssetId(), tags);
+                    }
+                }
+            } else if (task.getSourceAssetId() != null) {
+                assetService.replaceTagsByNames(task.getSourceAssetId(), tags);
+            }
+        }
         return saved;
+    }
+
+    public MattingSourceSchemesVO getSourceSchemes(Long taskId) {
+        OpsMattingTask task = getOwnedTask(taskId, requireUserId());
+        return buildSourceSchemesVO(parseConfig(task.getConfigJson()));
+    }
+
+    @Transactional
+    public MattingSourceSchemesVO generateSourceSchemes(Long taskId, MattingSourceGenerateRequest request) {
+        Long userId = requireUserId();
+        OpsMattingTask task = getOwnedTask(taskId, userId);
+        String prompt = request.getPrompt().trim();
+        int count = request.getCount() != null ? request.getCount() : 4;
+        if (count < 1 || count > 6) {
+            throw new BusinessException(400, "生成张数须在 1–6 之间");
+        }
+        String aspectRatio = request.getAspectRatio() != null && !request.getAspectRatio().isBlank()
+                ? request.getAspectRatio().trim() : "9:16";
+        List<String> refUrls = request.getReferenceUrls() != null ? request.getReferenceUrls() : List.of();
+        String sourceUrl = refUrls.isEmpty() ? null : refUrls.get(0);
+
+        GenerationJobVO job = generationJobService.runJob(
+                userId, "image_gen", taskId, null, prompt, sourceUrl, count, aspectRatio);
+
+        MattingConfig config = parseConfig(task.getConfigJson());
+        if (config.getSourceSchemes() == null) {
+            config.setSourceSchemes(new ArrayList<>());
+        }
+        List<ImageCandidateVO> candidates = job.getCandidates();
+        if (candidates != null) {
+            for (ImageCandidateVO c : candidates) {
+                if (c.getUrl() == null || c.getUrl().isBlank()) continue;
+                SourceScheme scheme = new SourceScheme();
+                scheme.setId("s_" + UUID.randomUUID().toString().substring(0, 8));
+                scheme.setImageUrl(c.getUrl());
+                scheme.setPrompt(prompt);
+                scheme.setAspectRatio(aspectRatio);
+                scheme.setReferenceUrls(new ArrayList<>(refUrls));
+                scheme.setSelected(false);
+                scheme.setGenerationJobId(job.getId());
+                config.getSourceSchemes().add(scheme);
+            }
+        }
+        task.setConfigJson(writeJson(config));
+        task.setUpdatedAt(LocalDateTime.now());
+        mattingTaskMapper.updateById(task);
+        return buildSourceSchemesVO(config);
+    }
+
+    @Transactional
+    public MattingSourceSchemesVO patchSourceSchemes(Long taskId, MattingSourceSchemesPatchRequest request) {
+        OpsMattingTask task = getOwnedTask(taskId, requireUserId());
+        MattingConfig config = parseConfig(task.getConfigJson());
+        if (config.getSourceSchemes() == null) {
+            config.setSourceSchemes(new ArrayList<>());
+        }
+
+        if (request.getDeleteIds() != null && !request.getDeleteIds().isEmpty()) {
+            for (String deleteId : request.getDeleteIds()) {
+                removeSourceData(config, deleteId);
+            }
+            config.getSourceSchemes().removeIf(s -> request.getDeleteIds().contains(s.getId()));
+        }
+
+        if (request.getSchemeId() != null) {
+            String schemeId = request.getSchemeId();
+            boolean selected = Boolean.TRUE.equals(request.getSelected());
+            for (SourceScheme s : config.getSourceSchemes()) {
+                if (schemeId.equals(s.getId())) {
+                    s.setSelected(selected);
+                }
+            }
+        }
+
+        task.setConfigJson(writeJson(config));
+        task.setUpdatedAt(LocalDateTime.now());
+        mattingTaskMapper.updateById(task);
+        return buildSourceSchemesVO(config);
+    }
+
+    @Transactional
+    public MattingTaskVO confirmSource(Long taskId, MattingSourceConfirmRequest request) {
+        Long userId = requireUserId();
+        OpsMattingTask task = getOwnedTask(taskId, userId);
+        MattingConfig config = parseConfig(task.getConfigJson());
+
+        List<String> schemeIds = new ArrayList<>();
+        if (request.getSchemeIds() != null) {
+            schemeIds.addAll(request.getSchemeIds());
+        }
+        if (request.getSchemeId() != null && !request.getSchemeId().isBlank()) {
+            schemeIds.add(request.getSchemeId());
+        }
+
+        List<Long> sourceAssetIds = new ArrayList<>();
+        if (request.getSourceAssetIds() != null) {
+            sourceAssetIds.addAll(request.getSourceAssetIds());
+        }
+        if (request.getSourceAssetId() != null) {
+            sourceAssetIds.add(request.getSourceAssetId());
+        }
+
+        if (schemeIds.isEmpty() && sourceAssetIds.isEmpty()) {
+            throw new BusinessException(400, "请至少选择一张源图");
+        }
+
+        List<ConfirmedSource> newSources = new ArrayList<>();
+        int sort = 0;
+        Set<String> schemeIdSet = new LinkedHashSet<>(schemeIds);
+
+        for (String schemeId : schemeIdSet) {
+            SourceScheme scheme = config.getSourceSchemes().stream()
+                    .filter(s -> schemeId.equals(s.getId()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(404, "方案不存在: " + schemeId));
+            if (scheme.getImageUrl() == null || scheme.getImageUrl().isBlank()) {
+                throw new BusinessException(400, "方案图片无效");
+            }
+            String name = task.getTitle() + "-source-" + (sort + 1) + ".png";
+            ConfirmedSource cs = new ConfirmedSource();
+            cs.setId(schemeId);
+            cs.setSchemeId(schemeId);
+            cs.setSourceImageUrl(scheme.getImageUrl());
+            cs.setLabel("方案 " + (sort + 1));
+            cs.setSortOrder(sort++);
+            cs.setUseOriginal(false);
+            try {
+                AssetVO asset = assetService.importFromUrl(scheme.getImageUrl(), name, List.of());
+                cs.setSourceAssetId(asset.getId());
+            } catch (BusinessException e) {
+                log.warn("AI 方案图片本地入库失败，将使用外链继续: schemeId={}, reason={}", schemeId, e.getMessage());
+            }
+            newSources.add(cs);
+        }
+
+        Set<Long> assetIdSet = new LinkedHashSet<>(sourceAssetIds);
+        for (Long assetId : assetIdSet) {
+            assetService.getPublicUrlForOwnedAsset(assetId, userId);
+            ConfirmedSource cs = new ConfirmedSource();
+            cs.setId("a_" + assetId);
+            cs.setSourceAssetId(assetId);
+            cs.setLabel("素材 " + (sort + 1));
+            cs.setSortOrder(sort++);
+            cs.setUseOriginal(false);
+            newSources.add(cs);
+        }
+
+        if (config.getSourceSchemes() != null) {
+            for (SourceScheme s : config.getSourceSchemes()) {
+                s.setSelected(schemeIdSet.contains(s.getId()));
+            }
+        }
+
+        boolean sourceChanged = !sourcesEqual(config.getConfirmedSources(), newSources);
+        config.setConfirmedSources(newSources);
+        if (sourceChanged) {
+            clearConfigFrom(config, 2);
+            task.setSelectedCandidate(null);
+            task.setStatus("draft");
+        }
+
+        task.setSourceAssetId(newSources.stream()
+                .map(ConfirmedSource::getSourceAssetId)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null));
+        task.setConfigJson(writeJson(config));
+        task.setStage(2);
+        task.setUpdatedAt(LocalDateTime.now());
+        mattingTaskMapper.updateById(task);
+        return toVO(task);
+    }
+
+    private boolean sourcesEqual(List<ConfirmedSource> a, List<ConfirmedSource> b) {
+        if (a == null || a.isEmpty()) {
+            return b == null || b.isEmpty();
+        }
+        if (b == null || a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            ConfirmedSource x = a.get(i);
+            ConfirmedSource y = b.get(i);
+            if (!Objects.equals(x.getId(), y.getId())
+                    || !Objects.equals(x.getSourceAssetId(), y.getSourceAssetId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void removeSourceData(MattingConfig config, String sourceId) {
+        Set<String> regionIds = config.getCropRegions().stream()
+                .filter(r -> sourceId.equals(r.getSourceId()))
+                .map(CropRegion::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        config.getCropRegions().removeIf(r -> sourceId.equals(r.getSourceId()));
+        config.getElements().removeIf(e -> regionIds.contains(e.getRegionId()));
+        if (config.getConfirmedSources() != null) {
+            config.getConfirmedSources().removeIf(cs ->
+                    sourceId.equals(cs.getId()) || sourceId.equals(cs.getSchemeId()));
+        }
+    }
+
+    private MattingSourceSchemesVO buildSourceSchemesVO(MattingConfig config) {
+        MattingSourceSchemesVO vo = new MattingSourceSchemesVO();
+        List<SourceScheme> stored = config.getSourceSchemes();
+        if (stored == null || stored.isEmpty()) {
+            vo.setSchemes(new ArrayList<>());
+            return vo;
+        }
+        vo.setSchemes(stored.stream().map(s -> {
+            MattingSourceSchemesVO.SchemeItem item = new MattingSourceSchemesVO.SchemeItem();
+            item.setId(s.getId());
+            item.setImageUrl(s.getImageUrl());
+            item.setPrompt(s.getPrompt());
+            item.setAspectRatio(s.getAspectRatio());
+            item.setReferenceUrls(s.getReferenceUrls());
+            item.setSelected(s.getSelected());
+            item.setGenerationJobId(s.getGenerationJobId());
+            return item;
+        }).collect(Collectors.toList()));
+        return vo;
     }
 
     /** @deprecated 旧版单次抠图，保留兼容 */
@@ -529,20 +800,62 @@ public class MattingTaskService {
         vo.setDetectError(config.getDetectError());
         vo.setCandidateCount(config.getCandidateCount());
 
+        List<MattingElementsVO.SourceElementsVO> sourceItems = new ArrayList<>();
+        List<MattingElementsVO.RegionElementsVO> flatRegions = new ArrayList<>();
+
+        if (config.getConfirmedSources() != null) {
+            for (ConfirmedSource cs : config.getConfirmedSources()) {
+                MattingElementsVO.SourceElementsVO sv = new MattingElementsVO.SourceElementsVO();
+                sv.setSourceId(cs.getId());
+                sv.setLabel(cs.getLabel());
+                String sourceThumb = resolveConfirmedSourceUrl(cs, userId);
+                if (sourceThumb != null) {
+                    sv.setImageUrl(sourceThumb);
+                }
+
+                List<MattingElementsVO.RegionElementsVO> regions = buildRegionElementsForSource(config, cs.getId(), userId);
+                sv.setRegions(regions);
+                sourceItems.add(sv);
+                flatRegions.addAll(regions);
+            }
+        }
+
+        vo.setSources(sourceItems);
+        vo.setRegions(flatRegions);
+        return vo;
+    }
+
+    private List<MattingElementsVO.RegionElementsVO> buildRegionElementsForSource(
+            MattingConfig config, String sourceId, Long userId) {
         List<MattingElementsVO.RegionElementsVO> regions = new ArrayList<>();
         int regionIndex = 0;
+        if (config.getCropRegions() == null) {
+            return regions;
+        }
         for (CropRegion region : config.getCropRegions()) {
+            if (!sourceId.equals(region.getSourceId())) {
+                continue;
+            }
             MattingElementsVO.RegionElementsVO rv = new MattingElementsVO.RegionElementsVO();
             rv.setRegionId(region.getId());
-            rv.setRegionLabel("区域 " + (++regionIndex));
-            if (region.getSubAssetId() != null) {
+            if (Boolean.TRUE.equals(region.getUseOriginal())) {
+                rv.setRegionLabel("区域 1（全图）");
                 try {
-                    rv.setImageUrl(assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId));
+                    rv.setImageUrl(resolveSourceUrl(config, sourceId, userId));
                 } catch (BusinessException ignored) {
-                    rv.setImageUrl(region.getSubAssetUrl());
+                    rv.setImageUrl(null);
                 }
             } else {
-                rv.setImageUrl(region.getSubAssetUrl());
+                rv.setRegionLabel("区域 " + (++regionIndex));
+                if (region.getSubAssetId() != null) {
+                    try {
+                        rv.setImageUrl(assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId));
+                    } catch (BusinessException ignored) {
+                        rv.setImageUrl(region.getSubAssetUrl());
+                    }
+                } else {
+                    rv.setImageUrl(region.getSubAssetUrl());
+                }
             }
 
             Map<String, List<ElementItem>> grouped = config.getElements().stream()
@@ -568,8 +881,7 @@ public class MattingTaskService {
             rv.setGroups(groups);
             regions.add(rv);
         }
-        vo.setRegions(regions);
-        return vo;
+        return regions;
     }
 
     private MattingExtractStatusVO buildExtractStatusVO(MattingConfig config) {
@@ -619,7 +931,8 @@ public class MattingTaskService {
         return vo;
     }
 
-    private String resolveRegionImageUrl(CropRegion region, String sourceUrl, Long userId) {
+    private String resolveRegionImageUrl(CropRegion region, MattingConfig config, Long userId) {
+        String sourceUrl = resolveSourceUrl(config, region.getSourceId(), userId);
         if (Boolean.TRUE.equals(region.getUseOriginal())) {
             return sourceUrl;
         }
@@ -630,6 +943,93 @@ public class MattingTaskService {
             return region.getSubAssetUrl();
         }
         return sourceUrl;
+    }
+
+    private String resolveSourceUrl(MattingConfig config, String sourceId, Long userId) {
+        if (config.getConfirmedSources() != null && sourceId != null) {
+            for (ConfirmedSource cs : config.getConfirmedSources()) {
+                if (sourceId.equals(cs.getId())) {
+                    String url = resolveConfirmedSourceUrl(cs, userId);
+                    if (url != null) {
+                        return url;
+                    }
+                }
+            }
+        }
+        if (config.getConfirmedSources() != null && !config.getConfirmedSources().isEmpty()) {
+            String url = resolveConfirmedSourceUrl(config.getConfirmedSources().get(0), userId);
+            if (url != null) {
+                return url;
+            }
+        }
+        throw new BusinessException(400, "源图不可用");
+    }
+
+    private String resolveConfirmedSourceUrl(ConfirmedSource cs, Long userId) {
+        if (cs.getSourceAssetId() != null) {
+            try {
+                return assetService.getPublicUrlForOwnedAsset(cs.getSourceAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through to external url */
+            }
+        }
+        if (cs.getSourceImageUrl() != null && !cs.getSourceImageUrl().isBlank()) {
+            return cs.getSourceImageUrl();
+        }
+        return null;
+    }
+
+    private ConfirmedSource findConfirmedSource(MattingConfig config, String sourceId) {
+        if (config.getConfirmedSources() == null) {
+            throw new BusinessException(404, "来源不存在");
+        }
+        return config.getConfirmedSources().stream()
+                .filter(cs -> sourceId.equals(cs.getId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(404, "来源不存在: " + sourceId));
+    }
+
+    /** 旧单源任务兼容：合成 confirmedSources 并将 orphan cropRegions 归到 legacy id */
+    private void ensureConfirmedSources(MattingConfig config, OpsMattingTask task) {
+        if (config.getConfirmedSources() == null) {
+            config.setConfirmedSources(new ArrayList<>());
+        }
+        if (!config.getConfirmedSources().isEmpty()) {
+            assignOrphanCropRegions(config);
+            return;
+        }
+        if (task.getSourceAssetId() != null) {
+            ConfirmedSource cs = new ConfirmedSource();
+            cs.setId(LEGACY_SOURCE_ID);
+            cs.setSourceAssetId(task.getSourceAssetId());
+            cs.setLabel("源图");
+            cs.setSortOrder(0);
+            cs.setUseOriginal(false);
+            config.getConfirmedSources().add(cs);
+            assignOrphanCropRegions(config);
+        }
+    }
+
+    private void assignOrphanCropRegions(MattingConfig config) {
+        if (config.getCropRegions() == null || config.getConfirmedSources().isEmpty()) {
+            return;
+        }
+        String defaultSourceId = config.getConfirmedSources().get(0).getId();
+        for (CropRegion r : config.getCropRegions()) {
+            if (r.getSourceId() == null || r.getSourceId().isBlank()) {
+                r.setSourceId(defaultSourceId);
+            }
+        }
+        // 旧版全局 useOriginal：若存在 r_original 无 sourceId，归到第一来源
+        for (CropRegion r : config.getCropRegions()) {
+            if (Boolean.TRUE.equals(r.getUseOriginal()) || "r_original".equals(r.getId())) {
+                if (r.getSourceId() == null) {
+                    r.setSourceId(defaultSourceId);
+                }
+                ConfirmedSource cs = findConfirmedSource(config, r.getSourceId());
+                cs.setUseOriginal(true);
+            }
+        }
     }
 
     private String loadPromptTemplate(String scene) {
@@ -689,12 +1089,36 @@ public class MattingTaskService {
         vo.setConfigJson(task.getConfigJson());
         vo.setSelectedCandidate(task.getSelectedCandidate());
         vo.setUpdatedAt(task.getUpdatedAt());
+
+        MattingConfig config = parseConfig(task.getConfigJson());
+        ensureConfirmedSources(config, task);
+
+        List<MattingConfirmedSourceVO> confirmed = new ArrayList<>();
+        if (config.getConfirmedSources() != null) {
+            for (ConfirmedSource cs : config.getConfirmedSources()) {
+                MattingConfirmedSourceVO csv = new MattingConfirmedSourceVO();
+                csv.setId(cs.getId());
+                csv.setSchemeId(cs.getSchemeId());
+                csv.setSourceAssetId(cs.getSourceAssetId());
+                csv.setLabel(cs.getLabel());
+                csv.setSortOrder(cs.getSortOrder());
+                String publicUrl = resolveConfirmedSourceUrl(cs, task.getUserId());
+                if (publicUrl != null) {
+                    csv.setSourceAssetUrl(publicUrl);
+                }
+                confirmed.add(csv);
+            }
+        }
+        vo.setConfirmedSources(confirmed);
+
         if (task.getSourceAssetId() != null) {
             try {
                 vo.setSourceAssetUrl(assetService.getPublicUrlForOwnedAsset(task.getSourceAssetId(), task.getUserId()));
             } catch (BusinessException ignored) {
                 // 源图已删时不阻塞列表
             }
+        } else if (!confirmed.isEmpty() && confirmed.get(0).getSourceAssetUrl() != null) {
+            vo.setSourceAssetUrl(confirmed.get(0).getSourceAssetUrl());
         }
         return vo;
     }
@@ -728,6 +1152,11 @@ public class MattingTaskService {
     private void clearConfigFrom(MattingConfig config, int fromStage) {
         if (fromStage <= 2) {
             config.setCropRegions(new ArrayList<>());
+            if (config.getConfirmedSources() != null) {
+                for (ConfirmedSource cs : config.getConfirmedSources()) {
+                    cs.setUseOriginal(false);
+                }
+            }
         }
         if (fromStage <= 3) {
             config.setElements(new ArrayList<>());

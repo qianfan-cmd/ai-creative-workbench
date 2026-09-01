@@ -31,6 +31,29 @@ export interface GenerationJobVO {
     createdAt?: string
 }
 
+export interface MattingSourceScheme {
+  id: string
+  imageUrl: string
+  prompt?: string
+  aspectRatio?: string
+  referenceUrls?: string[]
+  selected?: boolean
+  generationJobId?: number
+}
+
+export interface MattingSourceSchemesVO {
+  schemes: MattingSourceScheme[]
+}
+
+export interface MattingConfirmedSourceVO {
+  id: string
+  schemeId?: string
+  sourceAssetId?: number
+  sourceAssetUrl?: string
+  label?: string
+  sortOrder?: number
+}
+
 export interface MattingTaskVO {
     id: number
     title: string
@@ -38,6 +61,7 @@ export interface MattingTaskVO {
     status: string
     sourceAssetId?: number | null
     sourceAssetUrl?: string | null
+    confirmedSources?: MattingConfirmedSourceVO[]
     configJson?: string | null
     selectedCandidate?: string | null
     updatedAt?: string
@@ -219,10 +243,18 @@ export function parseCampaignCopyFromLlm(raw: string): {
 }
 
 export interface MattingElementsVO {
+  sources?: MattingSourceElementsVO[]
   regions: MattingRegionVO[]
   detectStatus?: string
   detectError?: string
   candidateCount?: number
+}
+
+export interface MattingSourceElementsVO {
+  sourceId: string
+  label?: string
+  imageUrl?: string
+  regions: MattingRegionVO[]
 }
 
 export interface MattingRegionVO {
@@ -279,8 +311,13 @@ export interface MattingCropRegionItem {
   subAssetId?: number
 }
 
-/** GET crop-regions：从 config_json 恢复框选 UI（对齐美术机台 crop/list） */
+/** GET crop-regions：从 config_json 恢复框选 UI（按来源分组） */
 export interface MattingCropRegionsVO {
+  sources?: MattingSourceCropVO[]
+}
+
+export interface MattingSourceCropVO {
+  sourceId: string
   useOriginal?: boolean
   regions?: MattingCropRegionItem[]
 }
@@ -298,7 +335,13 @@ export async function generateOpsImageApi(body: { prompt: string; count?: number
 
 export async function saveMattingCropRegionsApi(
   id: number,
-  body: { regions?: MattingCropRegionItem[]; useOriginal?: boolean; /** 草稿 PUT：仅保存坐标；正式保存勿带 draft */ draft?: boolean },
+  body: {
+    sourceId?: string
+    regions?: MattingCropRegionItem[]
+    useOriginal?: boolean
+    sources?: { sourceId: string; useOriginal?: boolean; regions?: MattingCropRegionItem[] }[]
+    draft?: boolean
+  },
 ) {
   const res = await request.put<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}/crop-regions`, body)
   return res.data.data
@@ -344,13 +387,50 @@ export async function getMattingExtractStatusApi(id: number) {
   return res.data.data
 }
 
+export async function getMattingSourceSchemesApi(id: number) {
+  const res = await request.get<ApiResponse<MattingSourceSchemesVO>>(`/ops/matting/tasks/${id}/source/schemes`)
+  return res.data.data
+}
+
+export async function generateMattingSourceApi(
+  id: number,
+  body: { prompt: string; count?: number; aspectRatio?: string; referenceUrls?: string[] },
+) {
+  const res = await request.post<ApiResponse<MattingSourceSchemesVO>>(
+    `/ops/matting/tasks/${id}/source/generate`,
+    body,
+    { timeout: 180000 },
+  )
+  return res.data.data
+}
+
+export async function patchMattingSourceSchemesApi(
+  id: number,
+  body: { schemeId?: string; selected?: boolean; deleteIds?: string[] },
+) {
+  const res = await request.patch<ApiResponse<MattingSourceSchemesVO>>(
+    `/ops/matting/tasks/${id}/source/schemes`,
+    body,
+  )
+  return res.data.data
+}
+
+export async function confirmMattingSourceApi(
+  id: number,
+  body: { schemeIds?: string[]; sourceAssetIds?: number[]; schemeId?: string; sourceAssetId?: number },
+) {
+  const res = await request.post<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}/source/confirm`, body)
+  return res.data.data
+}
+
 export async function saveMattingElementsApi(
   id: number,
   items: { elementId: string; candidateUrl: string; name?: string }[],
+  options?: { saveSourceToAssets?: boolean; sourceTags?: string[] },
 ) {
   const res = await request.post<ApiResponse<{ id: number; url: string; name: string }[]>>(
     `/ops/matting/tasks/${id}/elements/save`,
-    { items },
+    { items, ...options },
   )
   return res.data.data
 }

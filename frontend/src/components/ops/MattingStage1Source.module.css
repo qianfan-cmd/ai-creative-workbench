@@ -1,0 +1,242 @@
+.stage1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 420px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  flex: 1;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.contextLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.topSegment {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.segment {
+  border: none;
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.segmentActive {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.selectionHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.scrollArea {
+  flex: 1;
+  min-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+}
+
+.dock {
+  flex-shrink: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.librarySubSegment {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.subSegment {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.subSegmentActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.dropzone {
+  width: 100%;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-bg-subtle);
+  cursor: pointer;
+}
+
+.dropzoneActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.dropzoneBusy {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.dropzoneIcon {
+  font-size: 28px;
+  color: var(--color-text-tertiary);
+}
+
+.dropzoneTitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.dropzoneHint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.uploadProgress {
+  width: 60%;
+  margin-top: var(--space-2);
+}
+
+.selectedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.selectedRowActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.selectedThumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.selectedName {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.assetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: var(--space-2);
+}
+
+.assetCell {
+  position: relative;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-1);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: center;
+}
+
+.assetCheckbox {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  z-index: 1;
+  accent-color: var(--color-accent);
+}
+
+.assetCellActive {
+  border-color: var(--color-accent);
+}
+
+.assetThumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.assetName {
+  display: block;
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: var(--space-1);
+}
+
+.emptyHint {
+  grid-column: 1 / -1;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: var(--space-4);
+}
+
+.aiLayout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}

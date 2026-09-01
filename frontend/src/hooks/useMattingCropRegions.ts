@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CropRectPct } from '@/utils/cropImage'
-import { pctRectToCssStyle } from '@/utils/cropImage'
+import {
+  framePctRectToImagePct,
+  imagePctRectToFramePct,
+  pctRectToCssStyle,
+} from '@/utils/cropImage'
 
 export const MAX_CROP_REGIONS = 6
 
@@ -9,20 +13,20 @@ export type CropHandle = 'n' | 's' | 'w' | 'e' | 'nw' | 'ne' | 'sw' | 'se'
 export const CROP_HANDLES: CropHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
 type Surface = 'inline' | 'full'
+type CoordSpace = 'frame' | 'image'
 
 function genRegionId() {
   return `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 }
 
-/** 与美术机台 useCutRegions.toPct 一致：相对画框 0–100% */
 function toPct(value: number, total: number) {
   return total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0
 }
 
 function clampRegionForEdit(
-  value: CropRectPct,
+  value: Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'>,
   canvasEl: HTMLElement | null,
-): CropRectPct {
+): Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'> {
   if (!canvasEl) return value
   const rect = canvasEl.getBoundingClientRect()
   const minWPct = (10 / Math.max(rect.width, 1)) * 100
@@ -36,24 +40,26 @@ function clampRegionForEdit(
   if (yPct + hPct > 100) yPct = 100 - hPct
   if (xPct < 0) xPct = 0
   if (yPct < 0) yPct = 0
-  return { ...value, xPct, yPct, wPct, hPct }
+  return { xPct, yPct, wPct, hPct }
 }
 
 export interface UseMattingCropRegionsOptions {
   regions: CropRectPct[]
   useOriginal: boolean
+  naturalSize: { w: number; h: number }
   onRegionsChange: (regions: CropRectPct[] | ((prev: CropRectPct[]) => CropRectPct[])) => void
 }
 
 /**
- * 框选交互（对齐美术机台 useCutRegions 单图版）：
- * - 画框坐标 = 相对 canvas 的 0–100%（画框与原图同宽高比时等同原图百分比，与 cropImage 一致）
- * - overlay 用 CSS % 定位，不等待 hidden Image 预加载
- * - window 级 pointermove/up，拖出画布仍可编辑
+ * 框选交互（对齐美术机台 useCutRegions）：
+ * - state/API 存原图 0–100% natural pct
+ * - 内联 9:16 cover：显示/绘制用 frame pct，提交时转 natural
+ * - 完整图弹层：直接 natural pct
  */
 export function useMattingCropRegions({
   regions,
   useOriginal,
+  naturalSize,
   onRegionsChange,
 }: UseMattingCropRegionsOptions) {
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null)
@@ -61,10 +67,15 @@ export function useMattingCropRegions({
   const inlineCanvasRef = useRef<HTMLDivElement>(null)
   const fullCanvasRef = useRef<HTMLDivElement>(null)
   const regionsRef = useRef(regions)
+  const naturalSizeRef = useRef(naturalSize)
 
   useEffect(() => {
     regionsRef.current = regions
   }, [regions])
+
+  useEffect(() => {
+    naturalSizeRef.current = naturalSize
+  }, [naturalSize])
 
   const drawingRef = useRef<{
     surface: Surface
@@ -75,18 +86,25 @@ export function useMattingCropRegions({
     id: string
   } | null>(null)
   const [draftRect, setDraftRect] = useState<CropRectPct | null>(null)
+  const [draftSurface, setDraftSurface] = useState<Surface | null>(null)
 
   const editingRef = useRef<{
     regionId: string
     mode: 'move' | CropHandle
     surface: Surface
+    coordSpace: CoordSpace
     startXPct: number
     startYPct: number
-    initial: CropRectPct
+    initial: Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'>
   } | null>(null)
 
   const getCanvas = (surface: Surface) =>
     surface === 'full' ? fullCanvasRef.current : inlineCanvasRef.current
+
+  const hasNaturalSize = () => {
+    const { w, h } = naturalSizeRef.current
+    return w > 0 && h > 0
+  }
 
   const pointFromEvent = (surface: Surface, clientX: number, clientY: number) => {
     const el = getCanvas(surface)
@@ -96,6 +114,22 @@ export function useMattingCropRegions({
       xPct: toPct(clientX - rect.left, rect.width),
       yPct: toPct(clientY - rect.top, rect.height),
     }
+  }
+
+  const frameBoxToNatural = (
+    box: Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'>,
+  ): Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'> => {
+    const { w, h } = naturalSizeRef.current
+    if (w <= 0 || h <= 0) return box
+    return framePctRectToImagePct(box.xPct, box.yPct, box.wPct, box.hPct, w, h)
+  }
+
+  const naturalToFrameBox = (
+    box: Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'>,
+  ): Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'> => {
+    const { w, h } = naturalSizeRef.current
+    if (w <= 0 || h <= 0) return box
+    return imagePctRectToFramePct(box.xPct, box.yPct, box.wPct, box.hPct, w, h)
   }
 
   const updateRegion = useCallback(
@@ -129,6 +163,7 @@ export function useMattingCropRegions({
       currentYPct: pt.yPct,
       id,
     }
+    setDraftSurface(surface)
     setDraftRect({ id, xPct: pt.xPct, yPct: pt.yPct, wPct: 0, hPct: 0 })
   }
 
@@ -146,89 +181,113 @@ export function useMattingCropRegions({
     e.stopPropagation()
     setSelectedRegionId(regionId)
     const pt = pointFromEvent(surface, e.clientX, e.clientY)
+
+    const coordSpace: CoordSpace = surface === 'full' ? 'image' : 'frame'
+    let initial: Pick<CropRectPct, 'xPct' | 'yPct' | 'wPct' | 'hPct'> = {
+      xPct: target.xPct,
+      yPct: target.yPct,
+      wPct: target.wPct,
+      hPct: target.hPct,
+    }
+    if (surface === 'full') {
+      if (!hasNaturalSize()) return
+      initial = { ...target }
+    } else if (surface === 'inline') {
+      if (!hasNaturalSize()) return
+      initial = naturalToFrameBox(target)
+    }
+
     editingRef.current = {
       regionId,
       mode,
       surface,
+      coordSpace,
       startXPct: pt.xPct,
       startYPct: pt.yPct,
-      initial: { ...target },
+      initial,
     }
   }
 
-  const onGlobalPointerMove = useCallback((ev: PointerEvent) => {
-    const draw = drawingRef.current
-    if (draw) {
-      const el = getCanvas(draw.surface)
+  const onGlobalPointerMove = useCallback(
+    (ev: PointerEvent) => {
+      const draw = drawingRef.current
+      if (draw) {
+        const el = getCanvas(draw.surface)
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const pt = {
+          xPct: toPct(ev.clientX - rect.left, rect.width),
+          yPct: toPct(ev.clientY - rect.top, rect.height),
+        }
+        draw.currentXPct = pt.xPct
+        draw.currentYPct = pt.yPct
+        const xPct = Math.min(draw.startXPct, draw.currentXPct)
+        const yPct = Math.min(draw.startYPct, draw.currentYPct)
+        const wPct = Math.abs(draw.currentXPct - draw.startXPct)
+        const hPct = Math.abs(draw.currentYPct - draw.startYPct)
+        setDraftRect({ id: draw.id, xPct, yPct, wPct, hPct })
+        return
+      }
+
+      const edit = editingRef.current
+      if (!edit) return
+      const el = getCanvas(edit.surface)
       if (!el) return
       const rect = el.getBoundingClientRect()
       const pt = {
         xPct: toPct(ev.clientX - rect.left, rect.width),
         yPct: toPct(ev.clientY - rect.top, rect.height),
       }
-      draw.currentXPct = pt.xPct
-      draw.currentYPct = pt.yPct
-      const xPct = Math.min(draw.startXPct, draw.currentXPct)
-      const yPct = Math.min(draw.startYPct, draw.currentYPct)
-      const wPct = Math.abs(draw.currentXPct - draw.startXPct)
-      const hPct = Math.abs(draw.currentYPct - draw.startYPct)
-      setDraftRect({ id: draw.id, xPct, yPct, wPct, hPct })
-      return
-    }
+      const dx = pt.xPct - edit.startXPct
+      const dy = pt.yPct - edit.startYPct
+      const init = edit.initial
+      let next = { ...init }
 
-    const edit = editingRef.current
-    if (!edit) return
-    const el = getCanvas(edit.surface)
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const pt = {
-      xPct: toPct(ev.clientX - rect.left, rect.width),
-      yPct: toPct(ev.clientY - rect.top, rect.height),
-    }
-    const dx = pt.xPct - edit.startXPct
-    const dy = pt.yPct - edit.startYPct
-    const init = edit.initial
-    let next: CropRectPct = { ...init }
+      switch (edit.mode) {
+        case 'move':
+          next = { ...init, xPct: init.xPct + dx, yPct: init.yPct + dy }
+          break
+        case 'n':
+          next = { ...init, yPct: init.yPct + dy, hPct: init.hPct - dy }
+          break
+        case 's':
+          next = { ...init, hPct: init.hPct + dy }
+          break
+        case 'w':
+          next = { ...init, xPct: init.xPct + dx, wPct: init.wPct - dx }
+          break
+        case 'e':
+          next = { ...init, wPct: init.wPct + dx }
+          break
+        case 'nw':
+          next = {
+            ...init,
+            xPct: init.xPct + dx,
+            wPct: init.wPct - dx,
+            yPct: init.yPct + dy,
+            hPct: init.hPct - dy,
+          }
+          break
+        case 'ne':
+          next = { ...init, wPct: init.wPct + dx, yPct: init.yPct + dy, hPct: init.hPct - dy }
+          break
+        case 'sw':
+          next = { ...init, xPct: init.xPct + dx, wPct: init.wPct - dx, hPct: init.hPct + dy }
+          break
+        case 'se':
+          next = { ...init, wPct: init.wPct + dx, hPct: init.hPct + dy }
+          break
+      }
 
-    switch (edit.mode) {
-      case 'move':
-        next = { ...init, xPct: init.xPct + dx, yPct: init.yPct + dy }
-        break
-      case 'n':
-        next = { ...init, yPct: init.yPct + dy, hPct: init.hPct - dy }
-        break
-      case 's':
-        next = { ...init, hPct: init.hPct + dy }
-        break
-      case 'w':
-        next = { ...init, xPct: init.xPct + dx, wPct: init.wPct - dx }
-        break
-      case 'e':
-        next = { ...init, wPct: init.wPct + dx }
-        break
-      case 'nw':
-        next = {
-          ...init,
-          xPct: init.xPct + dx,
-          wPct: init.wPct - dx,
-          yPct: init.yPct + dy,
-          hPct: init.hPct - dy,
-        }
-        break
-      case 'ne':
-        next = { ...init, wPct: init.wPct + dx, yPct: init.yPct + dy, hPct: init.hPct - dy }
-        break
-      case 'sw':
-        next = { ...init, xPct: init.xPct + dx, wPct: init.wPct - dx, hPct: init.hPct + dy }
-        break
-      case 'se':
-        next = { ...init, wPct: init.wPct + dx, hPct: init.hPct + dy }
-        break
-    }
-
-    next = clampRegionForEdit(next, el)
-    updateRegion(edit.regionId, () => next)
-  }, [updateRegion])
+      const normalized = clampRegionForEdit(next, el)
+      let toWrite = normalized
+      if (edit.coordSpace === 'frame') {
+        toWrite = frameBoxToNatural(normalized)
+      }
+      updateRegion(edit.regionId, (region) => ({ ...region, ...toWrite }))
+    },
+    [updateRegion],
+  )
 
   const onGlobalPointerUp = useCallback(() => {
     if (editingRef.current) {
@@ -246,23 +305,24 @@ export function useMattingCropRegions({
     const wPct = Math.abs(draw.currentXPct - draw.startXPct)
     const hPct = Math.abs(draw.currentYPct - draw.startYPct)
 
-    if (wPct < 2 || hPct < 2) {
-      setDraftRect(null)
-      return
+    setDraftRect(null)
+    setDraftSurface(null)
+
+    if (wPct < 2 || hPct < 2) return
+
+    const raw = clampRegionForEdit({ xPct, yPct, wPct, hPct }, el)
+    if (raw.wPct < 2 || raw.hPct < 2) return
+    if (regionsRef.current.length >= MAX_CROP_REGIONS) return
+
+    let naturalBox = raw
+    if (draw.surface === 'inline') {
+      if (!hasNaturalSize()) return
+      naturalBox = frameBoxToNatural(raw)
     }
-    const raw: CropRectPct = { id: draw.id, xPct, yPct, wPct, hPct }
-    const next = clampRegionForEdit(raw, el)
-    if (next.wPct < 2 || next.hPct < 2) {
-      setDraftRect(null)
-      return
-    }
-    if (regionsRef.current.length >= MAX_CROP_REGIONS) {
-      setDraftRect(null)
-      return
-    }
+
+    const next: CropRectPct = { id: draw.id, ...naturalBox }
     onRegionsChange((prev) => [...prev, next])
     setSelectedRegionId(next.id)
-    setDraftRect(null)
   }, [onRegionsChange])
 
   useEffect(() => {
@@ -274,8 +334,25 @@ export function useMattingCropRegions({
     }
   }, [onGlobalPointerMove, onGlobalPointerUp])
 
-  /** 与美术机台 getRegionStyle：CSS 百分比，首帧即可渲染 */
-  const getRegionStyle = useCallback((r: CropRectPct) => pctRectToCssStyle(r), [])
+  const getInlineRegionStyle = useCallback(
+    (r: CropRectPct) => {
+      const { w, h } = naturalSizeRef.current
+      if (w <= 0 || h <= 0) return pctRectToCssStyle(r)
+      const frame = imagePctRectToFramePct(r.xPct, r.yPct, r.wPct, r.hPct, w, h)
+      return pctRectToCssStyle({ ...r, ...frame })
+    },
+    [],
+  )
+
+  const getFullRegionStyle = useCallback((r: CropRectPct) => pctRectToCssStyle(r), [])
+
+  const getDraftStyle = useCallback(
+    (surface: Surface) => {
+      if (!draftRect || draftSurface !== surface) return null
+      return pctRectToCssStyle(draftRect)
+    },
+    [draftRect, draftSurface],
+  )
 
   const isLimitReached = regions.length >= MAX_CROP_REGIONS
 
@@ -295,10 +372,13 @@ export function useMattingCropRegions({
     inlineCanvasRef,
     fullCanvasRef,
     draftRect,
+    draftSurface,
     onCanvasPointerDown,
     startEdit,
     deleteRegion,
-    getRegionStyle,
+    getInlineRegionStyle,
+    getFullRegionStyle,
+    getDraftStyle,
     isLimitReached,
     statusText,
   }

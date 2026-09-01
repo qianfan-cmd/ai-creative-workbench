@@ -1,35 +1,33 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+.wrapCard {
+  gap: 0;
 }
 
-.hint {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-/* 对齐美术机台 .cut-canvas__frame：相对定位 + overlay inset 0 */
+/* 对齐美术机台 .cut-canvas__frame：9:16 + cover */
 .canvas {
   position: relative;
   width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
+  border: none;
+  border-radius: 0;
   background: var(--color-bg-subtle);
   overflow: hidden;
   cursor: crosshair;
   user-select: none;
   touch-action: none;
+}
+
+.canvasInline916 {
+  aspect-ratio: 9 / 16;
+  width: 100%;
+}
+
+.canvasLocked {
+  cursor: not-allowed;
 }
 
 .canvasPlaceholder {
@@ -45,13 +43,14 @@
 .canvasFull {
   min-height: 200px;
   margin: 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 .canvasReadonly {
   cursor: default;
 }
 
-/* 对齐美术机台 .cut-canvas__frame img：铺满画框，与 overlay 共用同一百分比坐标系 */
 .sourceImg {
   position: absolute;
   inset: 0;
@@ -61,6 +60,10 @@
   display: block;
   user-select: none;
   pointer-events: none;
+}
+
+.sourceImgFill {
+  object-fit: fill;
 }
 
 .overlay {
@@ -206,24 +209,68 @@
   cursor: ew-resize;
 }
 
+.non916Hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-accent);
+  background: rgba(13, 148, 136, 0.06);
+  border-bottom: 1px solid var(--color-border);
+}
+
 .status {
   margin: 0;
-  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.statusCard {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .statusLimit {
   color: #b45309;
 }
 
+.statusOriginal {
+  color: #15803d;
+}
+
 .originalPreview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 
 .modalHint {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.modalHint strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.modalFoot {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.fullCutModal :global(.ant-modal-content) {
+  width: fit-content;
+  max-width: min(96vw, calc(100vw - 24px));
+}
+
+.fullCutModal :global(.ant-modal-body) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }

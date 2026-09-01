@@ -214,8 +214,29 @@ public class MattingExtractService {
                 .filter(r -> regionId.equals(r.getId()))
                 .findFirst().orElse(null);
         if (region == null) return fallbackSourceUrl;
+
+        String sourceUrl = fallbackSourceUrl;
+        if (region.getSourceId() != null && config.getConfirmedSources() != null) {
+            for (com.workbench.backendjava.model.MattingConfig.ConfirmedSource cs : config.getConfirmedSources()) {
+                if (region.getSourceId().equals(cs.getId())) {
+                    if (cs.getSourceAssetId() != null) {
+                        try {
+                            sourceUrl = assetService.getPublicUrlForOwnedAsset(cs.getSourceAssetId(), userId);
+                        } catch (BusinessException ignored) {
+                            /* fall through */
+                        }
+                    }
+                    if ((sourceUrl == null || sourceUrl.equals(fallbackSourceUrl))
+                            && cs.getSourceImageUrl() != null && !cs.getSourceImageUrl().isBlank()) {
+                        sourceUrl = cs.getSourceImageUrl();
+                    }
+                    break;
+                }
+            }
+        }
+
         if (Boolean.TRUE.equals(region.getUseOriginal())) {
-            return fallbackSourceUrl;
+            return sourceUrl;
         }
         if (region.getSubAssetId() != null) {
             return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
@@ -223,7 +244,7 @@ public class MattingExtractService {
         if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
             return region.getSubAssetUrl();
         }
-        return fallbackSourceUrl;
+        return sourceUrl;
     }
 
     private String renderTemplate(String scene, Map<String, String> vars) {

@@ -31,7 +31,7 @@ class SeedreamAdapter(ImageProvider):
         return os.getenv("SEEDREAM_API_BASE", "https://ark.cn-beijing.volces.com/api/v3").rstrip("/")
 
     def _model(self) -> str:
-        return os.getenv("SEEDREAM_IMAGE_MODEL", "doubao-seedream-5-0-pro-260628")
+        return os.getenv("SEEDREAM_IMAGE_MODEL", "doubao-seedream-5-0-260128")
 
     def generate(
         self,
@@ -56,12 +56,12 @@ class SeedreamAdapter(ImageProvider):
         if source_url:
             payload["image"] = source_url
 
-        url = f"{self._base_url()}/images/generations"
+        url = self._base_url()
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         candidates: List[ImageCandidate] = []
         # Seedream 单次通常返回 1 张，循环 count 次凑齐候选
-        for i in range(max(1, min(count, 4))):
+        for i in range(max(1, min(count, 6))):
             with httpx.Client(timeout=120.0) as client:
                 resp = client.post(url, json=payload, headers=headers)
             body_text = resp.text
