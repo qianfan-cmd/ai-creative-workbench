@@ -13,6 +13,7 @@ interface StepNavProps {
   viewStage: number
   farthestStage: number
   canPreviewSave?: boolean
+  stepLocked?: boolean
   onStepClick: (step: number) => void
 }
 
@@ -20,10 +21,11 @@ export default function StepNav({
   viewStage,
   farthestStage,
   canPreviewSave = false,
+  stepLocked = false,
   onStepClick,
 }: StepNavProps) {
   const canClick = (n: number) =>
-    n <= farthestStage || (n === 5 && canPreviewSave && farthestStage >= 4)
+    !stepLocked && (n <= farthestStage || (n === 5 && canPreviewSave && farthestStage >= 4))
 
   return (
     <nav className={styles.nav} aria-label="抠图步骤">

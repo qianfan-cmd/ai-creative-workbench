@@ -412,6 +412,15 @@ export async function getMattingExtractStatusApi(id: number) {
   return res.data.data
 }
 
+export async function regenerateMattingElementApi(id: number, elementId: string) {
+  const res = await request.post<ApiResponse<MattingTaskVO>>(
+    `/ops/matting/tasks/${id}/extract/regenerate?elementId=${encodeURIComponent(elementId)}`,
+    {},
+    { timeout: 180000 },
+  )
+  return res.data.data
+}
+
 export async function getMattingSourceSchemesApi(id: number) {
   const res = await request.get<ApiResponse<MattingSourceSchemesVO>>(`/ops/matting/tasks/${id}/source/schemes`)
   return res.data.data

@@ -344,7 +344,7 @@ public class AssetService {
         vo.setTotal(total);
         vo.setLast7DaysCount(last7DaysCount);
         vo.setPrev7DaysCount(prev7DaysCount);
-        vo.setKnowledgeDocCount((long) knowledgeService.listDocuments().size());
+        vo.setKnowledgeDocCount(knowledgeService.countDocuments());
         return vo;
     }
 

@@ -45,6 +45,7 @@ public class MattingTaskService {
     private static final int MAX_REGIONS = 6;
     private static final int MAX_ELEMENT_NAME_LEN = 10;
     private static final int MAX_ELEMENTS_PER_GROUP = 20;
+    private static final int MAX_REGEN_CANDIDATES = 8;
     private static final String LEGACY_SOURCE_ID = "legacy";
 
     private final OpsMattingTaskMapper mattingTaskMapper;
@@ -587,6 +588,67 @@ public class MattingTaskService {
             @Override
             public void afterCommit() {
                 mattingExtractService.runExtractAsync(taskId, userId, extractConfig, count, sourceUrl);
+            }
+        });
+        return toVO(task);
+    }
+
+    @Transactional
+    public MattingTaskVO regenerateElement(Long taskId, String elementId) {
+        Long userId = requireUserId();
+        OpsMattingTask task = getOwnedTask(taskId, userId);
+        MattingConfig config = parseConfig(task.getConfigJson());
+
+        if (elementId == null || elementId.isBlank()) {
+            throw new BusinessException(400, "元素 ID 不能为空");
+        }
+        if ("running".equals(config.getExtractStatus())) {
+            throw new BusinessException(409, "提取进行中，请稍后再试");
+        }
+
+        ElementItem element = config.getElements().stream()
+                .filter(e -> elementId.equals(e.getId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(404, "元素不存在"));
+        if (!Boolean.TRUE.equals(element.getChecked())) {
+            throw new BusinessException(400, "未勾选的元素无法再生成");
+        }
+
+        List<ElementImage> existing = config.getElementImages().stream()
+                .filter(img -> elementId.equals(img.getElementId()))
+                .collect(Collectors.toList());
+        if (existing.size() >= MAX_REGEN_CANDIDATES) {
+            throw new BusinessException(400, "该元素候选图已达上限 " + MAX_REGEN_CANDIDATES + " 张");
+        }
+        boolean hasDone = existing.stream().anyMatch(img -> "done".equals(img.getStatus()) && img.getUrl() != null);
+        if (!hasDone) {
+            throw new BusinessException(400, "请等待首次提取完成后再追加生成");
+        }
+
+        int nextSlot = existing.stream()
+                .mapToInt(img -> img.getSlotIndex() != null ? img.getSlotIndex() : 0)
+                .max()
+                .orElse(-1) + 1;
+
+        ElementImage pending = new ElementImage();
+        pending.setElementId(element.getId());
+        pending.setElementName(element.getElementName());
+        pending.setSlotIndex(nextSlot);
+        pending.setStatus("pending");
+        pending.setSelected(false);
+        config.getElementImages().add(pending);
+        config.setExtractStatus("running");
+        config.setExtractError(null);
+        task.setConfigJson(writeJson(config));
+        task.setUpdatedAt(LocalDateTime.now());
+        mattingTaskMapper.updateById(task);
+
+        String sourceUrl = resolvePrimarySourceUrl(config, userId);
+        String regenElementId = elementId;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                mattingExtractService.runRegenerateAsync(taskId, userId, regenElementId, nextSlot, sourceUrl);
             }
         });
         return toVO(task);

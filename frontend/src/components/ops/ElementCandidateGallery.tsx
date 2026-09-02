@@ -4,6 +4,8 @@ import type { MattingExtractStatusVO } from '@/api/ops'
 import ImageLightbox from '@/components/common/ImageLightbox'
 import styles from '@/components/ops/ElementCandidateGallery.module.css'
 
+const MAX_CANDIDATES_PER_ELEMENT = 8
+
 interface ElementCandidateGalleryProps {
   status: MattingExtractStatusVO | null
   loading?: boolean
@@ -15,6 +17,7 @@ export default function ElementCandidateGallery({
   status,
   loading,
   onSelectSlot,
+  onRetryElement,
 }: ElementCandidateGalleryProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewAlt, setPreviewAlt] = useState('')
@@ -38,8 +41,16 @@ export default function ElementCandidateGallery({
     (el) => el.status === 'done' || el.status === 'partial_failed' || el.status === 'failed',
   ).length
   const allDone = !isRunning && doneCount === status.elements.length
+  const isExtractBusy =
+    isRunning ||
+    status.elements.some((el) => el.images.some((img) => img.status === 'pending'))
 
-  let lastRegion = ''
+  const showRegionDivider = status.elements.map((el, index) => {
+    const regionKey = el.groupName ?? ''
+    if (!regionKey) return false
+    const prevKey = index > 0 ? (status.elements[index - 1].groupName ?? '') : ''
+    return regionKey !== prevKey
+  })
 
   return (
     <div className={styles.shell}>
@@ -58,10 +69,17 @@ export default function ElementCandidateGallery({
       {status.extractError && <div className={styles.errorBox}>{status.extractError}</div>}
 
       <div className={styles.scroll}>
-        {status.elements.map((el) => {
+        {status.elements.map((el, index) => {
           const regionKey = el.groupName ?? ''
-          const showDivider = regionKey && regionKey !== lastRegion
-          if (regionKey) lastRegion = regionKey
+          const showDivider = showRegionDivider[index]
+
+          const hasDoneImages = el.images.some((img) => img.status === 'done' && img.url)
+          const hasPendingSlot = el.images.some((img) => img.status === 'pending')
+          const showRegen =
+            hasDoneImages &&
+            el.images.length < MAX_CANDIDATES_PER_ELEMENT &&
+            !(isRunning && !hasDoneImages)
+          const regenDisabled = isExtractBusy || hasPendingSlot
 
           return (
             <div key={el.elementId}>
@@ -69,61 +87,74 @@ export default function ElementCandidateGallery({
               <div className={styles.elemCard}>
                 <div className={styles.elemName}>{el.elementName}</div>
                 <div className={styles.thumbRow}>
-                  {el.status === 'running' || el.status === 'pending' ? (
-                    <div className={styles.loadingSlot}>
-                      <LoadingOutlined spin />
-                      <span>提取中…</span>
-                    </div>
-                  ) : (
-                    <>
-                      {el.images.map((img) => (
+                  {el.images.map((img) => {
+                    if (img.status === 'pending') {
+                      return (
                         <div
                           key={`${el.elementId}-${img.slotIndex}`}
-                          className={[
-                            styles.thumb,
-                            img.selected ? styles.thumb_selected : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
+                          className={styles.loadingSlot}
                         >
-                          {img.url && img.status === 'done' ? (
-                            <>
-                              <button
-                                type="button"
-                                className={styles.thumbDetail}
-                                aria-label="预览大图"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setPreviewUrl(img.url!)
-                                  setPreviewAlt(el.elementName)
-                                }}
-                              >
-                                <ExpandOutlined />
-                              </button>
-                              <img src={img.url} alt="" className={styles.thumbImg} />
-                            </>
-                          ) : (
-                            <div className={styles.checkerboard} />
-                          )}
-                          {img.selected && (
-                            <span className={styles.thumbCheck}>
-                              <CheckOutlined />
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            className={styles.thumbHit}
-                            disabled={img.status !== 'done' || !img.url}
-                            onClick={() => img.url && onSelectSlot(el.elementId, img.slotIndex!)}
-                            aria-label={`选择候选 ${(img.slotIndex ?? 0) + 1}`}
-                          />
+                          <LoadingOutlined spin />
+                          <span>提取中…</span>
                         </div>
-                      ))}
-                      <button type="button" className={styles.regenSlot}>
-                        <PlusOutlined />
-                        再生成
-                      </button>
-                    </>
+                      )
+                    }
+
+                    return (
+                      <div
+                        key={`${el.elementId}-${img.slotIndex}`}
+                        className={[
+                          styles.thumb,
+                          img.selected ? styles.thumb_selected : '',
+                          img.status === 'failed' ? styles.thumb_failed : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                      >
+                        {img.url && img.status === 'done' ? (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.thumbDetail}
+                              aria-label="预览大图"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setPreviewUrl(img.url!)
+                                setPreviewAlt(el.elementName)
+                              }}
+                            >
+                              <ExpandOutlined />
+                            </button>
+                            <img src={img.url} alt="" className={styles.thumbImg} />
+                          </>
+                        ) : (
+                          <div className={styles.checkerboard} title="生成失败" />
+                        )}
+                        {img.selected && img.status === 'done' && (
+                          <span className={styles.thumbCheck}>
+                            <CheckOutlined />
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.thumbHit}
+                          disabled={img.status !== 'done' || !img.url}
+                          onClick={() => img.url && onSelectSlot(el.elementId, img.slotIndex!)}
+                          aria-label={`选择候选 ${(img.slotIndex ?? 0) + 1}`}
+                        />
+                      </div>
+                    )
+                  })}
+                  {showRegen && (
+                    <button
+                      type="button"
+                      className={styles.regenSlot}
+                      disabled={regenDisabled}
+                      onClick={() => onRetryElement?.(el.elementId)}
+                    >
+                      <PlusOutlined />
+                      再生成
+                    </button>
                   )}
                 </div>
               </div>

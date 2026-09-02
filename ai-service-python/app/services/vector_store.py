@@ -144,3 +144,18 @@ def list_documents() -> list[dict[str, Any]]:
     ]
     items.sort(key=lambda x: x["filename"])
     return items
+
+def delete_by_source(source: str) -> int:
+    """
+    按 metadata.source 删除该文档的全部 chunk。
+    返回删除条数。
+    """
+    if not source or not source.strip():
+        return 0
+    collection = _get_collection()
+    result = collection.get(where={"source": source}, include=[])
+    ids = result.get("ids") or []
+    if not ids:
+        return 0
+    collection.delete(ids=ids)
+    return len(ids)

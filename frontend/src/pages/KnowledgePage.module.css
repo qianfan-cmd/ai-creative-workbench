@@ -32,13 +32,35 @@
     flex-shrink: 0;
 }
 
-.docSectionHeader {
+.docSectionHeaderRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 0 var(--space-4) var(--space-2);
+    gap: var(--space-2);
+}
+
+.docSectionHeader {
+    padding: 0;
     font-size: var(--text-xs);
     font-weight: 600;
     color: var(--color-text-tertiary);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+}
+
+.docMoreBtn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--color-accent);
+    cursor: pointer;
+}
+
+.docMoreBtn:hover {
+    text-decoration: underline;
 }
 
 .uploadBtn {

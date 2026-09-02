@@ -1,5 +1,5 @@
 import request from "@/api/request";
-import type { ApiResponse } from "@/types/api";
+import type { ApiResponse, PageResult } from "@/types/api";
 import { getToken } from "@/utils/token"
 
 /** 上传入库结果 */
@@ -23,10 +23,23 @@ export interface RagQueryVO {
     references: RagReferenceVO[]
 }
 
-/** 已索引文档（左栏文档库） */
+/** 已索引文档（文档库） */
 export interface KnowledgeDocumentVO {
+    id: number
     filename: string
+    fileType?: string
+    fileSize?: number
+    charCount?: number
     chunkCount: number
+    createdAt?: string
+    hasOriginalFile?: boolean
+}
+
+export interface ListKnowledgeDocumentsParams {
+    page?: number
+    size?: number
+    keyword?: string
+    sort?: 'asc' | 'desc'
 }
 
 /** 历史会话侧栏项 */
@@ -52,11 +65,40 @@ export interface KnowledgeSessionDetailVO {
 }
 
 /**
- * 获取已索引文档列表
+ * 分页获取文档库列表
  */
-export async function listKnowledgeDocumentsApi() {
-    const res = await request.get<ApiResponse<KnowledgeDocumentVO[]>>('/knowledge/documents')
+export async function listKnowledgeDocumentsPageApi(params: ListKnowledgeDocumentsParams = {}) {
+    const res = await request.get<ApiResponse<PageResult<KnowledgeDocumentVO>>>('/knowledge/documents', {
+        params,
+    })
     return res.data.data
+}
+
+/**
+ * 侧栏最近文档（轻量列表）
+ */
+export async function listRecentKnowledgeDocumentsApi(limit = 50) {
+    const res = await request.get<ApiResponse<KnowledgeDocumentVO[]>>('/knowledge/documents/recent', {
+        params: { limit },
+    })
+    return res.data.data
+}
+
+/** @deprecated 使用 listRecentKnowledgeDocumentsApi 或 listKnowledgeDocumentsPageApi */
+export async function listKnowledgeDocumentsApi() {
+    return listRecentKnowledgeDocumentsApi(50)
+}
+
+export async function patchKnowledgeDocumentApi(id: number, payload: { filename: string }) {
+    const res = await request.patch<ApiResponse<KnowledgeDocumentVO>>(
+        `/knowledge/documents/${id}`,
+        payload,
+    )
+    return res.data.data
+}
+
+export async function deleteKnowledgeDocumentApi(id: number) {
+    await request.delete<ApiResponse<null>>(`/knowledge/documents/${id}`)
 }
 
 /** 历史会话列表 */

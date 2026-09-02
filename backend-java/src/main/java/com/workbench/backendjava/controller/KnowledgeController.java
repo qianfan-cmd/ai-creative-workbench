@@ -1,10 +1,13 @@
 package com.workbench.backendjava.controller;
 
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
 import com.workbench.backendjava.service.KnowledgeService;
 import com.workbench.backendjava.service.KnowledgeSessionService;
+import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeSessionDetailVO;
 import com.workbench.backendjava.vo.KnowledgeSessionVO;
@@ -40,8 +43,36 @@ public class KnowledgeController {
     }
 
     @GetMapping("/documents")
-    public Result<List<KnowledgeDocumentVO>> listDocuments() {
-        return Result.ok(knowledgeService.listDocuments());
+    public Result<PageResult<KnowledgeDocumentVO>> listDocuments(
+            @RequestParam(defaultValue = "1") Long page,
+            @RequestParam(defaultValue = "10") Long size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String sort) {
+        return Result.ok(knowledgeService.listDocumentsPage(page, size, keyword, sort));
+    }
+
+    @GetMapping("/documents/recent")
+    public Result<List<KnowledgeDocumentVO>> listRecentDocuments(
+            @RequestParam(defaultValue = "50") int limit) {
+        return Result.ok(knowledgeService.listRecentDocuments(limit));
+    }
+
+    @PatchMapping("/documents/{id}")
+    public Result<KnowledgeDocumentVO> patchDocument(
+            @PathVariable Long id,
+            @RequestBody KnowledgeDocumentPatchRequest request) {
+        return Result.ok(knowledgeService.patchDocument(id, request));
+    }
+
+    @DeleteMapping("/documents/{id}")
+    public Result<Void> deleteDocument(@PathVariable Long id) {
+        knowledgeService.deleteDocument(id);
+        return Result.ok(null);
+    }
+
+    @GetMapping("/documents/{id}/content")
+    public Result<KnowledgeDocumentContentVO> getDocumentContent(@PathVariable Long id) {
+        return Result.ok(knowledgeService.getDocumentContent(id));
     }
 
     /** 历史问答侧栏列表 */

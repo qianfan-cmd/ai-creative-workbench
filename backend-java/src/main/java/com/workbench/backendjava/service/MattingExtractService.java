@@ -53,6 +53,10 @@ public class MattingExtractService {
         CompletableFuture.runAsync(() -> doExtract(taskId, userId, config, candidateCount, sourceUrl), executor);
     }
 
+    public void runRegenerateAsync(Long taskId, Long userId, String elementId, int slotIndex, String sourceUrl) {
+        CompletableFuture.runAsync(() -> doRegenerate(taskId, userId, elementId, slotIndex, sourceUrl), executor);
+    }
+
     private void doExtract(Long taskId, Long userId, MattingConfig config, int candidateCount, String sourceUrl) {
         try {
             List<ElementItem> checked = config.getElements().stream()
@@ -113,12 +117,7 @@ public class MattingExtractService {
 
                     String groupImageUrl;
                     try {
-                        long t0 = System.currentTimeMillis();
-                        PythonImageGenerateResponse groupResp = pythonAiClient.opsExtractElement(
-                                regionSourceUrl, groupPrompt, 1, regionImageBytes);
-                        writeLog(userId, "matting_extract", groupResp.getProvider(), groupPrompt,
-                                "success", (int) (System.currentTimeMillis() - t0), "group image");
-                        groupImageUrl = groupResp.getCandidates().get(0).getUrl();
+                        groupImageUrl = extractGroupImage(userId, regionSourceUrl, regionImageBytes, groupPrompt);
                     } catch (Exception e) {
                         log.error("分组提取失败 region={} group={}", regionId, groupName, e);
                         markGroupFailed(config, groupElements, e.getMessage());
@@ -138,24 +137,7 @@ public class MattingExtractService {
 
                         for (int slot = 0; slot < candidateCount; slot++) {
                             ElementImage img = findImage(config, element.getId(), slot);
-                            try {
-                                long t0 = System.currentTimeMillis();
-                                PythonImageGenerateResponse singleResp = pythonAiClient.opsExtractElement(
-                                        groupImageUrl, singlePrompt, 1);
-                                writeLog(userId, "matting_single", singleResp.getProvider(), singlePrompt,
-                                        "success", (int) (System.currentTimeMillis() - t0), element.getElementName());
-                                PythonImageCandidate cand = singleResp.getCandidates().get(0);
-                                if (img != null) {
-                                    img.setUrl(cand.getUrl());
-                                    img.setStatus("done");
-                                }
-                            } catch (Exception e) {
-                                log.error("单体提取失败 element={} slot={}", element.getElementName(), slot, e);
-                                if (img != null) {
-                                    img.setStatus("failed");
-                                    img.setErrorMessage(truncate(e.getMessage(), 200));
-                                }
-                            }
+                            extractSingleSlot(userId, config, element, slot, groupImageUrl, singlePrompt, img);
                             saveConfig(taskId, userId, config);
                         }
                     }
@@ -169,6 +151,143 @@ public class MattingExtractService {
         } catch (Exception e) {
             log.error("抠图提取任务失败 taskId={}", taskId, e);
             failExtract(taskId, userId, truncate(e.getMessage(), 400));
+        }
+    }
+
+    private void doRegenerate(Long taskId, Long userId, String elementId, int slotIndex, String sourceUrl) {
+        try {
+            OpsMattingTask task = loadTask(taskId, userId);
+            MattingConfig config = parseConfig(task.getConfigJson());
+
+            ElementItem element = config.getElements().stream()
+                    .filter(e -> elementId.equals(e.getId()))
+                    .findFirst()
+                    .orElse(null);
+            if (element == null) {
+                finishRegenerate(taskId, userId, "元素不存在");
+                return;
+            }
+
+            ElementImage img = findImage(config, elementId, slotIndex);
+            if (img == null) {
+                finishRegenerate(taskId, userId, "候选槽位不存在");
+                return;
+            }
+
+            String regionId = element.getRegionId();
+            String groupName = element.getGroupName();
+            String regionSourceUrl = resolveRegionImageUrl(config, regionId, userId, sourceUrl);
+            byte[] regionImageBytes = resolveRegionImageBytes(config, regionId, userId);
+            if (regionSourceUrl == null && (regionImageBytes == null || regionImageBytes.length == 0)) {
+                img.setStatus("failed");
+                img.setErrorMessage("区域图片不可用");
+                finishRegenerate(taskId, userId, config);
+                return;
+            }
+
+            List<ElementItem> groupElements = config.getElements().stream()
+                    .filter(e -> regionId.equals(e.getRegionId()))
+                    .filter(e -> groupName.equals(e.getGroupName()))
+                    .filter(e -> Boolean.TRUE.equals(e.getChecked()))
+                    .collect(Collectors.toList());
+
+            List<String> targetNames = groupElements.stream().map(ElementItem::getElementName).collect(Collectors.toList());
+            List<String> nonTargetNames = config.getElements().stream()
+                    .filter(e -> regionId.equals(e.getRegionId()))
+                    .filter(e -> !groupName.equals(e.getGroupName()))
+                    .map(ElementItem::getElementName)
+                    .collect(Collectors.toList());
+
+            String groupPrompt = renderTemplate("matting_extract", Map.of(
+                    "nonTargetNames", String.join("、", nonTargetNames),
+                    "targetNames", String.join("、", targetNames)
+            ));
+
+            String groupImageUrl;
+            try {
+                groupImageUrl = extractGroupImage(userId, regionSourceUrl, regionImageBytes, groupPrompt);
+            } catch (Exception e) {
+                log.error("再生成分组提取失败 element={}", element.getElementName(), e);
+                img.setStatus("failed");
+                img.setErrorMessage(truncate(e.getMessage(), 200));
+                finishRegenerate(taskId, userId, config);
+                return;
+            }
+
+            List<String> nonTargetInGroup = groupElements.stream()
+                    .filter(e -> !e.getId().equals(element.getId()))
+                    .map(ElementItem::getElementName)
+                    .collect(Collectors.toList());
+            String singlePrompt = renderTemplate("matting_single", Map.of(
+                    "targetElementName", element.getElementName(),
+                    "nonTargetNames", String.join("、", nonTargetInGroup)
+            ));
+
+            extractSingleSlot(userId, config, element, slotIndex, groupImageUrl, singlePrompt, img);
+            finishRegenerate(taskId, userId, config);
+        } catch (Exception e) {
+            log.error("单元素再生成失败 taskId={} elementId={}", taskId, elementId, e);
+            try {
+                OpsMattingTask task = loadTask(taskId, userId);
+                MattingConfig config = parseConfig(task.getConfigJson());
+                ElementImage img = findImage(config, elementId, slotIndex);
+                if (img != null) {
+                    img.setStatus("failed");
+                    img.setErrorMessage(truncate(e.getMessage(), 200));
+                }
+                finishRegenerate(taskId, userId, config);
+            } catch (Exception ex) {
+                log.error("更新再生成失败状态出错", ex);
+            }
+        }
+    }
+
+    private void finishRegenerate(Long taskId, Long userId, MattingConfig config) {
+        config.setExtractStatus("done");
+        config.setExtractError(null);
+        saveConfig(taskId, userId, config);
+    }
+
+    private void finishRegenerate(Long taskId, Long userId, String errorMessage) {
+        try {
+            OpsMattingTask task = loadTask(taskId, userId);
+            MattingConfig config = parseConfig(task.getConfigJson());
+            config.setExtractStatus("done");
+            config.setExtractError(errorMessage);
+            saveConfig(taskId, userId, config);
+        } catch (Exception ex) {
+            log.error("更新再生成结束状态出错", ex);
+        }
+    }
+
+    private String extractGroupImage(Long userId, String regionSourceUrl, byte[] regionImageBytes, String groupPrompt)
+            throws Exception {
+        long t0 = System.currentTimeMillis();
+        PythonImageGenerateResponse groupResp = pythonAiClient.opsExtractElement(
+                regionSourceUrl, groupPrompt, 1, regionImageBytes);
+        writeLog(userId, "matting_extract", groupResp.getProvider(), groupPrompt,
+                "success", (int) (System.currentTimeMillis() - t0), "group image");
+        return groupResp.getCandidates().get(0).getUrl();
+    }
+
+    private void extractSingleSlot(Long userId, MattingConfig config, ElementItem element, int slot,
+                                   String groupImageUrl, String singlePrompt, ElementImage img) {
+        if (img == null) {
+            return;
+        }
+        try {
+            long t0 = System.currentTimeMillis();
+            PythonImageGenerateResponse singleResp = pythonAiClient.opsExtractElement(
+                    groupImageUrl, singlePrompt, 1);
+            writeLog(userId, "matting_single", singleResp.getProvider(), singlePrompt,
+                    "success", (int) (System.currentTimeMillis() - t0), element.getElementName());
+            PythonImageCandidate cand = singleResp.getCandidates().get(0);
+            img.setUrl(cand.getUrl());
+            img.setStatus("done");
+        } catch (Exception e) {
+            log.error("单体提取失败 element={} slot={}", element.getElementName(), slot, e);
+            img.setStatus("failed");
+            img.setErrorMessage(truncate(e.getMessage(), 200));
         }
     }
 

@@ -42,3 +42,7 @@ class DocumentListItem(BaseModel):
 
 class DocumentListResponse(BaseModel):
     documents: list[DocumentListItem] = Field(default_factory=list, description = "已索引文档列表")
+
+class DocumentDeleteResponse(BaseModel):
+    source: str = Field(..., description = "被删除的 source 文件名")
+    deleted_count: int = Field(..., description = "删除的 chunk 数量")

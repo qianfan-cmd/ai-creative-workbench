@@ -29,6 +29,14 @@ export function useAppBreadcrumbs(): BreadcrumbItem[] {
         return [home, { label: 'AI 对话 Chat', href: '/chat' }];
     }
 
+    if (pathname === '/knowledge/documents') {
+        return [
+            home,
+            { label: '知识库 Knowledge', href: '/knowledge' },
+            { label: '文档库 Documents', href: '/knowledge/documents' },
+        ];
+    }
+
     if (pathname === '/knowledge') {
         return [home, { label: '知识库 Knowledge', href: '/knowledge' }];
     }

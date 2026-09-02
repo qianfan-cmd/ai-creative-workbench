@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import {
 
@@ -33,7 +34,7 @@ import {
 
     getKnowledgeSessionApi,
 
-    listKnowledgeDocumentsApi,
+    listRecentKnowledgeDocumentsApi,
 
     listKnowledgeSessionsApi,
 
@@ -364,6 +365,8 @@ function TurnBlock({ turn, copiedId, querying, onCopy, onRetry }: TurnBlockProps
 
 export default function KnowledgePage() {
 
+    const navigate = useNavigate()
+
     const [docs, setDocs] = useState<IndexedDoc[]>([])
 
     const [uploading, setUploading] = useState(false)
@@ -394,13 +397,13 @@ export default function KnowledgePage() {
 
         try {
 
-            const list = await listKnowledgeDocumentsApi()
+            const list = await listRecentKnowledgeDocumentsApi(50)
 
             setDocs(
 
                 list.map((d) => ({
 
-                    id: d.filename,
+                    id: String(d.id),
 
                     filename: d.filename,
 
@@ -448,13 +451,13 @@ export default function KnowledgePage() {
         ;(async () => {
             try {
                 const [docList, sessionList] = await Promise.all([
-                    listKnowledgeDocumentsApi(),
+                    listRecentKnowledgeDocumentsApi(50),
                     listKnowledgeSessionsApi(),
                 ])
                 if (!active) return
                 setDocs(
                     docList.map((d) => ({
-                        id: d.filename,
+                        id: String(d.id),
                         filename: d.filename,
                         chunkCount: d.chunkCount,
                     })),
@@ -991,7 +994,16 @@ export default function KnowledgePage() {
 
                     <div className={styles.docSection}>
 
-                        <div className={styles.docSectionHeader}>文档库</div>
+                        <div className={styles.docSectionHeaderRow}>
+                            <div className={styles.docSectionHeader}>文档库</div>
+                            <button
+                                type="button"
+                                className={styles.docMoreBtn}
+                                onClick={() => navigate('/knowledge/documents')}
+                            >
+                                更多
+                            </button>
+                        </div>
 
                         <input
 

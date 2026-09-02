@@ -16,6 +16,7 @@ import {
   getMattingTaskApi,
   patchMattingElementsApi,
   reDetectMattingRegionApi,
+  regenerateMattingElementApi,
   saveMattingElementsApi,
 } from '@/api/ops'
 import request from '@/api/request'
@@ -179,6 +180,10 @@ export default function MattingPage() {
   const canPreviewSave =
     farthestStage >= 4 &&
     (extractStatus?.extractStatus === 'done' || extractStatus?.extractStatus === 'partial_failed')
+  const isExtractBusy =
+    extracting ||
+    extractStatus?.extractStatus === 'running' ||
+    (extractStatus?.elements?.some((el) => el.images.some((img) => img.status === 'pending')) ?? false)
   const sourceCount = task?.confirmedSources?.length ?? (task?.sourceAssetId ? 1 : 0)
 
   const refreshTasks = useCallback(async () => {
@@ -239,7 +244,9 @@ export default function MattingPage() {
       const tick = async () => {
         pollRef.current += 1
         const status = await loadExtractStatus(taskId)
-        const running = status?.extractStatus === 'running'
+        const hasPending =
+          status?.elements?.some((el) => el.images.some((img) => img.status === 'pending')) ?? false
+        const running = status?.extractStatus === 'running' || hasPending
         const allDone =
           status?.elements?.every(
             (el) => el.status === 'done' || el.status === 'partial_failed' || el.status === 'failed',
@@ -262,8 +269,11 @@ export default function MattingPage() {
   const resumeExtractPollIfNeeded = useCallback(
     (t: MattingTaskVO, id: number, status: MattingExtractStatusVO | null) => {
       const cfg = parseConfigSummary(t.configJson)
+      const hasPending =
+        status?.elements?.some((el) => el.images.some((img) => img.status === 'pending')) ?? false
       const shouldPoll =
         status?.extractStatus === 'running' ||
+        hasPending ||
         (t.status === 'running' && (cfg.hasExtract || cfg.extractStatus === 'running'))
       if (shouldPoll) {
         setExtracting(true)
@@ -331,7 +341,7 @@ export default function MattingPage() {
   useEffect(() => () => stopPoll(), [])
 
   const handleStepClick = (step: number) => {
-    if (!task) return
+    if (!task || isExtractBusy) return
     const allowed = step <= farthestStage || (step === 5 && canPreviewSave)
     if (!allowed) return
     setViewStage(step)
@@ -522,6 +532,20 @@ export default function MattingPage() {
     })
   }
 
+  const handleRegenerateElement = async (elementId: string) => {
+    if (!task || isExtractBusy) return
+    setExtracting(true)
+    try {
+      const updated = await regenerateMattingElementApi(task.id, elementId)
+      setTask(updated)
+      await loadExtractStatus(task.id)
+      schedulePoll(task.id)
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '再生成失败')
+      setExtracting(false)
+    }
+  }
+
   const handleSaveAll = async () => {
     if (!task || !extractStatus) return
     const items = extractStatus.elements
@@ -623,7 +647,7 @@ export default function MattingPage() {
     if (viewStage === 4) {
       return (
         <>
-          <button type="button" className={mattingFrameStyles.cancelBtn} onClick={() => setViewStage(3)}>
+          <button type="button" className={mattingFrameStyles.cancelBtn} disabled={isExtractBusy} onClick={() => setViewStage(3)}>
             返回元素清单
           </button>
           <button type="button" className={mattingFrameStyles.linkBtn} disabled>
@@ -632,7 +656,7 @@ export default function MattingPage() {
           <button
             type="button"
             className={mattingFrameStyles.primaryBtn}
-            disabled={extractStatus?.extractStatus === 'running'}
+            disabled={isExtractBusy}
             onClick={() => setViewStage(5)}
           >
             下一步：保存
@@ -689,6 +713,7 @@ export default function MattingPage() {
               viewStage={viewStage}
               farthestStage={farthestStage}
               canPreviewSave={canPreviewSave}
+              stepLocked={isExtractBusy}
               onStepClick={handleStepClick}
             />
           ) : undefined
@@ -749,6 +774,7 @@ export default function MattingPage() {
                   status={extractStatus}
                   loading={extracting}
                   onSelectSlot={handleSelectSlot}
+                  onRetryElement={(elementId) => void handleRegenerateElement(elementId)}
                 />
               </>
             )}

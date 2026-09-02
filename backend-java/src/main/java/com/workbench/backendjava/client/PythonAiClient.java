@@ -174,33 +174,42 @@ public class PythonAiClient {
 
     /**
      * 转发文件到 Python POST /ai/documents/index，完成 RAG 入库。
-     *
-     * @param file Spring 收到的上传文件（MultipartFile ≈ 前端 form-data 的 file）
      */
     public KnowledgeUploadVO indexDocument(MultipartFile file) {
+        try {
+            return indexDocument(file.getBytes(), file.getOriginalFilename(), null, null);
+        } catch (Exception e) {
+            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
+        }
+    }
+
+    public KnowledgeUploadVO indexDocument(byte[] bytes, String filename, Long documentId, Long userId) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/index";
 
         try {
-            // multipart 请求体：字段名必须是 file（和 Python UploadFile = File(...) 一致）
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
 
-            // ByteArrayResource：把字节包装成 RestTemplate 能发的「文件 part」
-            ByteArrayResource resource = new ByteArrayResource(file.getBytes()) {
+            ByteArrayResource resource = new ByteArrayResource(bytes) {
                 @Override
                 public String getFilename() {
-                    // 必须重写 getFilename()，否则 Python 收不到原始文件名
-                    return file.getOriginalFilename();
+                    return filename;
                 }
             };
             body.add("file", resource);
+            if (documentId != null) {
+                body.add("document_id", String.valueOf(documentId));
+            }
+            if (userId != null) {
+                body.add("user_id", String.valueOf(userId));
+            }
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
             HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
 
-            log.info("调用 Python 文档入库: url={}, filename={}, size={}",
-                    url, file.getOriginalFilename(), file.getSize());
+            log.info("调用 Python 文档入库: url={}, filename={}, size={}, documentId={}",
+                    url, filename, bytes.length, documentId);
 
             PythonIndexResponse response = restTemplate.postForObject(
                     url,
@@ -221,8 +230,23 @@ public class PythonAiClient {
         } catch (RestClientException e) {
             log.error("调用 Python 文档入库失败: {}", e.getMessage(), e);
             throw new BusinessException(502, "知识库入库服务不可用，请确认 ai-service-python 已启动");
-        } catch (Exception e) {
-            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 按 Chroma source 删除文档向量。
+     */
+    public void deleteDocument(String source) {
+        if (source == null || source.isBlank()) {
+            return;
+        }
+        String base = aiServiceProperties.getBaseUrl().replaceAll("/$", "");
+        String url = base + "/ai/documents?source=" + java.net.URLEncoder.encode(source, java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            restTemplate.delete(url);
+        } catch (RestClientException e) {
+            log.error("调用 Python 文档删除失败 source={}: {}", source, e.getMessage(), e);
+            throw new BusinessException(502, "删除向量索引失败，请确认 ai-service-python 已启动");
         }
     }
 

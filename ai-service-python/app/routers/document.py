@@ -8,12 +8,12 @@
 （router prefix="/ai/documents" + 路由 "/parse"）
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, UploadFile, HTTPException, Form
 
-from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse
+from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse, DocumentDeleteResponse
 from app.services.document_parser import parse_upload_file
 from app.services.text_splitter import split_text
-from app.services.vector_store import add_chunks, list_documents
+from app.services.vector_store import add_chunks, list_documents, delete_by_source
 from app.services.embedding_service import embed_texts
 
 # prefix会把所有路由前缀都加上/ai/documents
@@ -68,7 +68,11 @@ async def chunk_document(file: UploadFile = File(...)):
     )
 
 @router.post("/index", response_model = DocumentIndexResponse)
-async def index_document(file: UploadFile = File(...)):
+async def index_document(
+    file: UploadFile = File(...),
+    document_id: int | None = Form(None),
+    user_id: int | None = Form(None),
+):
     """
     文档入库：parse → chunk → embed → Chroma
     """
@@ -78,6 +82,9 @@ async def index_document(file: UploadFile = File(...)):
     if not pieces:
         raise HTTPException(status_code = 400, detail = "切分结果为空")
 
+    # 同文件名重复入库前先删旧 chunk，避免 ID 冲突
+    delete_by_source(filename)
+
     # 批量 Embedding
     embeddings = embed_texts(pieces)
 
@@ -85,10 +92,15 @@ async def index_document(file: UploadFile = File(...)):
     metadatas: list[dict] = []
     for i, text in enumerate(pieces):
         ids.append(f"{filename}-{i}")
-        metadatas.append({
+        meta = {
             "source": filename,
             "index": i,
-        })
+        }
+        if document_id is not None:
+            meta["document_id"] = document_id
+        if user_id is not None:
+            meta["user_id"] = user_id
+        metadatas.append(meta)
     
     indexed = add_chunks(
         ids = ids,
@@ -103,6 +115,14 @@ async def index_document(file: UploadFile = File(...)):
         chunk_count = len(pieces),
         indexed_count = indexed,
     )
+
+@router.delete("", response_model = DocumentDeleteResponse)
+async def delete_document(source: str):
+    """按 source 文件名删除 Chroma 中该文档的全部 chunk。"""
+    if not source or not source.strip():
+        raise HTTPException(status_code = 400, detail = "source 不能为空")
+    deleted = delete_by_source(source.strip())
+    return DocumentDeleteResponse(source = source.strip(), deleted_count = deleted)
 
 @router.get("/list", response_model = DocumentListResponse)
 async def list_indexed_documents():

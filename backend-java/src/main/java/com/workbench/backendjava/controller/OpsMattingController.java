@@ -99,6 +99,13 @@ public class OpsMattingController {
         return Result.ok(mattingTaskService.getExtractStatus(id));
     }
 
+    @PostMapping("/{id}/extract/regenerate")
+    public Result<MattingTaskVO> regenerateElement(
+            @PathVariable Long id,
+            @RequestParam String elementId) {
+        return Result.ok(mattingTaskService.regenerateElement(id, elementId));
+    }
+
     @PostMapping("/{id}/elements/save")
     public Result<List<AssetVO>> saveElements(@PathVariable Long id, @RequestBody MattingElementsSaveRequest request) {
         return Result.ok(mattingTaskService.saveElements(id, request));

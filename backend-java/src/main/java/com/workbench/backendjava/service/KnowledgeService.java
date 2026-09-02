@@ -1,63 +1,50 @@
 package com.workbench.backendjava.service;
 
-import com.workbench.backendjava.client.PythonAiClient;
-import com.workbench.backendjava.common.BusinessException;
-import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.common.PageResult;
+import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
+import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Locale;
 import java.util.List;
-import java.util.Set;
 
-@Slf4j
+/**
+ * 知识库文档上传与列表 — 委托 KnowledgeDocumentService。
+ */
 @Service
 @RequiredArgsConstructor
 public class KnowledgeService {
 
-    private static final Set<String> ALLOWED_EXT = Set.of(".txt", ".md", ".markdown");
-    private final PythonAiClient pythonAiClient;
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     public KnowledgeUploadVO upload(MultipartFile file) {
-        Long userId = LoginUserContext.getUserId();
-        if (userId == null) {
-            throw new BusinessException(401, "未登录");
-        }
-
-        if (file == null || file.isEmpty()) {
-            throw new BusinessException(400, "请选择文件");
-        }
-
-        String filename = file.getOriginalFilename();
-        if (filename == null || filename.isBlank()) {
-            throw new BusinessException(400, "文件名无效");
-        }
-
-        String ext = filename.contains(".")
-                ? filename.substring(filename.lastIndexOf('.')).toLowerCase(Locale.ROOT)
-                : "";
-
-        if (!ALLOWED_EXT.contains(ext)) {
-            throw new BusinessException(400, "不支持的文件类型");
-        }
-
-        log.info("知识库上传, userId={}, filename={}", userId, filename);
-
-        return pythonAiClient.indexDocument(file);
+        return knowledgeDocumentService.uploadDocument(file);
     }
 
-    /**
-     * 文档库列表 — 从 Python/Chroma 聚合，刷新页面后仍可展示。
-     */
-    public List<KnowledgeDocumentVO> listDocuments() {
-        Long userId = LoginUserContext.getUserId();
-        if (userId == null) {
-            throw new BusinessException(401, "未登录");
-        }
-        return pythonAiClient.listDocuments();
+    public PageResult<KnowledgeDocumentVO> listDocumentsPage(long page, long size, String keyword, String sort) {
+        return knowledgeDocumentService.listPage(page, size, keyword, sort);
+    }
+
+    public List<KnowledgeDocumentVO> listRecentDocuments(int limit) {
+        return knowledgeDocumentService.listRecent(limit);
+    }
+
+    public KnowledgeDocumentVO patchDocument(Long id, KnowledgeDocumentPatchRequest request) {
+        return knowledgeDocumentService.patchDocument(id, request);
+    }
+
+    public void deleteDocument(Long id) {
+        knowledgeDocumentService.deleteDocument(id);
+    }
+
+    public KnowledgeDocumentContentVO getDocumentContent(Long id) {
+        return knowledgeDocumentService.getContent(id);
+    }
+
+    public long countDocuments() {
+        return knowledgeDocumentService.countForCurrentUser();
     }
 }

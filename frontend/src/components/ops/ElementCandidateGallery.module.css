@@ -90,6 +90,10 @@
   box-shadow: 0 0 0 1px var(--color-accent);
 }
 
+.thumb_failed {
+  border-color: #fecaca;
+}
+
 .thumbImg {
   width: 100%;
   height: 100%;
