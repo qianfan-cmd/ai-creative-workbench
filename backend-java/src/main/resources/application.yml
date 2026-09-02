@@ -32,6 +32,12 @@ jwt:
 
 app:
   public-base-url: http://localhost:8080
+  storage:
+    provider: local
+    oss:
+      enabled: false
+      bucket: ""
+      public-base-url: ""
   ai-service:
     base-url: http://localhost:8000   # Python FastAPI 地址
   upload:
