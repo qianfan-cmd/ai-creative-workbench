@@ -1,6 +1,6 @@
 import { CloudUploadOutlined, SearchOutlined } from '@ant-design/icons'
 
-import { Button, Image, Input, Progress, Select, Spin, message } from 'antd'
+import { Button, Input, Progress, Select, Spin, message } from 'antd'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -26,6 +26,7 @@ import {
 import SourceGenerateComposer from '@/components/ops/SourceGenerateComposer'
 
 import SourceSchemeGrid from '@/components/ops/SourceSchemeGrid'
+import ImageLightbox from '@/components/common/ImageLightbox'
 
 import type { AssetVO } from '@/types/api'
 
@@ -734,29 +735,11 @@ export default function MattingStage1Source({
 
 
 
-      {preview && (
-
-        <Image
-
-          style={{ display: 'none' }}
-
-          preview={{
-
-            visible: true,
-
-            src: preview.url,
-
-            onVisibleChange: (v) => {
-
-              if (!v) setPreview(null)
-
-            },
-
-          }}
-
-        />
-
-      )}
+      <ImageLightbox
+        url={preview?.url ?? null}
+        alt={preview?.alt}
+        onClose={() => setPreview(null)}
+      />
 
     </div>
 

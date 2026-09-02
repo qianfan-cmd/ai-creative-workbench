@@ -88,29 +88,40 @@ function confirmDestructive(title: string, content: string): Promise<boolean> {
   })
 }
 
-function mapElementRename(
-  data: MattingElementsVO,
-  elementId: string,
-  name: string,
-): MattingElementsVO {
-  const mapRegion = (r: MattingElementsVO['regions'][0]) => ({
-    ...r,
-    groups: r.groups.map((g) => ({
-      ...g,
-      elements: g.elements.map((el) =>
-        el.id === elementId ? { ...el, elementName: name } : el,
-      ),
-    })),
-  })
-
-  return {
-    ...data,
-    sources: data.sources?.map((s) => ({
-      ...s,
-      regions: s.regions.map(mapRegion),
-    })),
-    regions: data.regions.map(mapRegion),
+function collectElementIds(data: MattingElementsVO | null): Set<string> {
+  const ids = new Set<string>()
+  if (!data) return ids
+  const regions = [
+    ...(data.sources ?? []).flatMap((s) => s.regions),
+    ...(data.regions ?? []),
+  ]
+  for (const region of regions) {
+    for (const group of region.groups) {
+      for (const el of group.elements) ids.add(el.id)
+    }
   }
+  return ids
+}
+
+function findNewElementId(
+  data: MattingElementsVO,
+  regionId: string,
+  groupName: string,
+  beforeIds: Set<string>,
+): string | undefined {
+  const regions = [
+    ...(data.sources ?? []).flatMap((s) => s.regions),
+    ...(data.regions ?? []),
+  ]
+  for (const region of regions) {
+    if (region.regionId !== regionId) continue
+    for (const group of region.groups) {
+      if (group.groupName !== groupName) continue
+      const created = group.elements.find((el) => !beforeIds.has(el.id))
+      return created?.id
+    }
+  }
+  return undefined
 }
 
 export default function MattingPage() {
@@ -131,7 +142,6 @@ export default function MattingPage() {
   const [loadingElements, setLoadingElements] = useState(false)
   const pollRef = useRef(0)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const initialSessionRestoreRef = useRef(false)
   const [cropFooter, setCropFooter] = useState<{
     confirming: boolean
@@ -405,17 +415,51 @@ export default function MattingPage() {
     setElements(data)
   }
 
-  const handleRenameElement = (elementId: string, name: string) => {
+  const handleRenameElement = async (elementId: string, name: string) => {
     if (!task) return
-    setElements((prev) => (prev ? mapElementRename(prev, elementId, name) : prev))
-    const existing = renameTimers.current.get(elementId)
-    if (existing) clearTimeout(existing)
-    renameTimers.current.set(
-      elementId,
-      setTimeout(() => {
-        void patchMattingElementsApi(task.id, [{ id: elementId, elementName: name }])
-      }, 400),
-    )
+    const trimmed = name.replace(/\s+/g, ' ').trim()
+    if (!trimmed) {
+      message.warning('元素名称不能为空')
+      return
+    }
+    try {
+      const data = await patchMattingElementsApi(task.id, [{ id: elementId, elementName: trimmed }])
+      setElements(data)
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '保存失败')
+      throw e
+    }
+  }
+
+  const handleDeleteElement = async (elementId: string) => {
+    if (!task) return
+    try {
+      const data = await patchMattingElementsApi(task.id, [{ id: elementId, deleted: true }])
+      setElements(data)
+      message.success('已删除')
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '删除失败')
+      throw e
+    }
+  }
+
+  const handleAddElement = async (
+    regionId: string,
+    groupName: string,
+    elementName = '新元素',
+  ): Promise<string | undefined> => {
+    if (!task) return undefined
+    const beforeIds = collectElementIds(elements)
+    try {
+      const data = await patchMattingElementsApi(task.id, [
+        { regionId, groupName, elementName },
+      ])
+      setElements(data)
+      return findNewElementId(data, regionId, groupName, beforeIds)
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '添加失败')
+      throw e
+    }
   }
 
   const handleReDetect = async (regionId: string) => {
@@ -691,6 +735,8 @@ export default function MattingPage() {
                 onToggle={(id, checked) => void handleToggleElement(id, checked)}
                 onRename={handleRenameElement}
                 onReDetect={(regionId) => void handleReDetect(regionId)}
+                onDelete={(id) => handleDeleteElement(id)}
+                onAdd={handleAddElement}
               />
             )}
 

@@ -38,6 +38,15 @@
   font-size: var(--text-sm);
 }
 
+.deleteTag {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-control);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
 .sourceBlock {
   display: flex;
   align-items: center;
@@ -53,12 +62,18 @@
   width: 56px;
   height: 56px;
   padding: 0;
+  flex-shrink: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   overflow: hidden;
-  cursor: pointer;
-  flex-shrink: 0;
+  cursor: zoom-in;
   background: transparent;
+}
+
+.sourceThumb :global(.ant-image) {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .thumbImg,
@@ -129,11 +144,18 @@
   width: 36px;
   height: 36px;
   padding: 0;
+  flex-shrink: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   overflow: hidden;
-  cursor: pointer;
+  cursor: zoom-in;
   background: transparent;
+}
+
+.regionThumbBtn :global(.ant-image) {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .regenBtn {
@@ -160,15 +182,39 @@
   margin-bottom: var(--space-2);
 }
 
+.groupHead_collapsed {
+  margin-bottom: 0;
+}
+
+.groupHeadToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
 .groupChev {
   font-size: 10px;
   color: var(--color-text-tertiary);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.groupHead_collapsed .groupChev {
+  transform: rotate(-90deg);
 }
 
 .groupName {
   font-size: var(--text-sm);
   font-weight: 600;
   flex: 1;
+  color: var(--color-text-primary);
 }
 
 .addBtn {
@@ -183,6 +229,7 @@
   color: var(--color-accent);
   cursor: pointer;
   font-size: 12px;
+  flex-shrink: 0;
 }
 
 .addBtn:disabled {
@@ -199,11 +246,15 @@
 .elementRow {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-control);
   background: var(--color-bg-page);
   border: 1px solid var(--color-border);
+}
+
+.elementRow_editing {
+  border-color: var(--color-accent);
 }
 
 .checkbox {
@@ -227,13 +278,29 @@
   flex: 1;
   font-size: var(--text-sm);
   min-width: 0;
-  border: none;
-  background: transparent;
-  outline: none;
   color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.editBtn {
+.elementInput {
+  flex: 1;
+  font-size: var(--text-sm);
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.elementInput:focus {
+  border-color: var(--color-accent);
+}
+
+.iconBtn {
   border: none;
   background: transparent;
   color: var(--color-text-tertiary);
@@ -241,4 +308,13 @@
   font-size: 14px;
   display: flex;
   padding: var(--space-1);
+  flex-shrink: 0;
+}
+
+.iconBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.iconBtn_danger:hover {
+  color: #b91c1c;
 }

@@ -44,6 +44,7 @@ public class MattingTaskService {
 
     private static final int MAX_REGIONS = 6;
     private static final int MAX_ELEMENT_NAME_LEN = 10;
+    private static final int MAX_ELEMENTS_PER_GROUP = 20;
     private static final String LEGACY_SOURCE_ID = "legacy";
 
     private final OpsMattingTaskMapper mattingTaskMapper;
@@ -504,6 +505,12 @@ public class MattingTaskService {
             return buildElementsVO(config, userId);
         }
         for (MattingElementsPatchRequest.ElementPatch patch : request.getElements()) {
+            if (patch.getId() == null || patch.getId().isBlank()) {
+                if (patch.getRegionId() != null && patch.getGroupName() != null) {
+                    createManualElement(config, patch);
+                }
+                continue;
+            }
             if (Boolean.TRUE.equals(patch.getDeleted())) {
                 config.getElements().removeIf(e -> patch.getId().equals(e.getId()));
                 continue;
@@ -513,7 +520,7 @@ public class MattingTaskService {
                     .findFirst()
                     .ifPresent(el -> {
                         if (patch.getElementName() != null) {
-                            el.setElementName(patch.getElementName().trim());
+                            el.setElementName(normalizeElementName(patch.getElementName()));
                         }
                         if (patch.getChecked() != null) {
                             el.setChecked(patch.getChecked());
@@ -524,6 +531,35 @@ public class MattingTaskService {
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
         return buildElementsVO(config, userId);
+    }
+
+    private void createManualElement(MattingConfig config, MattingElementsPatchRequest.ElementPatch patch) {
+        String regionId = patch.getRegionId();
+        String groupName = patch.getGroupName().trim();
+        if (groupName.isEmpty()) {
+            throw new BusinessException(400, "分组名称不能为空");
+        }
+        long countInGroup = config.getElements().stream()
+                .filter(e -> regionId.equals(e.getRegionId()) && groupName.equals(e.getGroupName()))
+                .count();
+        if (countInGroup >= MAX_ELEMENTS_PER_GROUP) {
+            throw new BusinessException(400, "该分组最多 " + MAX_ELEMENTS_PER_GROUP + " 个元素");
+        }
+        int sort = config.getElements().stream()
+                .mapToInt(e -> e.getSortOrder() != null ? e.getSortOrder() : 0)
+                .max().orElse(-1) + 1;
+        String name = patch.getElementName() != null && !patch.getElementName().isBlank()
+                ? patch.getElementName()
+                : "新元素";
+        ElementItem el = new ElementItem();
+        el.setId("e_" + UUID.randomUUID().toString().substring(0, 8));
+        el.setRegionId(regionId);
+        el.setGroupName(groupName);
+        el.setElementName(normalizeElementName(name));
+        el.setChecked(true);
+        el.setSortOrder(sort);
+        el.setCreateType("manual");
+        config.getElements().add(el);
     }
 
     @Transactional

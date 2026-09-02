@@ -11,6 +11,8 @@ public class MattingElementsPatchRequest {
     @Data
     public static class ElementPatch {
         private String id;
+        private String regionId;
+        private String groupName;
         private String elementName;
         private Boolean checked;
         private Boolean deleted;

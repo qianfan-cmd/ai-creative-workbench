@@ -377,7 +377,14 @@ export async function getMattingElementsApi(id: number) {
 
 export async function patchMattingElementsApi(
   id: number,
-  elements: { id: string; elementName?: string; checked?: boolean; deleted?: boolean }[],
+  elements: {
+    id?: string
+    regionId?: string
+    groupName?: string
+    elementName?: string
+    checked?: boolean
+    deleted?: boolean
+  }[],
 ) {
   const res = await request.patch<ApiResponse<MattingElementsVO>>(`/ops/matting/tasks/${id}/elements`, { elements })
   return res.data.data

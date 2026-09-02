@@ -1,5 +1,7 @@
 import { CheckOutlined, ExpandOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons'
+import { useState } from 'react'
 import type { MattingExtractStatusVO } from '@/api/ops'
+import ImageLightbox from '@/components/common/ImageLightbox'
 import styles from '@/components/ops/ElementCandidateGallery.module.css'
 
 interface ElementCandidateGalleryProps {
@@ -14,6 +16,8 @@ export default function ElementCandidateGallery({
   loading,
   onSelectSlot,
 }: ElementCandidateGalleryProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewAlt, setPreviewAlt] = useState('')
   if (loading && !status?.elements?.length) {
     return (
       <div className={styles.shell}>
@@ -88,7 +92,11 @@ export default function ElementCandidateGallery({
                                 type="button"
                                 className={styles.thumbDetail}
                                 aria-label="预览大图"
-                                onClick={() => window.open(img.url, '_blank')}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setPreviewUrl(img.url!)
+                                  setPreviewAlt(el.elementName)
+                                }}
                               >
                                 <ExpandOutlined />
                               </button>
@@ -111,7 +119,7 @@ export default function ElementCandidateGallery({
                           />
                         </div>
                       ))}
-                      <button type="button" className={styles.regenSlot} disabled>
+                      <button type="button" className={styles.regenSlot}>
                         <PlusOutlined />
                         再生成
                       </button>
@@ -123,6 +131,11 @@ export default function ElementCandidateGallery({
           )
         })}
       </div>
+      <ImageLightbox
+        url={previewUrl}
+        alt={previewAlt}
+        onClose={() => setPreviewUrl(null)}
+      />
     </div>
   )
 }
