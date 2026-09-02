@@ -235,15 +235,17 @@ function SourceCropPanel({
 
 
 interface MattingStage2CropProps {
-
   task: MattingTaskVO
-
   onBeforeConfirm?: () => Promise<boolean>
-
   onConfirmed: (task: MattingTaskVO) => void
-
   onDraftSaved: (configJson: string) => void
-
+  hideFooter?: boolean
+  onRegisterConfirm?: (api: {
+    runConfirm: () => Promise<void>
+    confirming: boolean
+    detecting: boolean
+    disabled: boolean
+  }) => void
 }
 
 
@@ -279,15 +281,12 @@ function buildCutSummary(
 
 
 export default function MattingStage2Crop({
-
   task,
-
   onBeforeConfirm,
-
   onConfirmed,
-
   onDraftSaved,
-
+  hideFooter = false,
+  onRegisterConfirm,
 }: MattingStage2CropProps) {
 
   const sources = task.confirmedSources ?? []
@@ -474,7 +473,7 @@ export default function MattingStage2Crop({
 
   }, [sources, sourceStates])
 
-
+  const confirmDisabled = !allSourcesReady || !allHydrated
 
   const handleConfirm = async () => {
 
@@ -558,7 +557,14 @@ export default function MattingStage2Crop({
 
   }
 
-
+  useEffect(() => {
+    onRegisterConfirm?.({
+      runConfirm: handleConfirm,
+      confirming,
+      detecting,
+      disabled: confirmDisabled,
+    })
+  }, [confirming, detecting, confirmDisabled, onRegisterConfirm, handleConfirm])
 
   if (sources.length === 0) {
 
@@ -604,6 +610,7 @@ export default function MattingStage2Crop({
 
 
 
+      {!hideFooter && (
       <div className={styles.footer}>
 
         <Button
@@ -623,6 +630,7 @@ export default function MattingStage2Crop({
         </Button>
 
       </div>
+      )}
 
     </div>
 

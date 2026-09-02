@@ -13,6 +13,7 @@ public class MattingSourceSchemesVO {
     public static class SchemeItem {
         private String id;
         private String imageUrl;
+        private Long assetId;
         private String prompt;
         private String aspectRatio;
         private List<String> referenceUrls;

@@ -14,11 +14,14 @@ import {
 
     PauseCircleOutlined,
 
+    MoreOutlined,
+
 } from '@ant-design/icons'
 
-import { Button, Input, message } from 'antd'
+import { Button, Dropdown, Input, Modal, message } from 'antd'
+import type { MenuProps } from 'antd'
 
-import layoutStyles from '@/layouts/MainLayout.module.css'
+import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 
 import styles from '@/pages/KnowledgePage.module.css'
 
@@ -26,11 +29,15 @@ import {
 
     createKnowledgeSessionApi,
 
+    deleteKnowledgeSessionApi,
+
     getKnowledgeSessionApi,
 
     listKnowledgeDocumentsApi,
 
     listKnowledgeSessionsApi,
+
+    patchKnowledgeSessionApi,
 
     ragStreamApi,
 
@@ -47,6 +54,7 @@ import {
 } from '@/api/knowledge'
 
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
+import menuStyles from '@/components/common/SessionRowMenu.module.css'
 
 
 
@@ -432,19 +440,7 @@ export default function KnowledgePage() {
 
 
 
-    useEffect(() => {
-
-        const main = document.getElementById('main-content')
-
-        if (!main) return
-
-        main.classList.add(layoutStyles.content_lockScroll)
-
-        return () => main.classList.remove(layoutStyles.content_lockScroll)
-
-    }, [])
-
-
+    useMainContentLayout({ lockScroll: true, fullBleed: true })
 
     // 挂载时拉文档库与历史会话
     useEffect(() => {
@@ -836,6 +832,71 @@ export default function KnowledgePage() {
 
 
 
+    const handleDeleteSession = (session: KnowledgeSessionVO) => {
+        Modal.confirm({
+            title: '删除问答',
+            content: `确定删除「${session.title}」吗？`,
+            okText: '删除',
+            okButtonProps: { danger: true },
+            cancelText: '取消',
+            onOk: async () => {
+                await deleteKnowledgeSessionApi(session.id)
+                message.success('已删除')
+                const nextList = sessions.filter((s) => s.id !== session.id)
+                setSessions(nextList)
+                if (activeSessionId === session.id) {
+                    if (nextList.length > 0) {
+                        const detail = await getKnowledgeSessionApi(nextList[0].id)
+                        setActiveSessionId(detail.id)
+                        setTurns(detail.turns.map(mapTurnFromApi))
+                    } else {
+                        setActiveSessionId(null)
+                        setTurns([])
+                    }
+                }
+            },
+        })
+    }
+
+    const handlePinSession = async (session: KnowledgeSessionVO) => {
+        try {
+            await patchKnowledgeSessionApi(session.id, { pinned: !session.pinned })
+            await loadSessions()
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : '操作失败')
+        }
+    }
+
+    const handleRenameSession = (session: KnowledgeSessionVO) => {
+        Modal.confirm({
+            title: '重命名',
+            content: (
+                <input
+                    id={`knowledge-rename-${session.id}`}
+                    defaultValue={session.title}
+                    maxLength={30}
+                    style={{
+                        width: '100%',
+                        padding: 8,
+                        border: '1px solid var(--color-border)',
+                        borderRadius: 6,
+                    }}
+                />
+            ),
+            onOk: async () => {
+                const input = document.getElementById(`knowledge-rename-${session.id}`) as HTMLInputElement | null
+                const title = input?.value?.trim()
+                if (!title) {
+                    message.warning('标题不能为空')
+                    throw new Error('empty')
+                }
+                await patchKnowledgeSessionApi(session.id, { title })
+                await loadSessions()
+            },
+        })
+    }
+
+
     const handleSelectSession = async (sessionId: number) => {
 
         if (querying || sessionId === activeSessionId) return
@@ -1036,15 +1097,34 @@ export default function KnowledgePage() {
 
                             ) : (
 
-                                sessions.map((session) => (
+                                sessions.map((session) => {
+                                    const sessionMenuItems: MenuProps['items'] = [
+                                        {
+                                            key: 'pin',
+                                            label: session.pinned ? '取消置顶' : '置顶',
+                                            onClick: () => void handlePinSession(session),
+                                        },
+                                        {
+                                            key: 'rename',
+                                            label: '重命名',
+                                            onClick: () => handleRenameSession(session),
+                                        },
+                                        { type: 'divider' },
+                                        {
+                                            key: 'delete',
+                                            label: '删除',
+                                            danger: true,
+                                            onClick: () => handleDeleteSession(session),
+                                        },
+                                    ]
+                                    return (
+                                    <div key={session.id} className={menuStyles.rowWrap}>
 
                                     <button
 
-                                        key={session.id}
-
                                         type="button"
 
-                                        className={`${styles.historyItem} ${
+                                        className={`${styles.historyItem} ${menuStyles.rowBtn} ${
 
                                             session.id === activeSessionId
 
@@ -1060,11 +1140,24 @@ export default function KnowledgePage() {
 
                                     >
 
-                                        {session.title}
+                                        {session.pinned && (
+                                            <span className={styles.pinMark} aria-hidden="true">
+                                                ★
+                                            </span>
+                                        )}
+                                        <span className={styles.historyTitle}>{session.title}</span>
 
                                     </button>
 
-                                ))
+                                    <Dropdown menu={{ items: sessionMenuItems }} trigger={['click']}>
+                                        <button type="button" className={menuStyles.menuBtn} aria-label="会话菜单">
+                                            <MoreOutlined />
+                                        </button>
+                                    </Dropdown>
+
+                                    </div>
+                                    )
+                                })
 
                             )}
 

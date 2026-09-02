@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
 import com.workbench.backendjava.entity.KnowledgeSession;
 import com.workbench.backendjava.entity.KnowledgeTurn;
@@ -44,6 +45,7 @@ public class KnowledgeSessionService {
         List<KnowledgeSession> sessions = sessionMapper.selectList(
                 new LambdaQueryWrapper<KnowledgeSession>()
                         .eq(KnowledgeSession::getUserId, userId)
+                        .orderByDesc(KnowledgeSession::getPinned)
                         .orderByDesc(KnowledgeSession::getUpdatedAt)
         );
         return sessions.stream().map(this::toSessionVO).collect(Collectors.toList());
@@ -55,6 +57,7 @@ public class KnowledgeSessionService {
         KnowledgeSession session = new KnowledgeSession();
         session.setUserId(userId);
         session.setTitle("新问答");
+        session.setPinned(0);
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());
         sessionMapper.insert(session);
@@ -126,6 +129,32 @@ public class KnowledgeSessionService {
         return toTurnVO(turn);
     }
 
+    @Transactional
+    public void deleteSession(Long sessionId) {
+        Long userId = requireUserId();
+        getOwnedSession(sessionId, userId);
+        sessionMapper.deleteById(sessionId);
+    }
+
+    @Transactional
+    public KnowledgeSessionVO patchSession(Long sessionId, KnowledgeSessionPatchRequest request) {
+        Long userId = requireUserId();
+        KnowledgeSession session = getOwnedSession(sessionId, userId);
+        if (request.getTitle() != null) {
+            String title = request.getTitle().trim();
+            if (title.isEmpty()) {
+                throw new BusinessException(400, "标题不能为空");
+            }
+            session.setTitle(truncateTitle(title));
+        }
+        if (request.getPinned() != null) {
+            session.setPinned(Boolean.TRUE.equals(request.getPinned()) ? 1 : 0);
+        }
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionMapper.updateById(session);
+        return toSessionVO(session);
+    }
+
     private Long requireUserId() {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -174,6 +203,7 @@ public class KnowledgeSessionService {
         KnowledgeSessionVO vo = new KnowledgeSessionVO();
         vo.setId(session.getId());
         vo.setTitle(session.getTitle());
+        vo.setPinned(session.getPinned() != null && session.getPinned() == 1);
         vo.setUpdatedAt(session.getUpdatedAt());
         return vo;
     }

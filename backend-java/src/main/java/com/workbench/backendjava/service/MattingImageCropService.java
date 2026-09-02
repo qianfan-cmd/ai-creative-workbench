@@ -13,7 +13,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
-/** 抠图模块：按原图百分比在服务端裁切子图并入库 */
+/** 抠图模块：按原图百分比在服务端裁切子图，写入工作流文件（不入素材库） */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -22,16 +22,16 @@ public class MattingImageCropService {
     private final AssetService assetService;
 
     public static final class CropAssetResult {
-        private final Long assetId;
+        private final String storedPath;
         private final String publicUrl;
 
-        public CropAssetResult(Long assetId, String publicUrl) {
-            this.assetId = assetId;
+        public CropAssetResult(String storedPath, String publicUrl) {
+            this.storedPath = storedPath;
             this.publicUrl = publicUrl;
         }
 
-        public Long getAssetId() {
-            return assetId;
+        public String getStoredPath() {
+            return storedPath;
         }
 
         public String getPublicUrl() {
@@ -40,13 +40,13 @@ public class MattingImageCropService {
     }
 
     /**
-     * 从已确认来源整图按 0–100% 矩形裁切，写入 uploads 并返回 subAsset。
+     * 从已确认来源整图按 0–100% 矩形裁切，写入 uploads/matting/{taskId}/ 工作流目录。
      */
     public CropAssetResult cropRegionFromSource(
+            Long taskId,
             Long userId,
             ConfirmedSource source,
-            CropRegion region,
-            String fileName) {
+            CropRegion region) {
         if (userId == null) {
             throw new BusinessException(401, "未登录");
         }
@@ -66,9 +66,13 @@ public class MattingImageCropService {
             log.error("裁切失败 regionId={}", region.getId(), e);
             throw new BusinessException(500, "裁切失败: " + e.getMessage());
         }
-        Long assetId = assetService.createOwnedPngAsset(userId, cropped, fileName);
-        String publicUrl = assetService.getPublicUrlForOwnedAsset(assetId, userId);
-        return new CropAssetResult(assetId, publicUrl);
+        String storedPath = assetService.storeMattingCropPng(taskId, region.getId(), cropped);
+        String publicUrl = assetService.buildPublicUrlFromStoredPath(storedPath);
+        return new CropAssetResult(storedPath, publicUrl);
+    }
+
+    public byte[] readSourceBytes(Long userId, ConfirmedSource source) {
+        return loadSourceBytes(userId, source);
     }
 
     private byte[] loadSourceBytes(Long userId, ConfirmedSource source) {

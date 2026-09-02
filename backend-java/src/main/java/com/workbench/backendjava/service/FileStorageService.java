@@ -86,6 +86,13 @@ public class FileStorageService {
      * 外部 URL 下载的字节写入磁盘 — Ops 候选图入库用
      */
     public String storeFromBytes(String originalName, byte[] bytes, String contentType) {
+        return storeFromBytes(originalName, bytes, contentType, null);
+    }
+
+    /**
+     * @param subdir 可选子目录（相对 uploads/），如 matting/42 — 工作流中间文件用
+     */
+    public String storeFromBytes(String originalName, byte[] bytes, String contentType, String subdir) {
         if (bytes == null || bytes.length == 0) {
             throw new BusinessException(400, "文件不能为空");
         }
@@ -96,15 +103,24 @@ public class FileStorageService {
         if (!uploadProperties.getAllowedExtensions().contains(ext)) {
             throw new BusinessException(400, "不支持文件类型");
         }
-        String uuid = UUID.randomUUID().toString().replace("-", "");
-        String storedName = uuid + "." + ext;
+        String storedName;
+        if (subdir != null && !subdir.isBlank()) {
+            String safeSubdir = subdir.replace("\\", "/").replaceAll("^/+|/+$", "");
+            String baseName = originalName != null && originalName.contains(".")
+                    ? originalName.substring(0, originalName.lastIndexOf('.'))
+                    : "file";
+            storedName = safeSubdir + "/" + baseName + "." + ext;
+        } else {
+            String uuid = UUID.randomUUID().toString().replace("-", "");
+            storedName = uuid + "." + ext;
+        }
         Path dir = Paths.get(uploadProperties.getDir());
         try {
-            Files.createDirectories(dir);
             Path target = dir.resolve(storedName);
+            Files.createDirectories(target.getParent());
             Files.write(target, bytes);
             log.info("字节流保存成功, storedName={}, size={}", storedName, bytes.length);
-            return "/uploads/" + storedName;
+            return "/uploads/" + storedName.replace("\\", "/");
         } catch (IOException e) {
             log.error("字节流保存失败", e);
             throw new BusinessException(500, "文件保存失败");

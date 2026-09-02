@@ -1,0 +1,215 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sourceBlock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-subtle);
+}
+
+.sourceThumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  cursor: default;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.thumbFill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #334155, #64748b);
+}
+
+.sourceMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sourceKicker {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sourceName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.regionSection {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-surface);
+  overflow: hidden;
+}
+
+.regionHdr {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+
+.regionAccent {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.regionLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  flex: 1;
+}
+
+.regionThumbBtn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  cursor: default;
+  background: transparent;
+}
+
+.regionThumbFill {
+  width: 100%;
+  height: 100%;
+  background: #64748b;
+}
+
+.regionThumbFillAlt {
+  width: 100%;
+  height: 100%;
+  background: #0d9488;
+}
+
+.regenBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--color-accent);
+  font-weight: 500;
+  cursor: default;
+}
+
+.groupBlock {
+  padding: var(--space-3) var(--space-4);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.groupChev {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.groupName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  flex: 1;
+}
+
+.addBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-accent);
+  cursor: default;
+  font-size: 12px;
+}
+
+.groupBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.elementRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border);
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background: var(--color-bg-surface);
+}
+
+.checkbox_checked {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  box-shadow: inset 0 0 0 3px var(--color-accent-subtle);
+}
+
+.elementName {
+  flex: 1;
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.editBtn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: default;
+  font-size: 14px;
+  display: flex;
+  padding: var(--space-1);
+}

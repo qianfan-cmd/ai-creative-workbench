@@ -3,12 +3,15 @@ package com.workbench.backendjava.controller;
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.dto.ChatMessageUpdateRequest;
 import com.workbench.backendjava.dto.ChatMessagesCreateRequest;
+import com.workbench.backendjava.dto.ConversationPatchRequest;
 import com.workbench.backendjava.service.ConversationService;
 import com.workbench.backendjava.vo.ConversationDetailVO;
 import com.workbench.backendjava.vo.ConversationVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -59,5 +62,19 @@ public class ConversationController {
     ) {
         conversationService.updateAssistantMessage(conversationId, messageId, request);
         return Result.ok(null);
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteConversation(@PathVariable Long id) {
+        conversationService.deleteConversation(id);
+        return Result.ok(null);
+    }
+
+    @PatchMapping("/{id}")
+    public Result<ConversationVO> patchConversation(
+            @PathVariable Long id,
+            @RequestBody ConversationPatchRequest request
+    ) {
+        return Result.ok(conversationService.patchConversation(id, request));
     }
 }

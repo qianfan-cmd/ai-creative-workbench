@@ -8,5 +8,6 @@ import java.time.LocalDateTime;
 public class ConversationVO {
     private Long id;
     private String title;
+    private Boolean pinned;
     private LocalDateTime updatedAt;
 }

@@ -2,15 +2,20 @@ package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.*;
 import com.workbench.backendjava.entity.AiCallLog;
+import com.workbench.backendjava.entity.GenerationJob;
 import com.workbench.backendjava.entity.OpsMattingTask;
 import com.workbench.backendjava.entity.PromptTemplate;
 import com.workbench.backendjava.mapper.AiCallLogMapper;
+import com.workbench.backendjava.entity.OpsMattingTaskGroup;
+import com.workbench.backendjava.mapper.GenerationJobMapper;
+import com.workbench.backendjava.mapper.OpsMattingTaskGroupMapper;
 import com.workbench.backendjava.mapper.OpsMattingTaskMapper;
 import com.workbench.backendjava.mapper.PromptTemplateMapper;
 import com.workbench.backendjava.model.MattingConfig;
@@ -24,6 +29,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -36,11 +43,14 @@ import java.util.stream.Collectors;
 public class MattingTaskService {
 
     private static final int MAX_REGIONS = 6;
+    private static final int MAX_ELEMENT_NAME_LEN = 10;
     private static final String LEGACY_SOURCE_ID = "legacy";
 
     private final OpsMattingTaskMapper mattingTaskMapper;
+    private final OpsMattingTaskGroupMapper mattingTaskGroupMapper;
     private final AssetService assetService;
     private final GenerationJobService generationJobService;
+    private final GenerationJobMapper generationJobMapper;
     private final MattingExtractService mattingExtractService;
     private final MattingImageCropService mattingImageCropService;
     private final PromptTemplateMapper promptTemplateMapper;
@@ -50,11 +60,50 @@ public class MattingTaskService {
 
     public List<MattingTaskVO> listTasks() {
         Long userId = requireUserId();
-        return mattingTaskMapper.selectList(
+        List<OpsMattingTask> tasks = mattingTaskMapper.selectList(
                 new LambdaQueryWrapper<OpsMattingTask>()
                         .eq(OpsMattingTask::getUserId, userId)
-                        .orderByDesc(OpsMattingTask::getUpdatedAt)
-        ).stream().map(this::toVO).collect(Collectors.toList());
+        );
+        Map<Long, Integer> groupSort = mattingTaskGroupMapper.selectList(
+                new LambdaQueryWrapper<OpsMattingTaskGroup>()
+                        .eq(OpsMattingTaskGroup::getUserId, userId)
+        ).stream().collect(Collectors.toMap(OpsMattingTaskGroup::getId, g -> g.getSortOrder() != null ? g.getSortOrder() : 0));
+
+        tasks.sort(taskSidebarComparator(groupSort));
+        return tasks.stream().map(this::toVO).collect(Collectors.toList());
+    }
+
+    public MattingSidebarVO getSidebar() {
+        Long userId = requireUserId();
+        MattingSidebarVO vo = new MattingSidebarVO();
+        vo.setGroups(mattingTaskGroupMapper.selectList(
+                new LambdaQueryWrapper<OpsMattingTaskGroup>()
+                        .eq(OpsMattingTaskGroup::getUserId, userId)
+                        .orderByAsc(OpsMattingTaskGroup::getSortOrder)
+                        .orderByAsc(OpsMattingTaskGroup::getId)
+        ).stream().map(g -> {
+            MattingTaskGroupVO gv = new MattingTaskGroupVO();
+            gv.setId(g.getId());
+            gv.setName(g.getName());
+            gv.setSortOrder(g.getSortOrder());
+            gv.setUpdatedAt(g.getUpdatedAt());
+            return gv;
+        }).collect(Collectors.toList()));
+        vo.setTasks(listTasks());
+        return vo;
+    }
+
+    private Comparator<OpsMattingTask> taskSidebarComparator(Map<Long, Integer> groupSort) {
+        return Comparator
+                .comparing((OpsMattingTask t) -> t.getPinned() != null && t.getPinned() == 1 ? 0 : 1)
+                .thenComparing(t -> {
+                    if (t.getGroupId() == null) {
+                        return Integer.MAX_VALUE;
+                    }
+                    return groupSort.getOrDefault(t.getGroupId(), Integer.MAX_VALUE - 1);
+                })
+                .thenComparing(t -> t.getSortOrder() != null ? t.getSortOrder() : 0)
+                .thenComparing(OpsMattingTask::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()));
     }
 
     @Transactional
@@ -73,6 +122,13 @@ public class MattingTaskService {
 
     public MattingTaskVO getTask(Long id) {
         return toVO(getOwnedTask(id, requireUserId()));
+    }
+
+    @Transactional
+    public void deleteTask(Long id) {
+        Long userId = requireUserId();
+        getOwnedTask(id, userId);
+        mattingTaskMapper.deleteById(id);
     }
 
     @Transactional
@@ -97,6 +153,23 @@ public class MattingTaskService {
         }
         if (request.getStatus() != null) {
             task.setStatus(request.getStatus());
+        }
+        if (request.getGroupId() != null) {
+            if (request.getGroupId() == 0) {
+                task.setGroupId(null);
+            } else {
+                OpsMattingTaskGroup group = mattingTaskGroupMapper.selectById(request.getGroupId());
+                if (group == null || !userId.equals(group.getUserId())) {
+                    throw new BusinessException(404, "分组不存在");
+                }
+                task.setGroupId(request.getGroupId());
+            }
+        }
+        if (request.getPinned() != null) {
+            task.setPinned(Boolean.TRUE.equals(request.getPinned()) ? 1 : 0);
+        }
+        if (request.getSortOrder() != null) {
+            task.setSortOrder(request.getSortOrder());
         }
 
         task.setUpdatedAt(LocalDateTime.now());
@@ -215,17 +288,9 @@ public class MattingTaskService {
         region.setHPct(item.getHPct());
         region.setUseOriginal(false);
 
-        Long subAssetId = item.getSubAssetId();
-        if (subAssetId == null && prev != null) {
-            subAssetId = prev.getSubAssetId();
-        }
-        region.setSubAssetId(subAssetId);
-        if (subAssetId != null) {
-            try {
-                region.setSubAssetUrl(assetService.getPublicUrlForOwnedAsset(subAssetId, userId));
-            } catch (BusinessException ignored) {
-                region.setSubAssetUrl(prev != null ? prev.getSubAssetUrl() : null);
-            }
+        region.setSubAssetId(null);
+        if (prev != null && prev.getSubAssetUrl() != null && !prev.getSubAssetUrl().isBlank()) {
+            region.setSubAssetUrl(prev.getSubAssetUrl());
         }
         return region;
     }
@@ -276,7 +341,7 @@ public class MattingTaskService {
 
         validateAllSourcesHaveCrop(config);
 
-        ensureRegionSubAssets(config, userId);
+        ensureRegionSubAssets(task.getId(), config, userId);
 
         clearConfigFrom(config, 3);
         config.setDetectStatus("running");
@@ -291,8 +356,9 @@ public class MattingTaskService {
         try {
             for (CropRegion region : config.getCropRegions()) {
                 String imageUrl = resolveRegionImageUrl(region, config, userId);
+                byte[] imageBytes = resolveRegionImageBytes(region, config, userId);
                 long t0 = System.currentTimeMillis();
-                Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt);
+                Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
                 writeDetectLog(userId, "matting_detect", regionPrompt, "success",
                         (int) (System.currentTimeMillis() - t0), region.getId());
 
@@ -302,7 +368,7 @@ public class MattingTaskService {
                         el.setId("e_" + UUID.randomUUID().toString().substring(0, 8));
                         el.setRegionId(region.getId());
                         el.setGroupName(entry.getKey());
-                        el.setElementName(name);
+                        el.setElementName(normalizeElementName(name));
                         el.setChecked(true);
                         el.setSortOrder(sort++);
                         el.setCreateType("ai_identified");
@@ -326,28 +392,24 @@ public class MattingTaskService {
         return toVO(task);
     }
 
-    private void ensureRegionSubAssets(MattingConfig config, Long userId) {
+    private void ensureRegionSubAssets(Long taskId, MattingConfig config, Long userId) {
         if (config.getCropRegions() == null) {
             return;
         }
         for (CropRegion region : config.getCropRegions()) {
-            ensureRegionSubAsset(config, region, userId);
+            ensureRegionSubAsset(taskId, config, region, userId);
         }
     }
 
-    private void ensureRegionSubAsset(MattingConfig config, CropRegion region, Long userId) {
+    private void ensureRegionSubAsset(Long taskId, MattingConfig config, CropRegion region, Long userId) {
         if (Boolean.TRUE.equals(region.getUseOriginal())) {
             return;
         }
-        if (region.getSubAssetId() != null) {
-            return;
-        }
         ConfirmedSource source = findConfirmedSource(config, region.getSourceId());
-        String name = "matting-crop-" + region.getId() + ".png";
         MattingImageCropService.CropAssetResult result =
-                mattingImageCropService.cropRegionFromSource(userId, source, region, name);
-        region.setSubAssetId(result.getAssetId());
-        region.setSubAssetUrl(result.getPublicUrl());
+                mattingImageCropService.cropRegionFromSource(taskId, userId, source, region);
+        region.setSubAssetId(null);
+        region.setSubAssetUrl(result.getStoredPath());
     }
 
     private void validateAllSourcesHaveCrop(MattingConfig config) {
@@ -387,14 +449,15 @@ public class MattingTaskService {
         task.setConfigJson(writeJson(config));
         mattingTaskMapper.updateById(task);
 
-        ensureRegionSubAsset(config, region, userId);
+        ensureRegionSubAsset(taskId, config, region, userId);
         task.setConfigJson(writeJson(config));
         mattingTaskMapper.updateById(task);
 
         String regionPrompt = loadPromptTemplate("matting_region");
         try {
             String imageUrl = resolveRegionImageUrl(region, config, userId);
-            Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt);
+            byte[] imageBytes = resolveRegionImageBytes(region, config, userId);
+            Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
             int sort = config.getElements().stream()
                     .mapToInt(e -> e.getSortOrder() != null ? e.getSortOrder() : 0)
                     .max().orElse(-1) + 1;
@@ -404,7 +467,7 @@ public class MattingTaskService {
                     el.setId("e_" + UUID.randomUUID().toString().substring(0, 8));
                     el.setRegionId(regionId);
                     el.setGroupName(entry.getKey());
-                    el.setElementName(name);
+                    el.setElementName(normalizeElementName(name));
                     el.setChecked(true);
                     el.setSortOrder(sort++);
                     el.setCreateType("ai_identified");
@@ -482,8 +545,14 @@ public class MattingTaskService {
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
 
-        mattingExtractService.runExtractAsync(taskId, userId, config, count,
-                assetService.getPublicUrlForOwnedAsset(task.getSourceAssetId(), userId));
+        String sourceUrl = resolvePrimarySourceUrl(config, userId);
+        MattingConfig extractConfig = config;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                mattingExtractService.runExtractAsync(taskId, userId, extractConfig, count, sourceUrl);
+            }
+        });
         return toVO(task);
     }
 
@@ -520,22 +589,47 @@ public class MattingTaskService {
             if (tags == null || tags.isEmpty()) {
                 tags = List.of("generated", "reference");
             }
+            boolean configChanged = false;
             if (config.getConfirmedSources() != null && !config.getConfirmedSources().isEmpty()) {
+                int idx = 0;
                 for (ConfirmedSource cs : config.getConfirmedSources()) {
                     if (cs.getSourceAssetId() != null) {
                         assetService.replaceTagsByNames(cs.getSourceAssetId(), tags);
+                    } else if (cs.getSourceImageUrl() != null && !cs.getSourceImageUrl().isBlank()) {
+                        String name = task.getTitle() + "-source-" + (idx + 1) + ".png";
+                        try {
+                            AssetVO asset = assetService.importFromUrl(cs.getSourceImageUrl(), name, tags);
+                            cs.setSourceAssetId(asset.getId());
+                            configChanged = true;
+                        } catch (BusinessException e) {
+                            log.warn("保存源图入库失败: sourceId={}, reason={}", cs.getId(), e.getMessage());
+                        }
                     }
+                    idx++;
                 }
             } else if (task.getSourceAssetId() != null) {
                 assetService.replaceTagsByNames(task.getSourceAssetId(), tags);
+            }
+            if (configChanged) {
+                task.setConfigJson(writeJson(config));
+                task.setUpdatedAt(LocalDateTime.now());
+                mattingTaskMapper.updateById(task);
             }
         }
         return saved;
     }
 
+    @Transactional
     public MattingSourceSchemesVO getSourceSchemes(Long taskId) {
-        OpsMattingTask task = getOwnedTask(taskId, requireUserId());
-        return buildSourceSchemesVO(parseConfig(task.getConfigJson()));
+        Long userId = requireUserId();
+        OpsMattingTask task = getOwnedTask(taskId, userId);
+        MattingConfig config = parseConfig(task.getConfigJson());
+        if (repairSourceSchemeUrls(config, userId)) {
+            task.setConfigJson(writeJson(config));
+            task.setUpdatedAt(LocalDateTime.now());
+            mattingTaskMapper.updateById(task);
+        }
+        return buildSourceSchemesVO(config, userId);
     }
 
     @Transactional
@@ -577,7 +671,7 @@ public class MattingTaskService {
         task.setConfigJson(writeJson(config));
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
-        return buildSourceSchemesVO(config);
+        return buildSourceSchemesVO(config, userId);
     }
 
     @Transactional
@@ -608,7 +702,7 @@ public class MattingTaskService {
         task.setConfigJson(writeJson(config));
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
-        return buildSourceSchemesVO(config);
+        return buildSourceSchemesVO(config, requireUserId());
     }
 
     @Transactional
@@ -646,23 +740,17 @@ public class MattingTaskService {
                     .filter(s -> schemeId.equals(s.getId()))
                     .findFirst()
                     .orElseThrow(() -> new BusinessException(404, "方案不存在: " + schemeId));
-            if (scheme.getImageUrl() == null || scheme.getImageUrl().isBlank()) {
+            String displayUrl = resolveSchemeDisplayUrl(scheme, userId);
+            if (displayUrl == null || displayUrl.isBlank()) {
                 throw new BusinessException(400, "方案图片无效");
             }
-            String name = task.getTitle() + "-source-" + (sort + 1) + ".png";
             ConfirmedSource cs = new ConfirmedSource();
             cs.setId(schemeId);
             cs.setSchemeId(schemeId);
-            cs.setSourceImageUrl(scheme.getImageUrl());
+            cs.setSourceImageUrl(displayUrl);
             cs.setLabel("方案 " + (sort + 1));
             cs.setSortOrder(sort++);
             cs.setUseOriginal(false);
-            try {
-                AssetVO asset = assetService.importFromUrl(scheme.getImageUrl(), name, List.of());
-                cs.setSourceAssetId(asset.getId());
-            } catch (BusinessException e) {
-                log.warn("AI 方案图片本地入库失败，将使用外链继续: schemeId={}, reason={}", schemeId, e.getMessage());
-            }
             newSources.add(cs);
         }
 
@@ -736,7 +824,7 @@ public class MattingTaskService {
         }
     }
 
-    private MattingSourceSchemesVO buildSourceSchemesVO(MattingConfig config) {
+    private MattingSourceSchemesVO buildSourceSchemesVO(MattingConfig config, Long userId) {
         MattingSourceSchemesVO vo = new MattingSourceSchemesVO();
         List<SourceScheme> stored = config.getSourceSchemes();
         if (stored == null || stored.isEmpty()) {
@@ -746,15 +834,103 @@ public class MattingTaskService {
         vo.setSchemes(stored.stream().map(s -> {
             MattingSourceSchemesVO.SchemeItem item = new MattingSourceSchemesVO.SchemeItem();
             item.setId(s.getId());
-            item.setImageUrl(s.getImageUrl());
+            item.setAssetId(s.getAssetId());
             item.setPrompt(s.getPrompt());
             item.setAspectRatio(s.getAspectRatio());
             item.setReferenceUrls(s.getReferenceUrls());
             item.setSelected(s.getSelected());
             item.setGenerationJobId(s.getGenerationJobId());
+            item.setImageUrl(resolveSchemeDisplayUrl(s, userId));
             return item;
         }).collect(Collectors.toList()));
         return vo;
+    }
+
+    /** 展示/确认用 URL：优先外链或 generation_job 候选，旧任务可回退 assetId */
+    private String resolveSchemeDisplayUrl(SourceScheme scheme, Long userId) {
+        String fromJob = resolveRemoteUrlForScheme(scheme, userId);
+        if (fromJob != null && !fromJob.isBlank()) {
+            return fromJob;
+        }
+        if (scheme.getAssetId() != null && userId != null) {
+            try {
+                return assetService.getPublicUrlForOwnedAsset(scheme.getAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
+        }
+        return scheme.getImageUrl();
+    }
+
+    private boolean repairSourceSchemeUrls(MattingConfig config, Long userId) {
+        if (config.getSourceSchemes() == null || config.getSourceSchemes().isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (SourceScheme scheme : config.getSourceSchemes()) {
+            String resolved = resolveSchemeDisplayUrl(scheme, userId);
+            if (resolved != null && !resolved.isBlank() && !Objects.equals(resolved, scheme.getImageUrl())) {
+                scheme.setImageUrl(resolved);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private String resolveRemoteUrlForScheme(SourceScheme scheme, Long userId) {
+        if (scheme.getImageUrl() != null && !scheme.getImageUrl().isBlank()
+                && isExternalProviderUrl(scheme.getImageUrl())) {
+            return scheme.getImageUrl();
+        }
+        if (scheme.getGenerationJobId() == null) {
+            return scheme.getImageUrl();
+        }
+        GenerationJob job = generationJobMapper.selectById(scheme.getGenerationJobId());
+        if (job == null || !userId.equals(job.getUserId())) {
+            return scheme.getImageUrl();
+        }
+        List<ImageCandidateVO> candidates = parseJobCandidates(job.getCandidatesJson());
+        if (candidates.isEmpty()) {
+            return scheme.getImageUrl();
+        }
+        if (scheme.getImageUrl() != null && !scheme.getImageUrl().isBlank()) {
+            for (ImageCandidateVO c : candidates) {
+                if (scheme.getImageUrl().equals(c.getUrl())) {
+                    return c.getUrl();
+                }
+            }
+        }
+        return candidates.get(0).getUrl();
+    }
+
+    private boolean isExternalProviderUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String lower = url.toLowerCase();
+        if (lower.contains("localhost") || lower.contains("127.0.0.1")) {
+            return false;
+        }
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ImageCandidateVO> parseJobCandidates(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Map<String, Object>> list = objectMapper.readValue(json, List.class);
+            return list.stream().map(m -> {
+                ImageCandidateVO vo = new ImageCandidateVO();
+                vo.setUrl(String.valueOf(m.get("url")));
+                Object idx = m.get("index");
+                vo.setIndex(idx instanceof Number ? ((Number) idx).intValue() : 0);
+                return vo;
+            }).collect(Collectors.toList());
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
     }
 
     /** @deprecated 旧版单次抠图，保留兼容 */
@@ -808,6 +984,7 @@ public class MattingTaskService {
                 MattingElementsVO.SourceElementsVO sv = new MattingElementsVO.SourceElementsVO();
                 sv.setSourceId(cs.getId());
                 sv.setLabel(cs.getLabel());
+                sv.setSourceDescription(resolveSourceDescription(cs, config, userId));
                 String sourceThumb = resolveConfirmedSourceUrl(cs, userId);
                 if (sourceThumb != null) {
                     sv.setImageUrl(sourceThumb);
@@ -847,14 +1024,11 @@ public class MattingTaskService {
                 }
             } else {
                 rv.setRegionLabel("区域 " + (++regionIndex));
-                if (region.getSubAssetId() != null) {
-                    try {
-                        rv.setImageUrl(assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId));
-                    } catch (BusinessException ignored) {
-                        rv.setImageUrl(region.getSubAssetUrl());
-                    }
-                } else {
-                    rv.setImageUrl(region.getSubAssetUrl());
+                try {
+                    String sourceUrl = resolveSourceUrl(config, sourceId, userId);
+                    rv.setImageUrl(resolveCropRegionPublicUrl(region, userId, sourceUrl));
+                } catch (BusinessException ignored) {
+                    rv.setImageUrl(null);
                 }
             }
 
@@ -871,7 +1045,7 @@ public class MattingTaskService {
                     row.setId(e.getId());
                     row.setRegionId(e.getRegionId());
                     row.setGroupName(e.getGroupName());
-                    row.setElementName(e.getElementName());
+                    row.setElementName(normalizeElementName(e.getElementName()));
                     row.setChecked(e.getChecked());
                     row.setCreateType(e.getCreateType());
                     return row;
@@ -936,13 +1110,62 @@ public class MattingTaskService {
         if (Boolean.TRUE.equals(region.getUseOriginal())) {
             return sourceUrl;
         }
+        return resolveCropRegionPublicUrl(region, userId, sourceUrl);
+    }
+
+    private String resolveCropRegionPublicUrl(CropRegion region, Long userId, String fallbackSourceUrl) {
         if (region.getSubAssetId() != null) {
-            return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
+            try {
+                return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
         }
         if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
-            return region.getSubAssetUrl();
+            if (region.getSubAssetUrl().startsWith("http://") || region.getSubAssetUrl().startsWith("https://")) {
+                return region.getSubAssetUrl();
+            }
+            return assetService.buildPublicUrlFromStoredPath(region.getSubAssetUrl());
         }
-        return sourceUrl;
+        return fallbackSourceUrl;
+    }
+
+    /** 供视觉识别 L2 inline base64：优先 subAsset，useOriginal 读整图源图 */
+    private byte[] resolveRegionImageBytes(CropRegion region, MattingConfig config, Long userId) {
+        if (Boolean.TRUE.equals(region.getUseOriginal())) {
+            ConfirmedSource source = findConfirmedSource(config, region.getSourceId());
+            return mattingImageCropService.readSourceBytes(userId, source);
+        }
+        return resolveCropRegionImageBytes(region, userId);
+    }
+
+    private byte[] resolveCropRegionImageBytes(CropRegion region, Long userId) {
+        if (region.getSubAssetId() != null) {
+            try {
+                return assetService.readOwnedAssetBytes(region.getSubAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
+        }
+        if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
+            if (region.getSubAssetUrl().startsWith("http://") || region.getSubAssetUrl().startsWith("https://")) {
+                return assetService.downloadImageBytes(region.getSubAssetUrl());
+            }
+            return assetService.readWorkflowImageBytes(region.getSubAssetUrl());
+        }
+        return null;
+    }
+
+    private String resolvePrimarySourceUrl(MattingConfig config, Long userId) {
+        if (config.getConfirmedSources() != null && !config.getConfirmedSources().isEmpty()) {
+            for (ConfirmedSource cs : config.getConfirmedSources()) {
+                String url = resolveConfirmedSourceUrl(cs, userId);
+                if (url != null && !url.isBlank()) {
+                    return url;
+                }
+            }
+        }
+        throw new BusinessException(400, "源图不可用");
     }
 
     private String resolveSourceUrl(MattingConfig config, String sourceId, Long userId) {
@@ -1052,6 +1275,16 @@ public class MattingTaskService {
         return loadPromptTemplate("matting");
     }
 
+    private int normalizeStage(Integer stage, MattingConfig config) {
+        int normalized = stage != null ? stage : 1;
+        String extractStatus = config.getExtractStatus();
+        boolean hasExtract = config.getElementImages() != null && !config.getElementImages().isEmpty();
+        if (hasExtract || (extractStatus != null && !"idle".equals(extractStatus))) {
+            normalized = Math.max(normalized, 4);
+        }
+        return normalized;
+    }
+
     private MattingConfig parseConfig(String json) {
         if (json == null || json.isBlank()) {
             return new MattingConfig();
@@ -1083,14 +1316,17 @@ public class MattingTaskService {
         MattingTaskVO vo = new MattingTaskVO();
         vo.setId(task.getId());
         vo.setTitle(task.getTitle());
-        vo.setStage(task.getStage());
+        MattingConfig config = parseConfig(task.getConfigJson());
+        vo.setStage(normalizeStage(task.getStage(), config));
         vo.setStatus(task.getStatus());
+        vo.setGroupId(task.getGroupId());
+        vo.setPinned(task.getPinned() != null && task.getPinned() == 1);
+        vo.setSortOrder(task.getSortOrder());
         vo.setSourceAssetId(task.getSourceAssetId());
         vo.setConfigJson(task.getConfigJson());
         vo.setSelectedCandidate(task.getSelectedCandidate());
         vo.setUpdatedAt(task.getUpdatedAt());
 
-        MattingConfig config = parseConfig(task.getConfigJson());
         ensureConfirmedSources(config, task);
 
         List<MattingConfirmedSourceVO> confirmed = new ArrayList<>();
@@ -1171,5 +1407,64 @@ public class MattingTaskService {
         if (fromStage <= 5) {
             // selectedCandidate 存在 task 表字段，由调用方清 task.setSelectedCandidate
         }
+    }
+
+    private String resolveSourceDescription(ConfirmedSource cs, MattingConfig config, Long userId) {
+        String schemeId = cs.getSchemeId() != null ? cs.getSchemeId() : cs.getId();
+        if (schemeId != null && config.getSourceSchemes() != null) {
+            for (SourceScheme scheme : config.getSourceSchemes()) {
+                if (schemeId.equals(scheme.getId())) {
+                    String prompt = scheme.getPrompt();
+                    if (prompt != null && !prompt.isBlank()) {
+                        return prompt.replaceAll("\\s+", " ").trim();
+                    }
+                    break;
+                }
+            }
+        }
+        if (cs.getSourceAssetId() != null) {
+            try {
+                return assetService.getOwnedAssetName(cs.getSourceAssetId(), userId);
+            } catch (BusinessException ignored) {
+                // fall through
+            }
+        }
+        if (cs.getLabel() != null && !cs.getLabel().isBlank()) {
+            return cs.getLabel();
+        }
+        return "未命名来源";
+    }
+
+    private String normalizeElementName(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.trim();
+        if (text.isEmpty()) {
+            return text;
+        }
+        if (text.startsWith("{")) {
+            try {
+                JsonNode node = objectMapper.readTree(text);
+                if (node.isObject()) {
+                    for (String key : List.of("名称", "name", "elementName", "element_name")) {
+                        JsonNode val = node.get(key);
+                        if (val != null && val.isTextual() && !val.asText().isBlank()) {
+                            return truncateElementName(val.asText().trim());
+                        }
+                    }
+                }
+            } catch (JsonProcessingException ignored) {
+                // use raw text
+            }
+        }
+        return truncateElementName(text);
+    }
+
+    private String truncateElementName(String name) {
+        if (name.length() <= MAX_ELEMENT_NAME_LEN) {
+            return name;
+        }
+        return name.substring(0, MAX_ELEMENT_NAME_LEN);
     }
 }

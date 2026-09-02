@@ -33,6 +33,7 @@ export interface KnowledgeDocumentVO {
 export interface KnowledgeSessionVO {
     id: number
     title: string
+    pinned?: boolean
     updatedAt?: string
 }
 
@@ -72,6 +73,21 @@ export async function createKnowledgeSessionApi() {
 export async function getKnowledgeSessionApi(sessionId: number) {
     const res = await request.get<ApiResponse<KnowledgeSessionDetailVO>>(
         `/knowledge/sessions/${sessionId}`,
+    )
+    return res.data.data
+}
+
+export async function deleteKnowledgeSessionApi(sessionId: number) {
+    await request.delete<ApiResponse<null>>(`/knowledge/sessions/${sessionId}`)
+}
+
+export async function patchKnowledgeSessionApi(
+    sessionId: number,
+    payload: { title?: string; pinned?: boolean },
+) {
+    const res = await request.patch<ApiResponse<KnowledgeSessionVO>>(
+        `/knowledge/sessions/${sessionId}`,
+        payload,
     )
     return res.data.data
 }

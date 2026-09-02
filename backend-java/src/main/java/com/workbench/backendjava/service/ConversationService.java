@@ -5,6 +5,7 @@ import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.ChatMessageUpdateRequest;
 import com.workbench.backendjava.dto.ChatMessagesCreateRequest;
+import com.workbench.backendjava.dto.ConversationPatchRequest;
 import com.workbench.backendjava.entity.Conversation;
 import com.workbench.backendjava.entity.Message;
 import com.workbench.backendjava.mapper.ConversationMapper;
@@ -44,6 +45,7 @@ public class ConversationService {
         List<Conversation> conversations = conversationMapper.selectList(
                 new LambdaQueryWrapper<Conversation>()
                         .eq(Conversation::getUserId, userId)
+                        .orderByDesc(Conversation::getPinned)
                         .orderByDesc(Conversation::getUpdatedAt)
         );
         return conversations.stream().map(this::toConversationVO).collect(Collectors.toList());
@@ -55,6 +57,7 @@ public class ConversationService {
         Conversation conversation = new Conversation();
         conversation.setUserId(userId);
         conversation.setTitle("新对话");
+        conversation.setPinned(0);
         conversation.setCreatedAt(LocalDateTime.now());
         conversation.setUpdatedAt(LocalDateTime.now());
         conversationMapper.insert(conversation);
@@ -162,6 +165,32 @@ public class ConversationService {
         }
     }
 
+    @Transactional
+    public void deleteConversation(Long conversationId) {
+        Long userId = requireUserId();
+        getOwnedConversation(conversationId, userId);
+        conversationMapper.deleteById(conversationId);
+    }
+
+    @Transactional
+    public ConversationVO patchConversation(Long conversationId, ConversationPatchRequest request) {
+        Long userId = requireUserId();
+        Conversation conversation = getOwnedConversation(conversationId, userId);
+        if (request.getTitle() != null) {
+            String title = request.getTitle().trim();
+            if (title.isEmpty()) {
+                throw new BusinessException(400, "标题不能为空");
+            }
+            conversation.setTitle(truncateTitle(title));
+        }
+        if (request.getPinned() != null) {
+            conversation.setPinned(Boolean.TRUE.equals(request.getPinned()) ? 1 : 0);
+        }
+        conversation.setUpdatedAt(LocalDateTime.now());
+        conversationMapper.updateById(conversation);
+        return toConversationVO(conversation);
+    }
+
     private Long requireUserId() {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -190,6 +219,7 @@ public class ConversationService {
         ConversationVO vo = new ConversationVO();
         vo.setId(conversation.getId());
         vo.setTitle(conversation.getTitle());
+        vo.setPinned(conversation.getPinned() != null && conversation.getPinned() == 1);
         vo.setUpdatedAt(conversation.getUpdatedAt());
         return vo;
     }

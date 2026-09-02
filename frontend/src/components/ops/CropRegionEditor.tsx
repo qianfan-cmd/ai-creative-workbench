@@ -116,12 +116,6 @@ function CropCanvas({
   locked?: boolean
   children: React.ReactNode
 }) {
-  const handleImgRef = (el: HTMLImageElement | null) => {
-    if (el?.complete && el.naturalWidth > 0 && el.naturalHeight > 0) {
-      onImageLoad(el.naturalWidth, el.naturalHeight)
-    }
-  }
-
   return (
     <div
       ref={canvasRef}
@@ -136,7 +130,6 @@ function CropCanvas({
       onPointerDown={onCanvasPointerDown}
     >
       <img
-        ref={handleImgRef}
         src={imageUrl}
         alt="源图"
         className={[styles.sourceImg, imgClassName ?? ''].filter(Boolean).join(' ')}

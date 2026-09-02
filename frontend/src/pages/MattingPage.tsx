@@ -1,9 +1,10 @@
 import { ScissorOutlined } from '@ant-design/icons'
-import { Alert, Button, Checkbox, message, Modal, Select } from 'antd'
+import { Alert, Modal, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   MattingElementsVO,
   MattingExtractStatusVO,
+  MattingTaskGroupVO,
   MattingTaskVO,
 } from '@/api/ops'
 import {
@@ -11,8 +12,8 @@ import {
   createMattingTaskApi,
   getMattingElementsApi,
   getMattingExtractStatusApi,
+  getMattingSidebarApi,
   getMattingTaskApi,
-  listMattingTasksApi,
   patchMattingElementsApi,
   reDetectMattingRegionApi,
   saveMattingElementsApi,
@@ -22,10 +23,13 @@ import type { TagVO } from '@/api/tags'
 import type { ApiResponse } from '@/types/api'
 import ElementCandidateGallery from '@/components/ops/ElementCandidateGallery'
 import ElementListPanel from '@/components/ops/ElementListPanel'
+import MattingSavePanel from '@/components/ops/MattingSavePanel'
 import MattingStage1Source from '@/components/ops/MattingStage1Source'
 import MattingStage2Crop from '@/components/ops/MattingStage2Crop'
+import MattingWorkspaceFrame, { mattingFrameStyles } from '@/components/ops/MattingWorkspaceFrame'
 import StepNav from '@/components/ops/StepNav'
 import TaskSidebar from '@/components/ops/TaskSidebar'
+import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import styles from '@/pages/MattingPage.module.css'
 
 const POLL_MS = 5000
@@ -38,22 +42,37 @@ function hasConfirmedSources(task: MattingTaskVO | null) {
 
 function parseConfigSummary(configJson?: string | null) {
   if (!configJson) {
-    return { hasElements: false, hasExtract: false, hasCrop: false }
+    return { hasElements: false, hasExtract: false, hasCrop: false, extractStatus: 'idle' as string }
   }
   try {
     const cfg = JSON.parse(configJson) as {
       elements?: unknown[]
       elementImages?: unknown[]
       cropRegions?: unknown[]
+      extractStatus?: string
     }
     return {
       hasElements: (cfg.elements?.length ?? 0) > 0,
       hasExtract: (cfg.elementImages?.length ?? 0) > 0,
       hasCrop: (cfg.cropRegions?.length ?? 0) > 0,
+      extractStatus: cfg.extractStatus ?? 'idle',
     }
   } catch {
-    return { hasElements: false, hasExtract: false, hasCrop: false }
+    return { hasElements: false, hasExtract: false, hasCrop: false, extractStatus: 'idle' as string }
   }
+}
+
+function resolveEffectiveStage(task: MattingTaskVO): number {
+  const cfg = parseConfigSummary(task.configJson)
+  let stage = task.stage ?? 1
+  if (cfg.hasElements) stage = Math.max(stage, 3)
+  if (cfg.hasExtract || cfg.extractStatus !== 'idle') stage = Math.max(stage, 4)
+  return stage
+}
+
+function shouldLoadExtract(task: MattingTaskVO, effectiveStage: number): boolean {
+  const cfg = parseConfigSummary(task.configJson)
+  return effectiveStage >= 4 || cfg.extractStatus !== 'idle'
 }
 
 function confirmDestructive(title: string, content: string): Promise<boolean> {
@@ -96,6 +115,7 @@ function mapElementRename(
 
 export default function MattingPage() {
   const [tasks, setTasks] = useState<MattingTaskVO[]>([])
+  const [groups, setGroups] = useState<MattingTaskGroupVO[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [task, setTask] = useState<MattingTaskVO | null>(null)
   const [viewStage, setViewStage] = useState(1)
@@ -113,16 +133,48 @@ export default function MattingPage() {
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const renameTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const initialSessionRestoreRef = useRef(false)
+  const [cropFooter, setCropFooter] = useState<{
+    confirming: boolean
+    detecting: boolean
+    disabled: boolean
+  }>({ confirming: false, detecting: false, disabled: true })
+  const cropConfirmRunRef = useRef<(() => Promise<void>) | null>(null)
 
-  const farthestStage = task?.stage ?? 1
+  useMainContentLayout({ lockScroll: true, fullBleed: true })
+
+  const handleRegisterCropConfirm = useCallback(
+    (api: {
+      runConfirm: () => Promise<void>
+      confirming: boolean
+      detecting: boolean
+      disabled: boolean
+    }) => {
+      cropConfirmRunRef.current = api.runConfirm
+      setCropFooter((prev) =>
+        prev.confirming === api.confirming &&
+        prev.detecting === api.detecting &&
+        prev.disabled === api.disabled
+          ? prev
+          : {
+              confirming: api.confirming,
+              detecting: api.detecting,
+              disabled: api.disabled,
+            },
+      )
+    },
+    [],
+  )
+
+  const farthestStage = task ? resolveEffectiveStage(task) : 1
   const canPreviewSave =
     farthestStage >= 4 &&
     (extractStatus?.extractStatus === 'done' || extractStatus?.extractStatus === 'partial_failed')
   const sourceCount = task?.confirmedSources?.length ?? (task?.sourceAssetId ? 1 : 0)
 
   const refreshTasks = useCallback(async () => {
-    const list = await listMattingTasksApi()
-    setTasks(list)
+    const sidebar = await getMattingSidebarApi()
+    setTasks(sidebar.tasks)
+    setGroups(sidebar.groups)
   }, [])
 
   const applyTaskMetaFromConfig = useCallback((t: MattingTaskVO) => {
@@ -163,34 +215,6 @@ export default function MattingPage() {
     }
   }, [])
 
-  const loadTask = useCallback(
-    async (id: number) => {
-      const t = await getMattingTaskApi(id)
-      setTask(t)
-      setActiveId(id)
-      setViewStage(t.stage)
-      applyTaskMetaFromConfig(t)
-      sessionStorage.setItem(SESSION_KEY, String(id))
-
-      if (t.stage >= 3) await loadElements(id)
-      if (t.stage >= 4) await loadExtractStatus(id)
-    },
-    [applyTaskMetaFromConfig, loadElements, loadExtractStatus],
-  )
-
-  useEffect(() => {
-    if (initialSessionRestoreRef.current) return
-    initialSessionRestoreRef.current = true
-    void (async () => {
-      await refreshTasks()
-      const raw = sessionStorage.getItem(SESSION_KEY)
-      const id = raw ? Number.parseInt(raw, 10) : NaN
-      if (Number.isFinite(id) && id > 0) {
-        await loadTask(id)
-      }
-    })()
-  }, [refreshTasks, loadTask])
-
   const stopPoll = () => {
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current)
@@ -225,14 +249,76 @@ export default function MattingPage() {
     [loadExtractStatus],
   )
 
-  useEffect(() => () => stopPoll(), [])
+  const resumeExtractPollIfNeeded = useCallback(
+    (t: MattingTaskVO, id: number, status: MattingExtractStatusVO | null) => {
+      const cfg = parseConfigSummary(t.configJson)
+      const shouldPoll =
+        status?.extractStatus === 'running' ||
+        (t.status === 'running' && (cfg.hasExtract || cfg.extractStatus === 'running'))
+      if (shouldPoll) {
+        setExtracting(true)
+        schedulePoll(id)
+      }
+    },
+    [schedulePoll],
+  )
+
+  const loadTask = useCallback(
+    async (id: number) => {
+      stopPoll()
+      setElements(null)
+      setExtractStatus(null)
+      setExtracting(false)
+
+      const t = await getMattingTaskApi(id)
+      const effectiveStage = resolveEffectiveStage(t)
+      setTask(t)
+      setActiveId(id)
+      setViewStage(effectiveStage)
+      applyTaskMetaFromConfig(t)
+      sessionStorage.setItem(SESSION_KEY, String(id))
+
+      if (effectiveStage >= 3) await loadElements(id)
+      if (shouldLoadExtract(t, effectiveStage)) {
+        const status = await loadExtractStatus(id)
+        resumeExtractPollIfNeeded(t, id, status)
+      }
+    },
+    [applyTaskMetaFromConfig, loadElements, loadExtractStatus, resumeExtractPollIfNeeded],
+  )
 
   useEffect(() => {
-    if (task?.stage === 4 && task.status === 'running' && activeId) {
-      setExtracting(true)
-      schedulePoll(activeId)
-    }
-  }, [task?.stage, task?.status, activeId, schedulePoll])
+    if (initialSessionRestoreRef.current) return
+    initialSessionRestoreRef.current = true
+    void (async () => {
+      await refreshTasks()
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      const id = raw ? Number.parseInt(raw, 10) : NaN
+      if (Number.isFinite(id) && id > 0) {
+        await loadTask(id)
+      }
+    })()
+  }, [refreshTasks, loadTask])
+
+  const handleDeleteTask = useCallback(
+    async (deletedId: number) => {
+      const nextTasks = tasks.filter((t) => t.id !== deletedId)
+      setTasks(nextTasks)
+      if (activeId === deletedId) {
+        stopPoll()
+        if (nextTasks.length > 0) {
+          await loadTask(nextTasks[0].id)
+        } else {
+          setActiveId(null)
+          setTask(null)
+          sessionStorage.removeItem(SESSION_KEY)
+        }
+      }
+    },
+    [tasks, activeId, loadTask],
+  )
+
+  useEffect(() => () => stopPoll(), [])
 
   const handleStepClick = (step: number) => {
     if (!task) return
@@ -349,7 +435,7 @@ export default function MattingPage() {
   const handleConfirmExtract = async () => {
     if (!task) return
     const cfg = parseConfigSummary(task.configJson)
-    if (task.stage >= 4 && cfg.hasExtract) {
+    if (farthestStage >= 4 && cfg.hasExtract) {
       const ok = await confirmDestructive(
         '重新提取',
         '将清空已有提取候选，是否继续？',
@@ -428,137 +514,213 @@ export default function MattingPage() {
     }
   }
 
+  const totalElements = elements
+    ? (elements.sources ?? []).reduce(
+        (sum, s) => sum + s.regions.reduce((rs, r) => rs + r.groups.reduce((gs, g) => gs + g.elements.length, 0), 0),
+        0,
+      ) ||
+      elements.regions.reduce(
+        (sum, r) => sum + r.groups.reduce((gs, g) => gs + g.elements.length, 0),
+        0,
+      )
+    : 0
+
+  const renderFooter = () => {
+    if (!task) return null
+
+    if (viewStage === 2 && hasConfirmedSources(task)) {
+      return (
+        <>
+          <button type="button" className={mattingFrameStyles.cancelBtn} onClick={() => setViewStage(1)}>
+            上一步
+          </button>
+          <button
+            type="button"
+            className={mattingFrameStyles.primaryBtn}
+            disabled={cropFooter.disabled || cropFooter.confirming || cropFooter.detecting}
+            onClick={() => void cropConfirmRunRef.current?.()}
+          >
+            {cropFooter.confirming || cropFooter.detecting ? '处理中…' : '确认框选，进入元素识别'}
+          </button>
+        </>
+      )
+    }
+
+    if (viewStage === 3) {
+      return (
+        <>
+          <button type="button" className={mattingFrameStyles.cancelBtn} onClick={() => setViewStage(2)}>
+            上一步
+          </button>
+          <span className={mattingFrameStyles.footerSelect}>每元素候选数 · {candidateCount}</span>
+          <select
+            className={mattingFrameStyles.footerSelect}
+            value={candidateCount}
+            onChange={(e) => setCandidateCount(Number(e.target.value))}
+          >
+            {[1, 2, 3, 4].map((n) => (
+              <option key={n} value={n}>
+                {n} 张
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={mattingFrameStyles.primaryBtn}
+            disabled={totalElements === 0 || extracting}
+            onClick={() => void handleConfirmExtract()}
+          >
+            {extracting ? '启动中…' : '开始提取'}
+          </button>
+        </>
+      )
+    }
+
+    if (viewStage === 4) {
+      return (
+        <>
+          <button type="button" className={mattingFrameStyles.cancelBtn} onClick={() => setViewStage(3)}>
+            返回元素清单
+          </button>
+          <button type="button" className={mattingFrameStyles.linkBtn} disabled>
+            历史生成
+          </button>
+          <button
+            type="button"
+            className={mattingFrameStyles.primaryBtn}
+            disabled={extractStatus?.extractStatus === 'running'}
+            onClick={() => setViewStage(5)}
+          >
+            下一步：保存
+          </button>
+        </>
+      )
+    }
+
+    if (viewStage === 5) {
+      return (
+        <>
+          <div className={mattingFrameStyles.footerLeft}>
+            <button type="button" className={mattingFrameStyles.cancelBtn} disabled>
+              历史图片
+            </button>
+          </div>
+          <button type="button" className={mattingFrameStyles.cancelBtn} onClick={() => setViewStage(4)}>
+            返回选图
+          </button>
+          <button
+            type="button"
+            className={mattingFrameStyles.primaryBtn}
+            disabled={saving}
+            onClick={() => void handleSaveAll()}
+          >
+            {saving ? '保存中…' : '保存到 Assets · matted'}
+          </button>
+        </>
+      )
+    }
+
+    return null
+  }
+
+  const sidebar = (
+    <TaskSidebar
+      tasks={tasks}
+      groups={groups}
+      activeId={activeId}
+      onSelect={(id) => void loadTask(id)}
+      onNew={handleNewTask}
+      onRefresh={refreshTasks}
+      onDeleted={(id) => void handleDeleteTask(id)}
+    />
+  )
+
   return (
     <div className={styles.page}>
-      <TaskSidebar
-        tasks={tasks}
-        activeId={activeId}
-        onSelect={(id) => void loadTask(id)}
-        onNew={handleNewTask}
-      />
-
-      <div className={styles.main}>
-        {!task ? (
-          <div className={styles.welcome}>
-            <ScissorOutlined className={styles.welcomeIcon} />
-            <h1 className={styles.welcomeTitle}>抠图工作台 Matting</h1>
-            <p className={styles.welcomeHint}>
-              从左侧新建任务：选源图 → 框选区域 → 自动识别元素 → 按元素提取 → 保存到 Assets。
-            </p>
-            <Button type="primary" onClick={handleNewTask}>
-              新建任务
-            </Button>
-          </div>
-        ) : (
-          <>
+      <MattingWorkspaceFrame
+        sidebar={sidebar}
+        nav={
+          task ? (
             <StepNav
               viewStage={viewStage}
               farthestStage={farthestStage}
               canPreviewSave={canPreviewSave}
               onStepClick={handleStepClick}
             />
-            <div className={styles.content}>
-              {viewStage === 1 && (
-                <MattingStage1Source
-                  taskId={task.id}
-                  sourceAssetId={task.sourceAssetId}
-                  sourceAssetUrl={task.sourceAssetUrl}
-                  configJson={task.configJson}
-                  onBeforeConfirm={() => handleBeforeSourceConfirm()}
-                  onConfirmed={handleSourceConfirmed}
+          ) : undefined
+        }
+        footer={task ? renderFooter() : undefined}
+      >
+        {!task ? (
+          <div className={mattingFrameStyles.welcome}>
+            <span className={mattingFrameStyles.welcomeIcon} aria-hidden="true">
+              <ScissorOutlined />
+            </span>
+            <h1 className={mattingFrameStyles.welcomeTitle}>抠图工作台 Matting</h1>
+            <p className={mattingFrameStyles.welcomeHint}>从左侧新建，或选择已有记录继续操作</p>
+          </div>
+        ) : (
+          <>
+            {viewStage === 1 && (
+              <MattingStage1Source
+                taskId={task.id}
+                sourceAssetId={task.sourceAssetId}
+                sourceAssetUrl={task.sourceAssetUrl}
+                configJson={task.configJson}
+                onBeforeConfirm={() => handleBeforeSourceConfirm()}
+                onConfirmed={handleSourceConfirmed}
+              />
+            )}
+
+            {viewStage === 2 && hasConfirmedSources(task) && (
+              <MattingStage2Crop
+                task={task}
+                hideFooter
+                onRegisterConfirm={handleRegisterCropConfirm}
+                onBeforeConfirm={() => handleBeforeCropConfirm()}
+                onConfirmed={handleCropConfirmed}
+                onDraftSaved={handleCropDraftSaved}
+              />
+            )}
+
+            {viewStage === 3 && (
+              <ElementListPanel
+                data={elements}
+                loading={loadingElements}
+                detecting={detecting}
+                onToggle={(id, checked) => void handleToggleElement(id, checked)}
+                onRename={handleRenameElement}
+                onReDetect={(regionId) => void handleReDetect(regionId)}
+              />
+            )}
+
+            {viewStage === 4 && (
+              <>
+                {extractStatus?.extractStatus === 'failed' && extractStatus.extractError && (
+                  <Alert type="error" message={extractStatus.extractError} showIcon className={styles.alert} />
+                )}
+                <ElementCandidateGallery
+                  status={extractStatus}
+                  loading={extracting}
+                  onSelectSlot={handleSelectSlot}
                 />
-              )}
+              </>
+            )}
 
-              {viewStage === 2 && hasConfirmedSources(task) && (
-                <div className={styles.stepBlock}>
-                  <MattingStage2Crop
-                    task={task}
-                    onBeforeConfirm={() => handleBeforeCropConfirm()}
-                    onConfirmed={handleCropConfirmed}
-                    onDraftSaved={handleCropDraftSaved}
-                  />
-                </div>
-              )}
-
-              {viewStage === 3 && (
-                <div className={styles.stepBlock}>
-                  <ElementListPanel
-                    data={elements}
-                    loading={loadingElements}
-                    detecting={detecting}
-                    candidateCount={candidateCount}
-                    onCandidateCountChange={setCandidateCount}
-                    onToggle={(id, checked) => void handleToggleElement(id, checked)}
-                    onRename={handleRenameElement}
-                    onReDetect={(regionId) => void handleReDetect(regionId)}
-                    onConfirmExtract={() => void handleConfirmExtract()}
-                    extracting={extracting}
-                  />
-                </div>
-              )}
-
-              {viewStage === 4 && (
-                <div className={styles.stepBlock}>
-                  {extractStatus?.extractStatus === 'failed' && extractStatus.extractError && (
-                    <Alert type="error" message={extractStatus.extractError} showIcon className={styles.alert} />
-                  )}
-                  <ElementCandidateGallery
-                    status={extractStatus}
-                    loading={extracting}
-                    onSelectSlot={handleSelectSlot}
-                  />
-                  <div className={styles.toolbar}>
-                    <Button onClick={() => setViewStage(3)}>返回元素清单</Button>
-                    <Button
-                      type="primary"
-                      disabled={extractStatus?.extractStatus === 'running'}
-                      onClick={() => setViewStage(5)}
-                    >
-                      下一步：保存
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {viewStage === 5 && (
-                <div className={styles.saveBlock}>
-                  <p className={styles.saveHint}>确认每个元素已选候选，批量保存到 Assets（标签 matted）。</p>
-                  <ElementCandidateGallery
-                    status={extractStatus}
-                    onSelectSlot={handleSelectSlot}
-                  />
-                  <div className={styles.saveSourceOption}>
-                    <Checkbox
-                      checked={saveSourceToAssets}
-                      onChange={(e) => setSaveSourceToAssets(e.target.checked)}
-                    >
-                      {sourceCount > 1
-                        ? `同时保存全部 ${sourceCount} 张源图到素材库`
-                        : '同时保存源图到素材库'}
-                    </Checkbox>
-                    {saveSourceToAssets && (
-                      <Select
-                        mode="multiple"
-                        className={styles.sourceTagSelect}
-                        placeholder="源图标签"
-                        value={sourceTagIds}
-                        onChange={setSourceTagIds}
-                        options={availableTags.map((t) => ({ value: t.id, label: t.name }))}
-                      />
-                    )}
-                  </div>
-                  <div className={styles.toolbar}>
-                    <Button onClick={() => setViewStage(4)}>返回候选</Button>
-                    <Button type="primary" loading={saving} onClick={() => void handleSaveAll()}>
-                      保存到 Assets · matted
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {viewStage === 5 && (
+              <MattingSavePanel
+                status={extractStatus}
+                saveSourceToAssets={saveSourceToAssets}
+                onSaveSourceChange={setSaveSourceToAssets}
+                sourceTagIds={sourceTagIds}
+                onSourceTagIdsChange={setSourceTagIds}
+                availableTags={availableTags}
+                sourceCount={sourceCount}
+              />
+            )}
           </>
         )}
-      </div>
+      </MattingWorkspaceFrame>
     </div>
   )
 }

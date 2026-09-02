@@ -10,6 +10,7 @@ export interface ChatRelyVO {
 export interface ConversationVO {
     id: number
     title: string
+    pinned?: boolean
     updatedAt?: string
 }
 
@@ -44,6 +45,21 @@ export async function createConversationApi() {
 export async function getConversationApi(conversationId: number) {
     const res = await request.get<ApiResponse<ConversationDetailVO>>(
         `/conversations/${conversationId}`,
+    )
+    return res.data.data
+}
+
+export async function deleteConversationApi(conversationId: number) {
+    await request.delete<ApiResponse<null>>(`/conversations/${conversationId}`)
+}
+
+export async function patchConversationApi(
+    conversationId: number,
+    payload: { title?: string; pinned?: boolean },
+) {
+    const res = await request.patch<ApiResponse<ConversationVO>>(
+        `/conversations/${conversationId}`,
+        payload,
     )
     return res.data.data
 }

@@ -1,34 +1,15 @@
 import type { ReactNode } from 'react'
 import PreviewTaskSidebar from './PreviewTaskSidebar'
-import PreviewStepNav from './PreviewStepNav'
-import type { StepItem } from './PreviewStepNav'
+import PreviewMattingStageNav, { type MattingStageNavStep } from './PreviewMattingStageNav'
 import styles from './PreviewMattingStepFrame.module.css'
 
-export type MattingStepId = '1' | '2' | '3' | '4'
-
-const STEP_LABELS: Record<MattingStepId, string> = {
-  '1': '① 源图',
-  '2': '② 配置',
-  '3': '③ 候选',
-  '4': '④ 保存',
-}
-
-function buildSteps(activeStep: MattingStepId): StepItem[] {
-  const order: MattingStepId[] = ['1', '2', '3', '4']
-  const activeIndex = order.indexOf(activeStep)
-
-  return order.map((id, index) => ({
-    id,
-    label: STEP_LABELS[id],
-    active: id === activeStep,
-    done: index < activeIndex,
-  }))
-}
+export type MattingStepId = '1' | '2' | '3' | '4' | '5'
 
 interface PreviewMattingStepFrameProps {
   activeStep: MattingStepId
   sectionTitle: string
   children: ReactNode
+  footerExtra?: ReactNode
   className?: string
 }
 
@@ -36,8 +17,11 @@ export default function PreviewMattingStepFrame({
   activeStep,
   sectionTitle,
   children,
+  footerExtra,
   className,
 }: PreviewMattingStepFrameProps) {
+  const stepNum = Number(activeStep) as MattingStageNavStep
+
   return (
     <section className={className}>
       <div className={styles.sectionTitle}>{sectionTitle}</div>
@@ -56,30 +40,42 @@ export default function PreviewMattingStepFrame({
         />
 
         <div className={styles.main}>
-          <PreviewStepNav steps={buildSteps(activeStep)} />
+          <PreviewMattingStageNav activeStep={stepNum} farthestStep={5} />
 
           <div className={styles.body}>{children}</div>
 
           <div className={styles.footer}>
+            {footerExtra}
             {activeStep === '1' && (
               <button type="button" className={styles.primaryBtn}>下一步</button>
             )}
             {activeStep === '2' && (
               <>
                 <button type="button" className={styles.cancelBtn}>上一步</button>
-                <button type="button" className={styles.primaryBtn}>开始抠图</button>
+                <button type="button" className={styles.primaryBtn}>确认框选，进入元素识别</button>
               </>
             )}
             {activeStep === '3' && (
               <>
-                <button type="button" className={styles.cancelBtn}>重新生成</button>
-                <button type="button" className={styles.linkBtn}>历史生成</button>
-                <button type="button" className={styles.primaryBtn}>下一步</button>
+                <button type="button" className={styles.cancelBtn}>上一步</button>
+                <div className={styles.footerSelect}>每元素候选数 · 4</div>
+                <button type="button" className={styles.primaryBtn}>开始提取</button>
               </>
             )}
             {activeStep === '4' && (
               <>
-                <button type="button" className={styles.cancelBtn}>取消</button>
+                <button type="button" className={styles.cancelBtn}>返回元素清单</button>
+                <button type="button" className={styles.linkBtn}>历史生成</button>
+                <button type="button" className={styles.primaryBtn}>下一步：保存</button>
+              </>
+            )}
+            {activeStep === '5' && (
+              <>
+                <button type="button" className={styles.cancelBtn}>返回选图</button>
+                <label className={styles.footerCheck}>
+                  <span className={styles.checkboxMock} />
+                  同时保存源图到素材库
+                </label>
                 <button type="button" className={styles.primaryBtn}>保存到 Assets · matted</button>
               </>
             )}

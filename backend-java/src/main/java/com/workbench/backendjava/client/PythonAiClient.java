@@ -28,6 +28,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -402,10 +403,22 @@ public class PythonAiClient {
     }
 
     /** 视觉元素识别 POST /ai/ops/detect-elements */
-    @SuppressWarnings("unchecked")
     public Map<String, List<String>> opsDetectElements(String imageUrl, String prompt) {
+        return opsDetectElements(imageUrl, prompt, null);
+    }
+
+    /** 视觉元素识别 — 可选传 imageBytes 作为 L2 inline base64 兜底 */
+    @SuppressWarnings("unchecked")
+    public Map<String, List<String>> opsDetectElements(String imageUrl, String prompt, byte[] imageBytes) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/detect-elements";
-        Map<String, Object> body = Map.of("imageUrl", imageUrl, "prompt", prompt);
+        Map<String, Object> body = new HashMap<>();
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            body.put("imageUrl", imageUrl);
+        }
+        if (imageBytes != null && imageBytes.length > 0) {
+            body.put("imageBase64", Base64.getEncoder().encodeToString(imageBytes));
+        }
+        body.put("prompt", prompt);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         try {
@@ -426,7 +439,39 @@ public class PythonAiClient {
 
     /** 元素提取 POST /ai/ops/extract-element */
     public PythonImageGenerateResponse opsExtractElement(String sourceUrl, String prompt, int count) {
-        return callImageEndpoint("/ai/ops/extract-element", prompt, sourceUrl, count, null);
+        return opsExtractElement(sourceUrl, prompt, count, null);
+    }
+
+    /** 元素提取 — 可选传 imageBytes 作为 L2 inline base64 兜底 */
+    public PythonImageGenerateResponse opsExtractElement(
+            String sourceUrl, String prompt, int count, byte[] imageBytes
+    ) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/extract-element";
+        Map<String, Object> body = new HashMap<>();
+        if (sourceUrl != null && !sourceUrl.isBlank()) {
+            body.put("sourceUrl", sourceUrl);
+        }
+        if (imageBytes != null && imageBytes.length > 0) {
+            body.put("imageBase64", Base64.getEncoder().encodeToString(imageBytes));
+        }
+        body.put("prompt", prompt);
+        body.put("count", count);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        try {
+            ResponseEntity<PythonImageGenerateResponse> resp = restTemplate.postForEntity(
+                    url, new HttpEntity<>(body, headers), PythonImageGenerateResponse.class);
+            PythonImageGenerateResponse data = resp.getBody();
+            if (data == null || data.getCandidates() == null || data.getCandidates().isEmpty()) {
+                throw new BusinessException(502, "图像服务未返回候选");
+            }
+            return data;
+        } catch (HttpStatusCodeException e) {
+            String msg = e.getResponseBodyAsString();
+            throw new BusinessException(502, msg != null && !msg.isBlank() ? msg : "图像服务调用失败");
+        } catch (RestClientException e) {
+            throw new BusinessException(502, "图像服务不可用");
+        }
     }
 
     private PythonImageGenerateResponse callImageEndpoint(

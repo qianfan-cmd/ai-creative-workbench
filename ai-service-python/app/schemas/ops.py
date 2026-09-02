@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 
@@ -115,18 +115,27 @@ class DetectElementsRequest(BaseModel):
 
     """POST /ai/ops/detect-elements"""
 
-    image_url: str = Field(..., alias="imageUrl", min_length=1)
-
+    image_url: Optional[str] = Field(None, alias="imageUrl")
+    image_base64: Optional[str] = Field(None, alias="imageBase64")
     prompt: str = Field(..., min_length=1)
 
     model_config = {"populate_by_name": True}
 
-
+    @model_validator(mode="after")
+    def require_image_source(self) -> "DetectElementsRequest":
+        url = (self.image_url or "").strip()
+        b64 = (self.image_base64 or "").strip()
+        if not url and not b64:
+            raise ValueError("imageUrl 与 imageBase64 至少提供一个")
+        return self
 
 
 class DetectElementsResponse(BaseModel):
 
     groups: Dict[str, List[str]]
+    resolve_strategy: Optional[str] = Field(None, alias="resolveStrategy")
+
+    model_config = {"populate_by_name": True}
 
 
 
@@ -135,14 +144,20 @@ class ExtractElementRequest(BaseModel):
 
     """POST /ai/ops/extract-element — group / single 提取"""
 
-    source_url: str = Field(..., alias="sourceUrl", min_length=1)
-
+    source_url: Optional[str] = Field(None, alias="sourceUrl")
+    image_base64: Optional[str] = Field(None, alias="imageBase64")
     prompt: str = Field(..., min_length=1)
-
     count: int = Field(default=2, ge=1, le=4)
-
     phase: str = Field(default="single", description="group | single")
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def require_image_source(self) -> "ExtractElementRequest":
+        url = (self.source_url or "").strip()
+        b64 = (self.image_base64 or "").strip()
+        if not url and not b64:
+            raise ValueError("sourceUrl 与 imageBase64 至少提供一个")
+        return self
 
 

@@ -1,7 +1,7 @@
 import { Button, Spin, Table, message, Modal } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import styles from '@/pages/TagsPage.module.css'
-import layoutStyles from '@/layouts/MainLayout.module.css'
+import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import { useCallback, useEffect, useState } from 'react'
 import type { TagVO } from '@/api/tags'
 import { listTagsApi, deleteTagApi } from '@/api/tags'
@@ -60,17 +60,7 @@ export default function TagsPage() {
         fetchTags()
     }, [fetchTags])
 
-    // 进入标签页：锁住 MainLayout的外层滚动，只让列表区域滚动
-    useEffect(() => {
-        const main = document.getElementById('main-content');
-        if (!main) return;
-
-        main.classList.add(layoutStyles.content_lockScroll);
-
-        return () => {
-            main.classList.remove(layoutStyles.content_lockScroll);
-        }
-    }, [])
+    useMainContentLayout({ lockScroll: true, fullBleed: true })
 
     const columns: ColumnsType<TagVO> = [
         {

@@ -14,7 +14,7 @@ import {
   getConversationApi,
   type ConversationVO,
 } from '@/api/chat'
-import layoutStyles from '@/layouts/MainLayout.module.css'
+import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 import ChatMessageRow from '@/components/chat/ChatMessageRow'
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
@@ -286,17 +286,30 @@ function mapMessageFromApi(m: { id: number; role: string; content: string }): Ch
       setActiveConversationId(conversation.id)
       setMessages([])
       setInput('')
+      await loadConversations()
     } catch (error) {
       message.error(error instanceof Error ? error.message : '新建对话失败')
     }
   }
 
-  useEffect(() => {
-    const main = document.getElementById('main-content')
-    if (!main) return
-    main.classList.add(layoutStyles.content_lockScroll)
-    return () => main.classList.remove(layoutStyles.content_lockScroll)
-  }, [])
+  const handleDeleteConversation = async (deletedId: number) => {
+    const nextList = conversations.filter((c) => c.id !== deletedId)
+    setConversations(nextList)
+    if (activeConversationId === deletedId) {
+      if (nextList.length > 0) {
+        const detail = await getConversationApi(nextList[0].id)
+        setActiveConversationId(detail.id)
+        setMessages(detail.messages.map(mapMessageFromApi))
+      } else {
+        setActiveConversationId(null)
+        setMessages([])
+      }
+      setInput('')
+    }
+    await loadConversations()
+  }
+
+  useMainContentLayout({ lockScroll: true, fullBleed: true })
 
   useEffect(() => {
     const el = messagesRef.current
@@ -336,6 +349,8 @@ function mapMessageFromApi(m: { id: number; role: string; content: string }): Ch
         activeId={activeConversationId}
         onSelect={handleSelectConversation}
         onNew={() => void handleNewConversation()}
+        onRefresh={loadConversations}
+        onDeleted={(id) => void handleDeleteConversation(id)}
         disabled={streaming || sending}
       />
 

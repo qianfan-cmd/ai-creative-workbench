@@ -28,6 +28,15 @@ public class OpsMattingTask {
 
     private Long sourceAssetId;
 
+    /** 所属任务分组，null 表示未分组 */
+    private Long groupId;
+
+    /** 是否置顶 */
+    private Integer pinned;
+
+    /** 组内或列表排序 */
+    private Integer sortOrder;
+
     private String configJson;
 
     /** 步骤③选中的候选 JSON */

@@ -13,6 +13,9 @@ public class MattingTaskVO {
     private Integer stage;
     private String status;
     private Long sourceAssetId;
+    private Long groupId;
+    private Boolean pinned;
+    private Integer sortOrder;
     private String sourceAssetUrl;
     private List<MattingConfirmedSourceVO> confirmedSources = new ArrayList<>();
     private String configJson;

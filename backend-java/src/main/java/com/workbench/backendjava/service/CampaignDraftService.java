@@ -10,20 +10,35 @@ import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.CampaignCopySaveRequest;
 import com.workbench.backendjava.dto.CampaignDraftCreateRequest;
 import com.workbench.backendjava.dto.CampaignGenerateCopyRequest;
+import com.workbench.backendjava.dto.CampaignGenerateImagesRequest;
+import com.workbench.backendjava.dto.CampaignImagesSaveRequest;
+import com.workbench.backendjava.entity.Asset;
 import com.workbench.backendjava.entity.CampaignDraft;
 import com.workbench.backendjava.entity.PromptTemplate;
+import com.workbench.backendjava.mapper.AssetMapper;
 import com.workbench.backendjava.mapper.CampaignDraftMapper;
 import com.workbench.backendjava.mapper.PromptTemplateMapper;
+import com.workbench.backendjava.config.UploadProperties;
 import com.workbench.backendjava.vo.CampaignDraftVO;
+import com.workbench.backendjava.vo.GenerationJobVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +48,10 @@ public class CampaignDraftService {
     private final ObjectMapper objectMapper;
     private final PromptTemplateMapper promptTemplateMapper;
     private final PythonAiClient pythonAiClient;
+    private final GenerationJobService generationJobService;
+    private final AssetService assetService;
+    private final AssetMapper assetMapper;
+    private final UploadProperties uploadProperties;
 
     @Transactional
     public CampaignDraftVO createDraft(CampaignDraftCreateRequest request) {
@@ -87,6 +106,15 @@ public class CampaignDraftService {
         vo.setCopyBody(entity.getCopyBody());
         vo.setStatus(entity.getStatus());
         vo.setUpdatedAt(entity.getUpdatedAt());
+        vo.setCoverAssetId(entity.getCoverAssetId());
+        vo.setImageAssetIds(readImageAssetIds(entity.getImageAssetIds()));
+        if (entity.getCoverAssetId() != null && entity.getUserId() != null) {
+            try {
+                vo.setCoverUrl(assetService.getPublicUrlForOwnedAsset(entity.getCoverAssetId(), entity.getUserId()));
+            } catch (BusinessException ignored) {
+                // 封面 asset 已删时不阻塞
+            }
+        }
         return vo;
     }
 
@@ -224,5 +252,122 @@ public class CampaignDraftService {
         campaignDraftMapper.updateById(draft);
 
         return toVO(draft);
+    }
+
+    /** 配图 Tab — 渲染 image_gen 模板并调 Python 生图候选 */
+    @Transactional
+    public GenerationJobVO generateImages(Long id, CampaignGenerateImagesRequest request) {
+        Long userId = requireUserId();
+        CampaignDraft draft = getOwnedDraft(id, userId);
+        Map<String, Object> activity = readActivityJson(draft.getActivityJson());
+
+        String prompt;
+        if (request.getPromptOverride() != null && !request.getPromptOverride().isBlank()) {
+            prompt = request.getPromptOverride().trim();
+        } else {
+            PromptTemplate template = promptTemplateMapper.selectOne(
+                    new LambdaQueryWrapper<PromptTemplate>()
+                            .eq(PromptTemplate::getScene, "image_gen")
+                            .isNull(PromptTemplate::getUserId)
+                            .last("LIMIT 1")
+            );
+            if (template == null) {
+                throw new BusinessException(500, "未找到 image_gen 内置模板");
+            }
+            Map<String, String> vars = new HashMap<>();
+            vars.put("theme", str(activity.get("theme")));
+            vars.put("timeRange", str(activity.get("timeRange")));
+            vars.put("audience", str(activity.get("audience")));
+            vars.put("benefits", str(activity.get("benefits")));
+            vars.put("visualStyle", str(activity.get("visualStyle")));
+            vars.put("aspectRatio", str(activity.get("aspectRatio")));
+            vars.put("forbiddenWords", str(activity.get("forbiddenWords")));
+            prompt = pythonAiClient.renderPrompt(template.getContent(), vars);
+        }
+
+        String sourceUrl = null;
+        if (request.getSourceAssetId() != null) {
+            sourceUrl = assetService.getPublicUrlForOwnedAsset(request.getSourceAssetId(), userId);
+        }
+        int count = request.getCount() != null ? request.getCount() : 4;
+        String aspectRatio = str(activity.get("aspectRatio"));
+        return generationJobService.runJob(userId, "image_gen", null, id, prompt, sourceUrl, count, aspectRatio);
+    }
+
+    @Transactional
+    public CampaignDraftVO saveImages(Long id, CampaignImagesSaveRequest request) {
+        Long userId = requireUserId();
+        CampaignDraft draft = getOwnedDraft(id, userId);
+        draft.setCoverAssetId(request.getCoverAssetId());
+        if (request.getImageAssetIds() != null) {
+            try {
+                draft.setImageAssetIds(objectMapper.writeValueAsString(request.getImageAssetIds()));
+            } catch (JsonProcessingException e) {
+                throw new BusinessException(500, "附图序列化失败");
+            }
+        }
+        draft.setStatus("ready");
+        draft.setUpdatedAt(LocalDateTime.now());
+        campaignDraftMapper.updateById(draft);
+        return toVO(draft);
+    }
+
+    /** 导出草稿包 zip：文案 md + 封面/附图文件 */
+    public byte[] exportDraft(Long id) {
+        Long userId = requireUserId();
+        CampaignDraft draft = getOwnedDraft(id, userId);
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ZipOutputStream zos = new ZipOutputStream(baos)) {
+            String md = "# " + (draft.getCopyTitle() != null ? draft.getCopyTitle() : draft.getTitle()) + "\n\n"
+                    + (draft.getCopyBody() != null ? draft.getCopyBody() : "");
+            zos.putNextEntry(new ZipEntry("copy.md"));
+            zos.write(md.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            if (draft.getCoverAssetId() != null) {
+                addAssetToZip(zos, draft.getCoverAssetId(), "cover" + extOfAsset(draft.getCoverAssetId()));
+            }
+            List<Long> extras = readImageAssetIds(draft.getImageAssetIds());
+            for (int i = 0; i < extras.size(); i++) {
+                addAssetToZip(zos, extras.get(i), "image-" + (i + 1) + extOfAsset(extras.get(i)));
+            }
+            zos.finish();
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new BusinessException(500, "导出失败");
+        }
+    }
+
+    private void addAssetToZip(ZipOutputStream zos, Long assetId, String entryName) throws IOException {
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null) {
+            return;
+        }
+        Path file = Paths.get(uploadProperties.getDir()).resolve(asset.getUrl().replace("/uploads/", ""));
+        if (!Files.exists(file)) {
+            return;
+        }
+        zos.putNextEntry(new ZipEntry(entryName));
+        Files.copy(file, zos);
+        zos.closeEntry();
+    }
+
+    private String extOfAsset(Long assetId) {
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null || asset.getName() == null || !asset.getName().contains(".")) {
+            return ".png";
+        }
+        return asset.getName().substring(asset.getName().lastIndexOf('.'));
+    }
+
+    private List<Long> readImageAssetIds(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {});
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
     }
 }

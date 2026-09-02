@@ -1,10 +1,13 @@
-import { CloudUploadOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, SearchOutlined } from '@ant-design/icons'
 
-import { Button, Image, Progress, Spin, message } from 'antd'
+import { Button, Image, Input, Progress, Select, Spin, message } from 'antd'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listAssetsApi, uploadAssetApi } from '@/api/assets'
+import { listTagsApi, type TagVO } from '@/api/tags'
+import TagOptionLabel from '@/components/assets/TagOptionLabel'
+import useDebouncedValue from '@/hooks/useDebouncedValue'
 
 import type { MattingSourceScheme, MattingTaskVO } from '@/api/ops'
 
@@ -123,8 +126,12 @@ export default function MattingStage1Source({
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<number>>(new Set())
 
   const [schemes, setSchemes] = useState<MattingSourceScheme[]>(() => parseSchemesFromConfig(configJson))
-
+  const [loadingSchemes, setLoadingSchemes] = useState(false)
   const [aiGenerating, setAiGenerating] = useState(false)
+  const [assetTagId, setAssetTagId] = useState<number | undefined>()
+  const [assetKeywordInput, setAssetKeywordInput] = useState('')
+  const assetKeyword = useDebouncedValue(assetKeywordInput.trim(), 300)
+  const [tags, setTags] = useState<TagVO[]>([])
 
   const [confirming, setConfirming] = useState(false)
 
@@ -135,60 +142,51 @@ export default function MattingStage1Source({
 
 
   const loadSchemes = useCallback(async () => {
-
+    setLoadingSchemes(true)
     try {
-
       const data = await getMattingSourceSchemesApi(taskId)
-
       setSchemes(data.schemes ?? [])
-
     } catch {
-
       setSchemes(parseSchemesFromConfig(configJson))
-
+    } finally {
+      setLoadingSchemes(false)
     }
-
   }, [taskId, configJson])
 
-
-
   useEffect(() => {
-
     void loadSchemes()
-
   }, [loadSchemes, taskId])
 
-
+  useEffect(() => {
+    if (topMode === 'library' && libraryTab === 'ai') void loadSchemes()
+  }, [topMode, libraryTab, loadSchemes])
 
   const loadAssets = useCallback(async () => {
-
     setLoadingAssets(true)
-
     try {
-
-      const page = await listAssetsApi({ page: 1, size: 24 })
-
+      const page = await listAssetsApi({
+        page: 1,
+        size: 24,
+        tagId: assetTagId,
+        keyword: assetKeyword || undefined,
+      })
       setAssets(page.records ?? [])
-
     } catch (e) {
-
       message.error(e instanceof Error ? e.message : '加载素材失败')
-
     } finally {
-
       setLoadingAssets(false)
-
     }
-
-  }, [])
-
-
+  }, [assetTagId, assetKeyword])
 
   useEffect(() => {
-
     if (topMode === 'library' && libraryTab === 'existing') void loadAssets()
-
   }, [topMode, libraryTab, loadAssets])
+
+  useEffect(() => {
+    if (topMode === 'library') {
+      listTagsApi().then(setTags).catch(() => setTags([]))
+    }
+  }, [topMode])
 
 
 
@@ -368,8 +366,6 @@ export default function MattingStage1Source({
 
       : `已选中 ${totalSelected} 张${selectedSchemes.length > 0 ? '（含 AI 方案）' : ''}，将进入整图区域切割`
 
-
-
   const handleConfirm = async () => {
 
     if (totalSelected === 0) {
@@ -422,7 +418,19 @@ export default function MattingStage1Source({
 
   }
 
+  const confirmButton = (
+    <Button
+      type="primary"
+      disabled={totalSelected === 0}
+      loading={confirming}
+      onClick={() => void handleConfirm()}
+    >
+      确认源图，进入框选 →
+    </Button>
+  )
 
+  const showPanelFooter =
+    topMode === 'upload' || (topMode === 'library' && libraryTab === 'existing')
 
   const renderAssetGrid = (items: AssetVO[], emptyHint: string) => (
 
@@ -480,7 +488,12 @@ export default function MattingStage1Source({
 
         <div className={styles.header}>
 
-          <span className={styles.contextLabel}>源图</span>
+          <div className={styles.headerLeft}>
+
+            <span className={styles.contextLabel}>源图</span>
+            <p className={styles.selectionHint}>{selectionLabel}</p>
+
+          </div>
 
           <div className={styles.topSegment}>
 
@@ -513,20 +526,6 @@ export default function MattingStage1Source({
             </button>
 
           </div>
-
-        </div>
-
-
-
-        <div className={styles.actionBar}>
-
-          <p className={styles.selectionHint}>{selectionLabel}</p>
-
-          <Button type="primary" disabled={totalSelected === 0} loading={confirming} onClick={() => void handleConfirm()}>
-
-            确认源图，进入框选 →
-
-          </Button>
 
         </div>
 
@@ -667,40 +666,57 @@ export default function MattingStage1Source({
 
 
             {libraryTab === 'existing' && (
-
               <div className={styles.scrollArea}>
-
-                <Spin spinning={loadingAssets}>{renderAssetGrid(assets, '暂无素材，请先上传或使用 AI 生图')}</Spin>
-
+                <div className={styles.assetFilters}>
+                  <Input
+                    className={styles.assetSearch}
+                    placeholder="搜索素材"
+                    prefix={<SearchOutlined />}
+                    allowClear
+                    value={assetKeywordInput}
+                    onChange={(e) => setAssetKeywordInput(e.target.value)}
+                  />
+                  <Select
+                    className={styles.assetTagSelect}
+                    placeholder="按标签筛选"
+                    allowClear
+                    value={assetTagId}
+                    onChange={(v) => setAssetTagId(v)}
+                    options={tags.map((t) => ({
+                      value: t.id,
+                      label: <TagOptionLabel tag={t} />,
+                    }))}
+                  />
+                </div>
+                <Spin spinning={loadingAssets}>
+                  {renderAssetGrid(
+                    assets,
+                    assetTagId ? '该标签下暂无素材' : '暂无素材，请先上传或使用 AI 生图',
+                  )}
+                </Spin>
               </div>
-
             )}
 
-
-
             {libraryTab === 'ai' && (
-
               <div className={styles.aiLayout}>
-
                 <div className={styles.scrollArea}>
-
-                  <SourceSchemeGrid
-
-                    schemes={schemes}
-
-                    onToggleSelect={(id, selected) => void handleToggleScheme(id, selected)}
-
-                    onDelete={(id) => void handleDeleteScheme(id)}
-
-                    onPreview={(url, alt) => setPreview({ url, alt: alt ?? '预览' })}
-
-                  />
-
+                  <Spin spinning={loadingSchemes}>
+                    <SourceSchemeGrid
+                      schemes={schemes}
+                      onToggleSelect={(id, selected) => void handleToggleScheme(id, selected)}
+                      onDelete={(id) => void handleDeleteScheme(id)}
+                      onPreview={(url, alt) => setPreview({ url, alt: alt ?? '预览' })}
+                    />
+                  </Spin>
                 </div>
 
                 <div className={styles.dock}>
 
-                  <SourceGenerateComposer loading={aiGenerating} onSend={(p) => void handleAiGenerate(p)} />
+                  <SourceGenerateComposer
+                    loading={aiGenerating}
+                    onSend={(p) => void handleAiGenerate(p)}
+                    confirmAction={confirmButton}
+                  />
 
                 </div>
 
@@ -711,6 +727,8 @@ export default function MattingStage1Source({
           </>
 
         )}
+
+        {showPanelFooter && <div className={styles.panelFooter}>{confirmButton}</div>}
 
       </div>
 

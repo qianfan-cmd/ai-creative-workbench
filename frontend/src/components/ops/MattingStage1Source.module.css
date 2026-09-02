@@ -2,7 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel {
@@ -23,6 +24,14 @@
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
 }
 
 .contextLabel {
@@ -53,27 +62,48 @@
   font-weight: 600;
 }
 
-.actionBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
 .selectionHint {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.panelFooter {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
 }
 
 .scrollArea {
   flex: 1;
-  min-height: 200px;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assetFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.assetSearch {
+  flex: 1;
+  min-width: 160px;
+}
+
+.assetTagSelect {
+  min-width: 160px;
 }
 
 .dock {
@@ -238,5 +268,5 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 0;
+  gap: var(--space-3);
 }

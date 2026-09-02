@@ -53,6 +53,12 @@ public class OpsMattingController {
         return Result.ok(mattingTaskService.patchTask(id, request));
     }
 
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        mattingTaskService.deleteTask(id);
+        return Result.ok(null);
+    }
+
     @GetMapping("/{id}/crop-regions")
     public Result<MattingCropRegionsVO> getCropRegions(@PathVariable Long id) {
         return Result.ok(mattingTaskService.getCropRegions(id));

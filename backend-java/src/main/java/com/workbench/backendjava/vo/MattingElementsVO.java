@@ -19,6 +19,8 @@ public class MattingElementsVO {
     public static class SourceElementsVO {
         private String sourceId;
         private String label;
+        /** AI 生图 prompt 或素材文件名，用于步骤③来源整图描述 */
+        private String sourceDescription;
         private String imageUrl;
         private List<RegionElementsVO> regions = new ArrayList<>();
     }

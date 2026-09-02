@@ -15,7 +15,8 @@ import PreviewChatActive from './components/PreviewChatActive'
 import PreviewKnowledgePanel from './components/PreviewKnowledgePanel'
 import PreviewMattingWelcome from './components/PreviewMattingWelcome'
 import PreviewMattingStepSource from './components/PreviewMattingStepSource'
-import PreviewMattingStepConfig from './components/PreviewMattingStepConfig'
+import PreviewMattingStepCrop from './components/PreviewMattingStepCrop'
+import PreviewMattingStepElements from './components/PreviewMattingStepElements'
 import PreviewMattingStepCandidates from './components/PreviewMattingStepCandidates'
 import PreviewMattingStepSave from './components/PreviewMattingStepSave'
 import PreviewMattingDialogs from './components/PreviewMattingDialogs'
@@ -196,7 +197,8 @@ export default function DesignPreviewPage() {
         <PreviewKnowledgePanel />
         <PreviewMattingWelcome />
         <PreviewMattingStepSource />
-        <PreviewMattingStepConfig />
+        <PreviewMattingStepCrop />
+        <PreviewMattingStepElements />
         <PreviewMattingStepCandidates />
         <PreviewMattingStepSave />
         <PreviewMattingDialogs />

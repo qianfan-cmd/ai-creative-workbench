@@ -34,6 +34,7 @@ export interface GenerationJobVO {
 export interface MattingSourceScheme {
   id: string
   imageUrl: string
+  assetId?: number
   prompt?: string
   aspectRatio?: string
   referenceUrls?: string[]
@@ -59,12 +60,27 @@ export interface MattingTaskVO {
     title: string
     stage: number
     status: string
+    groupId?: number | null
+    pinned?: boolean
+    sortOrder?: number
     sourceAssetId?: number | null
     sourceAssetUrl?: string | null
     confirmedSources?: MattingConfirmedSourceVO[]
     configJson?: string | null
     selectedCandidate?: string | null
     updatedAt?: string
+}
+
+export interface MattingTaskGroupVO {
+    id: number
+    name: string
+    sortOrder?: number
+    updatedAt?: string
+}
+
+export interface MattingSidebarVO {
+    groups: MattingTaskGroupVO[]
+    tasks: MattingTaskVO[]
 }
   /** 左栏表单 — 与 CampaignDraftCreateRequest 字段一致 */
 export interface CampaignActivityForm {
@@ -253,6 +269,8 @@ export interface MattingElementsVO {
 export interface MattingSourceElementsVO {
   sourceId: string
   label?: string
+  /** AI 生图 prompt 或素材文件名 */
+  sourceDescription?: string
   imageUrl?: string
   regions: MattingRegionVO[]
 }
@@ -442,6 +460,41 @@ export async function getMattingPromptTemplatesApi() {
 
 export async function listMattingTasksApi() {
     const res = await request.get<ApiResponse<MattingTaskVO[]>>('/ops/matting/tasks')
+    return res.data.data
+}
+
+export async function getMattingSidebarApi() {
+    const res = await request.get<ApiResponse<MattingSidebarVO>>('/ops/matting/task-groups')
+    return res.data.data
+}
+
+export async function createMattingTaskGroupApi(name: string) {
+    const res = await request.post<ApiResponse<MattingTaskGroupVO>>('/ops/matting/task-groups', { name })
+    return res.data.data
+}
+
+export async function patchMattingTaskGroupApi(id: number, body: { name?: string; sortOrder?: number }) {
+    const res = await request.patch<ApiResponse<MattingTaskGroupVO>>(`/ops/matting/task-groups/${id}`, body)
+    return res.data.data
+}
+
+export async function deleteMattingTaskGroupApi(id: number) {
+    await request.delete(`/ops/matting/task-groups/${id}`)
+}
+
+export async function deleteMattingTaskApi(id: number) {
+    await request.delete(`/ops/matting/tasks/${id}`)
+}
+
+export async function patchMattingTaskMetaApi(
+    id: number,
+    body: { title?: string; groupId?: number | null; pinned?: boolean; sortOrder?: number },
+) {
+    const payload = { ...body }
+    if (payload.groupId === null) {
+        payload.groupId = 0
+    }
+    const res = await request.patch<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}`, payload)
     return res.data.data
 }
 

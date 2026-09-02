@@ -4,8 +4,6 @@
   border-radius: var(--radius-panel);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
-  max-width: var(--content-max-width);
-  margin: 0 auto;
   width: 100%;
   display: flex;
   height: calc(100vh - var(--header-height) - var(--space-6) * 2);

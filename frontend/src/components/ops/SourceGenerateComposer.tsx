@@ -1,4 +1,5 @@
 import { Button, Input, Select } from 'antd'
+import type { ReactNode } from 'react'
 import { useState } from 'react'
 import styles from '@/components/ops/SourceGenerateComposer.module.css'
 
@@ -27,9 +28,14 @@ export interface SourceGeneratePayload {
 interface SourceGenerateComposerProps {
   loading?: boolean
   onSend: (payload: SourceGeneratePayload) => void
+  confirmAction?: ReactNode
 }
 
-export default function SourceGenerateComposer({ loading = false, onSend }: SourceGenerateComposerProps) {
+export default function SourceGenerateComposer({
+  loading = false,
+  onSend,
+  confirmAction,
+}: SourceGenerateComposerProps) {
   const [prompt, setPrompt] = useState('')
   const [count, setCount] = useState(4)
   const [aspectRatio, setAspectRatio] = useState('9:16')
@@ -43,14 +49,15 @@ export default function SourceGenerateComposer({ loading = false, onSend }: Sour
   return (
     <div className={styles.composer}>
       <Input.TextArea
+        className={styles.textarea}
         rows={3}
-        placeholder="描述要生成的源图，例如：夏日清新风格吉祥物插画"
+        placeholder="描述要生成的源图，Enter 发送，Shift+Enter 换行"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            handleSend()
+            if (!loading) handleSend()
           }
         }}
       />
@@ -69,9 +76,12 @@ export default function SourceGenerateComposer({ loading = false, onSend }: Sour
           onChange={setAspectRatio}
           disabled={loading}
         />
-        <Button type="primary" className={styles.sendBtn} loading={loading} onClick={handleSend}>
-          发送生成
-        </Button>
+        <div className={styles.toolbarActions}>
+          {confirmAction}
+          <Button type="primary" loading={loading} onClick={handleSend}>
+            发送生成
+          </Button>
+        </div>
       </div>
     </div>
   )

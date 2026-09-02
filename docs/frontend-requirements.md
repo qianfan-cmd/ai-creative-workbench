@@ -741,14 +741,14 @@ POST /api/rag/query            { question } → { answer, references[] }
 | 属性 | 值 |
 |------|-----|
 | **路由** | `/ops/matting` |
-| **原型文件** | `PreviewMattingWelcome.tsx`、`PreviewMattingStepSource/Config/Candidates/Save.tsx`、`PreviewMattingDialogs.tsx`、`PreviewImageSourcePanel.tsx` |
+| **原型文件** | `PreviewMattingWelcome.tsx`、`PreviewMattingStepSource/Crop/Elements/Candidates/Save.tsx`、`PreviewMattingStageNav.tsx`、`PreviewMattingDialogs.tsx` |
 | **建议文件** | `pages/MattingPage.tsx`、`components/ops/TaskSidebar.tsx`、`components/ops/CandidateGallery.tsx` |
 | **实施周次** | Week 12+（Phase 2 图文运营） |
 | **参考** | ai-center 美术机台任务侧栏/历史/候选画廊（布局与能力，非暗色 UI） |
 
 #### 页面目标
 
-运营人员选择源图（上传或素材库），配置抠图模板与 Prompt，生成多候选透明 PNG，选中后保存到 Assets（`matted` 标签）。
+运营人员选择源图 → 框选区域 → 识别元素清单 → 按元素提取候选 → 保存到 Assets（`matted` 标签）。布局对齐美术机台 [`docs/html`](html/index.html) 阶段 ②–⑤，视觉为 Studio Neutral。
 
 #### 图片来源（步骤 ①，与 Campaign 共用组件）
 
@@ -764,14 +764,33 @@ POST /api/rag/query            { question } → { answer, references[] }
 
 ```
 ┌────────────┬──────────────────────────────────────────────────┐
-│ TaskSidebar│ PreviewStepNav: ①源图 → ②配置 → ③候选 → ④保存   │
+│ TaskSidebar│ PreviewMattingStageNav: 源图→框选→元素→候选→保存  │
 │ 260px      ├──────────────────────────────────────────────────┤
-│ 新建任务/组 │ [当前步骤内容区]                                    │
-│ 置顶/分组   │  ③ 候选: CandidateGallery（checkerboard）         │
+│            │ [当前步骤内容区 — 对齐美术机台 stage 2–5 布局]      │
 │            ├──────────────────────────────────────────────────┤
-│            │ footer: [取消]  [保存到 Assets · matted]          │
+│            │ footer: 按步变化（确认框选 / 开始提取 / 保存等）   │
 └────────────┴──────────────────────────────────────────────────┘
 ```
+
+#### 工作态五步流（各为独立预览块）
+
+| 步骤 | 原型文件 | 内容 | 美术机台参考 |
+|------|----------|------|--------------|
+| ① 源图 | `PreviewMattingStepSource` | `PreviewImageSourcePanel` | Stage ①（简化） |
+| ② 框选 | `PreviewMattingStepCrop` | **9:16** 竖图 canvas · **4 列** grid · 使用原图 / 完整图裁剪 / 非 9:16 提示 · 区域 badge | Stage ② CROP |
+| ③ 元素 | `PreviewMattingStepElements` | 来源整图 + 区域分组 + 元素清单 | Stage ③ EXTRACT |
+| ④ 候选 | `PreviewMattingStepCandidates` | 按元素横排候选 thumb + 再生成 | Stage ④ SELECT |
+| ⑤ 保存 | `PreviewMattingStepSave` | 成功条 + 导出 grid + 源图入库选项 | Stage ⑤ EXPORT |
+
+外壳：`PreviewMattingStepFrame` + `PreviewMattingStageNav`（5 步 chevron 导航 + 步骤 n/5）
+
+**步骤 ② 框选补充（对齐 Stage2CutPanel）：**
+
+- 方案卡片 grid：宽屏 4 列，卡片内 canvas 固定 `aspect-ratio: 9/16`（非 4:3）
+- 单卡 header：标题 ellipsis +「使用原图」+ 非 9:16 时「完整图裁剪」
+- 非 9:16 提示条：`accent-subtle` 背景，引导用户打开完整图裁剪
+- 底部 status：区域计数 / 原图覆盖态文案
+- 单张最多 6 个切割区域（stats 汇总行）
 
 #### 空态（PreviewMattingWelcome）
 
@@ -780,29 +799,18 @@ POST /api/rag/query            { question } → { answer, references[] }
 | 左栏 | TaskSidebar（新建任务/分组、置顶、未分组、文件夹折叠） |
 | 右区 | 居中 Scissor 图标 + 「抠图工作台 Matting」+ 引导文案 |
 
-#### 工作态四步流（各为独立预览块）
-
-| 步骤 | 原型文件 | 内容 |
-|------|----------|------|
-| ① 源图 | `PreviewMattingStepSource` | `PreviewImageSourcePanel`（默认 upload 态） |
-| ② 配置 | `PreviewMattingStepConfig` | 源图只读条 + 模板/Prompt/模型 + 「框选区域」 |
-| ③ 候选 | `PreviewMattingStepCandidates` | CandidateGallery + 重新生成/历史 |
-| ④ 保存 | `PreviewMattingStepSave` | 已选大图预览 + 标签 + 保存说明 |
-
-外壳组件：`PreviewMattingStepFrame`（TaskSidebar + StepNav + footer 按步变化）
-
 #### 共用组件
 
 | 原型 | 业务 | 说明 |
 |------|------|------|
 | PreviewTaskSidebar | TaskSidebar | 260px，任务行 active/running/done |
-| PreviewStepNav | StepNav | 水平四步条 |
-| PreviewCandidateGallery | CandidateGallery | checkerboard、选中勾、已选计数 |
+| PreviewMattingStageNav | StepNav | 5 步 chevron 导航 + 进度 |
+| PreviewCandidateGallery | CandidateGallery | checkerboard、选中勾（Campaign 等复用） |
 | PreviewOpsDialog | OpsDialog | 新建/重命名任务 |
 | PreviewHistoryDrawer | HistoryDrawer | 右侧历史生成列表 |
 | PreviewImageSourcePanel | ImageSourcePanel | 上传 / 素材库·已有 / 素材库·AI 入库 |
 | PreviewTagAssetDialog | TagAssetDialog | AI 候选打标入库 |
-| PreviewMattingStepFrame | MattingStepFrame | 四步共用外壳 |
+| PreviewMattingStepFrame | MattingStepFrame | 五步共用外壳 |
 
 #### API 占位
 
@@ -816,7 +824,8 @@ GET  /api/ops/matting/{id}/history     历史生成
 #### 验收标准（Week 12+）
 
 - [ ] 空态：TaskSidebar + welcome 与 PreviewMattingWelcome 一致
-- [ ] 四步各块独立可见，StepNav 高亮对应步骤
+- [ ] 五步各块独立可见，StageNav 高亮对应步骤
+- [ ] ②–⑤ 布局对齐美术机台 cut / 元素清单 / 按元素候选 / 导出 grid
 - [ ] 图片来源三态（upload / library-existing / library-ai）+ 打标入库 Dialog
 - [ ] 对话框/历史 drawer 与 PreviewMattingDialogs 一致
 - [ ] **非 Chat 气泡**主布局；Studio Neutral 色板
@@ -934,9 +943,11 @@ GET  /api/ops/campaign/{id}/export      导出 zip
 | PreviewHistoryDrawer | HistoryDrawer | `components/ops/HistoryDrawer.tsx` |
 | PreviewMattingWelcome | MattingEmptyState | `pages/MattingPage.tsx`（空态） |
 | PreviewMattingStepSource | MattingStepSource | `pages/MattingPage.tsx`（步骤 ①） |
-| PreviewMattingStepConfig | MattingStepConfig | `pages/MattingPage.tsx`（步骤 ②） |
-| PreviewMattingStepCandidates | MattingStepCandidates | `pages/MattingPage.tsx`（步骤 ③） |
-| PreviewMattingStepSave | MattingStepSave | `pages/MattingPage.tsx`（步骤 ④） |
+| PreviewMattingStepCrop | MattingStage2Crop | `components/ops/MattingStage2Crop.tsx` |
+| PreviewMattingStepElements | ElementListPanel | `components/ops/ElementListPanel.tsx` |
+| PreviewMattingStepCandidates | ElementCandidateGallery | `components/ops/ElementCandidateGallery.tsx` |
+| PreviewMattingStepSave | MattingSavePanel | `pages/MattingPage.tsx`（步骤 ⑤） |
+| PreviewMattingStageNav | StepNav | `components/ops/StepNav.tsx` |
 | PreviewMattingStepFrame | MattingStepFrame | `components/ops/MattingStepFrame.tsx` |
 | PreviewImageSourcePanel | ImageSourcePanel | `components/ops/ImageSourcePanel.tsx` |
 | PreviewTagAssetDialog | TagAssetDialog | `components/ops/TagAssetDialog.tsx` |
@@ -1047,8 +1058,8 @@ Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 ### 7.8 MattingPage（Week 12+）
 
 - [ ] 空态与 PreviewMattingWelcome 一致
-- [ ] 四步各块独立，StepNav 高亮对应步骤
-- [ ] 图片来源三态 + TagAssetDialog + 候选画廊 checkerboard
+- [ ] 五步各块独立，StageNav 高亮对应步骤
+- [ ] ②框选 / ③元素 / ④候选 / ⑤保存 与 style-guide 及业务页布局一致
 - [ ] 保存到 Assets API 联调
 
 ### 7.9 CampaignPage（Week 12+）
@@ -1079,9 +1090,11 @@ Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 | `PreviewKnowledgePanel.tsx` | 4.5 Knowledge / RAG |
 | `PreviewMattingWelcome.tsx` | 4.8 Matting 空态 |
 | `PreviewMattingStepSource.tsx` | 4.8 Matting 步骤 ① 源图 |
-| `PreviewMattingStepConfig.tsx` | 4.8 Matting 步骤 ② 配置 |
-| `PreviewMattingStepCandidates.tsx` | 4.8 Matting 步骤 ③ 候选 |
-| `PreviewMattingStepSave.tsx` | 4.8 Matting 步骤 ④ 保存 |
+| `PreviewMattingStepCrop.tsx` | 4.8 Matting 步骤 ② 框选 |
+| `PreviewMattingStepElements.tsx` | 4.8 Matting 步骤 ③ 元素 |
+| `PreviewMattingStepCandidates.tsx` | 4.8 Matting 步骤 ④ 候选 |
+| `PreviewMattingStepSave.tsx` | 4.8 Matting 步骤 ⑤ 保存 |
+| `PreviewMattingStageNav.tsx` | 4.8 Matting 五步导航 |
 | `PreviewMattingDialogs.tsx` | 4.8 Matting 对话框/历史/图片来源三态 |
 | `PreviewImageSourcePanel.tsx` | 4.8 / 4.9 图片来源 |
 | `PreviewTagAssetDialog.tsx` | 4.8 / 4.9 AI 打标入库 |

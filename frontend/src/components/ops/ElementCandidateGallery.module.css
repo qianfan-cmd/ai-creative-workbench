@@ -1,7 +1,203 @@
-.wrap {
+.shell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  gap: var(--space-3);
+}
+
+.progRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.progSource {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.badgeDone {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent-border);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.regionDivider {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border);
+  margin-bottom: var(--space-2);
+}
+
+.elemCard {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-bg-surface);
+}
+
+.elemName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.thumbRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.thumb {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.thumb_selected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.thumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--checker-light, #e5e5e5);
+}
+
+.checkerboard {
+  width: 100%;
+  height: 100%;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+  background-color: #fff;
+}
+
+.thumbDetail {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-control);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.thumb:hover .thumbDetail {
+  opacity: 1;
+}
+
+.thumbCheck {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-inverse);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.thumbHit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.thumbHit:disabled {
+  cursor: not-allowed;
+}
+
+.regenSlot {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100px;
+  height: 100px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-subtle);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.regenSlot:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loadingSlot {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100px;
+  height: 100px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-bg-subtle);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
 }
 
 .empty {
@@ -19,85 +215,4 @@
   border-radius: var(--radius-control);
   color: #b91c1c;
   font-size: var(--text-sm);
-}
-
-.runningHint {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.elementSection {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-panel);
-  padding: var(--space-4);
-  background: var(--color-surface);
-}
-
-.elementHeader {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.elementTitle {
-  font-weight: 600;
-  font-size: var(--text-sm);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.groupTag {
-  font-weight: 400;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-}
-
-.slotGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: var(--space-3);
-}
-
-.slot {
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-control);
-  padding: var(--space-2);
-  background: repeating-conic-gradient(#e5e5e5 0% 25%, #f5f5f5 0% 50%) 50% / 16px 16px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 120px;
-  justify-content: center;
-}
-
-.slotSelected {
-  border-color: var(--color-accent);
-}
-
-.slotFailed {
-  border-color: #f87171;
-  cursor: not-allowed;
-}
-
-.slotImg {
-  max-width: 100%;
-  max-height: 100px;
-  object-fit: contain;
-}
-
-.slotLabel {
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-}
-
-.failedText {
-  font-size: var(--text-xs);
-  color: #b91c1c;
 }

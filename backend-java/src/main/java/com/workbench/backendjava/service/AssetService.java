@@ -6,6 +6,7 @@ import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.config.AppProperties;
+import com.workbench.backendjava.config.StorageProperties;
 import com.workbench.backendjava.config.UploadProperties;
 import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
 import com.workbench.backendjava.dto.AssetUpdateRequest;
@@ -47,6 +48,7 @@ public class AssetService {
     private final AssetMapper assetMapper;
     private final FileStorageService fileStorageService;
     private final AppProperties appProperties;
+    private final StorageProperties storageProperties;
     private final UploadProperties uploadProperties;
 
     private final TagMapper tagMapper;
@@ -79,11 +81,36 @@ public class AssetService {
         AssetUploadVO vo = new AssetUploadVO();
         vo.setId(asset.getId());
         vo.setName(asset.getName());
-        vo.setUrl(buildFullUrl(path));
+        vo.setUrl(buildPublicAssetUrl(asset));
         vo.setPath(path);
         vo.setSize(asset.getSize());
         vo.setType(asset.getType());
         return vo;
+    }
+
+    /**
+     * 构建素材公网可访问 URL（local 走 app.public-base-url；未来 oss 走 CDN 域名）。
+     */
+    public String buildPublicAssetUrl(Asset asset) {
+        if (asset == null || asset.getUrl() == null) {
+            throw new BusinessException(400, "素材路径无效");
+        }
+        StorageProperties.Oss oss = storageProperties.getOss();
+        if ("oss".equalsIgnoreCase(storageProperties.getProvider())
+                && oss != null
+                && oss.isEnabled()
+                && oss.getPublicBaseUrl() != null
+                && !oss.getPublicBaseUrl().isBlank()) {
+            String base = oss.getPublicBaseUrl().endsWith("/")
+                    ? oss.getPublicBaseUrl().substring(0, oss.getPublicBaseUrl().length() - 1)
+                    : oss.getPublicBaseUrl();
+            String key = asset.getUrl().startsWith("/") ? asset.getUrl().substring(1) : asset.getUrl();
+            if (key.startsWith("uploads/")) {
+                key = key.substring("uploads/".length());
+            }
+            return base + "/" + key;
+        }
+        return buildFullUrl(asset.getUrl());
     }
 
     /**
@@ -128,6 +155,7 @@ public class AssetService {
          */
         LambdaQueryWrapper<Asset> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Asset::getUserId, userId);
+        applyUserVisibleAssetFilter(wrapper);
 
         // 按关键字筛选
         if (keyword != null && !keyword.isBlank()) {
@@ -191,7 +219,7 @@ public class AssetService {
         AssetVO vo = new AssetVO();
         vo.setId(asset.getId());
         vo.setName(asset.getName());
-        vo.setUrl(buildFullUrl(asset.getUrl()));
+        vo.setUrl(buildPublicAssetUrl(asset));
         vo.setPath(asset.getUrl());
         vo.setSize(asset.getSize());
         vo.setType(asset.getType());
@@ -293,23 +321,23 @@ public class AssetService {
 
 
         Long total = assetMapper.selectCount(
-                new LambdaQueryWrapper<Asset>().eq(Asset::getUserId, userId)
+                applyUserVisibleAssetFilter(new LambdaQueryWrapper<Asset>().eq(Asset::getUserId, userId))
         );
 
         /**
          * 过去7天的素材
          */
         Long last7DaysCount = assetMapper.selectCount(
-                new LambdaQueryWrapper<Asset>()
+                applyUserVisibleAssetFilter(new LambdaQueryWrapper<Asset>()
                         .eq(Asset::getUserId, userId)
-                        .ge(Asset::getCreatedAt, last7Start)
+                        .ge(Asset::getCreatedAt, last7Start))
         );
 
         Long prev7DaysCount = assetMapper.selectCount(
-                new LambdaQueryWrapper<Asset>()
+                applyUserVisibleAssetFilter(new LambdaQueryWrapper<Asset>()
                         .eq(Asset::getUserId, userId)
                         .ge(Asset::getCreatedAt, prev7Start)
-                        .lt(Asset::getCreatedAt, last7Start)
+                        .lt(Asset::getCreatedAt, last7Start))
         );
 
         AssetStatsVO vo = new AssetStatsVO();
@@ -433,7 +461,16 @@ public class AssetService {
         if (asset == null || !asset.getUserId().equals(userId)) {
             throw new BusinessException(404, "素材不存在");
         }
-        return buildFullUrl(asset.getUrl());
+        return buildPublicAssetUrl(asset);
+    }
+
+    /** 当前用户素材的文件名（Matting 来源整图描述） */
+    public String getOwnedAssetName(Long assetId, Long userId) {
+        Asset asset = assetMapper.selectById(assetId);
+        if (asset == null || !asset.getUserId().equals(userId)) {
+            throw new BusinessException(404, "素材不存在");
+        }
+        return asset.getName();
     }
 
     /** 读取当前用户已入库素材的原始字节（服务端裁切用） */
@@ -445,13 +482,9 @@ public class AssetService {
         return readBytesFromStoredPath(asset.getUrl());
     }
 
-    /** 从外链下载图片字节（Matting 服务端裁切读图源） */
-    public byte[] downloadImageBytes(String imageUrl) {
-        return downloadBytesFromUrl(imageUrl);
-    }
-
     /** 将 PNG 字节入库为当前用户的素材，返回 assetId */
     @Transactional
+    @Deprecated
     public Long createOwnedPngAsset(Long userId, byte[] pngBytes, String name) {
         if (userId == null) {
             throw new BusinessException(401, "未登录");
@@ -476,15 +509,57 @@ public class AssetService {
         return asset.getId();
     }
 
+    /** 抠图框选裁切：按任务/区域写入工作流目录，不入 asset 表 */
+    public String storeMattingCropPng(Long taskId, String regionId, byte[] pngBytes) {
+        if (taskId == null) {
+            throw new BusinessException(400, "任务 id 无效");
+        }
+        if (regionId == null || regionId.isBlank()) {
+            throw new BusinessException(400, "区域 id 无效");
+        }
+        String safeRegionId = regionId.replaceAll("[^a-zA-Z0-9_-]", "_");
+        String fileName = safeRegionId + ".png";
+        String subdir = "matting/" + taskId;
+        return fileStorageService.storeFromBytes(fileName, pngBytes, "image/png", subdir);
+    }
+
+    /** 工作流中间文件：仅写磁盘，不入 asset 表（非抠图裁切场景保留） */
+    public String storeWorkflowPng(byte[] pngBytes, String name) {
+        if (pngBytes == null || pngBytes.length == 0) {
+            throw new BusinessException(400, "裁切结果为空");
+        }
+        String fileName = name != null && !name.isBlank() ? name : "matting-crop.png";
+        if (!fileName.toLowerCase().endsWith(".png")) {
+            fileName = fileName + ".png";
+        }
+        return fileStorageService.storeFromBytes(fileName, pngBytes, "image/png");
+    }
+
+    public String buildPublicUrlFromStoredPath(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) {
+            throw new BusinessException(400, "素材路径无效");
+        }
+        if (storedPath.startsWith("http://") || storedPath.startsWith("https://")) {
+            return storedPath;
+        }
+        String path = storedPath.startsWith("/") ? storedPath : "/" + storedPath;
+        return buildFullUrl(path);
+    }
+
+    public byte[] readWorkflowImageBytes(String storedPath) {
+        return readBytesFromStoredPath(normalizeStoredPath(storedPath));
+    }
+
+    /** 从外链下载图片字节（Matting 服务端裁切读图源） */
+    public byte[] downloadImageBytes(String imageUrl) {
+        return downloadBytesFromUrl(imageUrl);
+    }
+
     private byte[] readBytesFromStoredPath(String storedUrl) {
         if (storedUrl == null || storedUrl.isBlank()) {
             throw new BusinessException(400, "素材路径无效");
         }
-        String relative = storedUrl.startsWith("/uploads/")
-                ? storedUrl.substring("/uploads/".length())
-                : storedUrl.startsWith("uploads/")
-                        ? storedUrl.substring("uploads/".length())
-                        : storedUrl.replaceFirst("^/", "");
+        String relative = normalizeStoredPath(storedUrl);
         Path file = Paths.get(uploadProperties.getDir()).resolve(relative);
         try {
             if (!Files.isRegularFile(file)) {
@@ -497,6 +572,23 @@ public class AssetService {
             log.error("读取素材文件失败 path={}", file, e);
             throw new BusinessException(500, "读取素材文件失败");
         }
+    }
+
+    private String normalizeStoredPath(String storedUrl) {
+        if (storedUrl.startsWith("/uploads/")) {
+            return storedUrl.substring("/uploads/".length());
+        }
+        if (storedUrl.startsWith("uploads/")) {
+            return storedUrl.substring("uploads/".length());
+        }
+        return storedUrl.replaceFirst("^/", "");
+    }
+
+    /** 素材库只展示用户主动上传/保存的内容，排除抠图工作流中间文件 */
+    private <T extends LambdaQueryWrapper<Asset>> T applyUserVisibleAssetFilter(T wrapper) {
+        wrapper.and(w -> w.notLike(Asset::getName, "matting-crop-%")
+                .notLike(Asset::getName, "matting-scheme-%"));
+        return wrapper;
     }
 
     /**

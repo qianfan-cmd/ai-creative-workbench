@@ -5,7 +5,7 @@ import { UploadOutlined } from '@ant-design/icons'
 import { listAssetsApi, getAssetStatsApi, deleteAssetApi } from '@/api/assets'
 import type { AssetVO, AssetStatsVO } from '@/types/api'
 import styles from '@/pages/AssetListPage.module.css'
-import layoutStyles from '@/layouts/MainLayout.module.css'
+import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import AssetStatsStrip from '@/components/assets/AssetStatsStrip'
 import Toolbar from '@/components/assets/ToolBar'
 import useDebouncedValue from '@/hooks/useDebouncedValue'
@@ -66,21 +66,7 @@ const AssetListPage = () => {
         listTagsApi().then(setTags)
     }, [])
 
-    // Grid 模式：锁定 MainLayout 外层滚动，仅 gridScrollArea 内滚
-    useEffect(() => {
-        const main = document.getElementById('main-content')
-        if (!main) return
-
-        if (viewMode === 'grid') {
-            main.classList.add(layoutStyles.content_lockScroll)
-        } else {
-            main.classList.remove(layoutStyles.content_lockScroll)
-        }
-
-        return () => {
-            main.classList.remove(layoutStyles.content_lockScroll)
-        }
-    }, [viewMode])
+    useMainContentLayout({ fullBleed: true, lockScroll: viewMode === 'grid' })
 
     const fetchList = useCallback(async () => {
         setListLoading(true)

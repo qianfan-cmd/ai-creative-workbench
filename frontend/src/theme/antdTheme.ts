@@ -55,6 +55,9 @@ const sharedComponents = {
     rowHoverBg: '#FAFAFA',
   },
   Input: {
+    colorBorder: '#D4D4D8',
+    hoverBorderColor: '#A1A1AA',
+    activeBorderColor: '#0D9488',  // focus 时用 Teal
     activeShadow: '0 0 0 2px rgba(13, 148, 136, 0.12)',
   },
   Select: {

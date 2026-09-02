@@ -6,6 +6,12 @@
   border-radius: var(--radius-panel);
   padding: var(--space-3);
   background: var(--color-surface);
+  width: 100%;
+}
+
+.textarea :global(.ant-input) {
+  min-height: clamp(80px, 12vh, 140px);
+  resize: vertical;
 }
 
 .toolbar {
@@ -19,6 +25,10 @@
   min-width: 88px;
 }
 
-.sendBtn {
+.toolbarActions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }

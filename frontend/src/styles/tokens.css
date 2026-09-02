@@ -93,6 +93,10 @@
   --color-text-tertiary: var(--color-faint);
   --color-text-inverse: var(--color-inverse);
 
+  --color-input-border: #d4d4d8;        /* 比 --color-border 深一档 */
+  --color-input-border-hover: #a1a1aa;
+  --color-input-border-focus: var(--color-accent);
+
   /* Typography */
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;

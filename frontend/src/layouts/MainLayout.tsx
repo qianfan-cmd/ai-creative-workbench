@@ -55,7 +55,7 @@ export default function MainLayout() {
           onToggleSidebar={toggleSidebar}
         />
         <main id="main-content" className={styles.content}>
-          <div className={styles.contentInner}>
+          <div id="content-inner" className={styles.contentInner}>
             <Outlet />
           </div>
         </main>

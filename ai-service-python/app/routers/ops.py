@@ -21,8 +21,12 @@ from app.schemas.ops import (
 from app.services.llm_service import stream_chat_with_messages
 from app.services.ops.image_providers.dashscope_wanx import DashScopeWanxAdapter
 from app.services.ops.image_providers.seedream import SeedreamAdapter
-from app.services.ops.image_router import generate_images
+from app.services.ops.image_router import ImageGenerateResult, generate_images
 from app.services.ops.prompt_renderer import render_prompt
+from app.services.ops.vision_image_resolver import (
+    VisionImageResolver,
+    is_download_failure_error,
+)
 from app.services.ops.vision_service import detect_elements, is_vision_configured
 
 router = APIRouter(prefix="/ai/ops", tags=["ops"])
@@ -114,8 +118,12 @@ def matting_handler(req: ImageGenerateRequest) -> ImageGenerateResponse:
 def detect_elements_handler(req: DetectElementsRequest) -> DetectElementsResponse:
     """视觉模型识别图片中的分组元素名称。"""
     try:
-        groups = detect_elements(req.image_url, req.prompt)
-        return DetectElementsResponse(groups=groups)
+        groups, strategy = detect_elements(
+            region_prompt=req.prompt,
+            image_url=req.image_url,
+            image_base64=req.image_base64,
+        )
+        return DetectElementsResponse(groups=groups, resolve_strategy=strategy)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -124,13 +132,39 @@ def detect_elements_handler(req: DetectElementsRequest) -> DetectElementsRespons
 def extract_element_handler(req: ExtractElementRequest) -> ImageGenerateResponse:
     """按 group / single prompt 从源图提取元素候选。"""
     try:
-        result = generate_images(
-            job_type="matting",
-            prompt=req.prompt,
-            source_url=req.source_url,
-            count=req.count,
-            aspect_ratio=None,
-        )
+        result = _extract_element_generate(req)
         return _to_response(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _extract_element_generate(req: ExtractElementRequest) -> ImageGenerateResult:
+    """解析图源（公网 URL / inline base64 / 本地拉取）后调用 Seedream。"""
+    resolved = VisionImageResolver.resolve(
+        image_url=req.source_url,
+        image_base64=req.image_base64,
+    )
+    try:
+        return generate_images(
+            job_type="matting",
+            prompt=req.prompt,
+            source_url=resolved.payload_url,
+            count=req.count,
+            aspect_ratio=None,
+        )
+    except ValueError as e:
+        err_msg = str(e)
+        if (
+            resolved.strategy_used == "L1_public_url"
+            and req.source_url
+            and is_download_failure_error(err_msg)
+        ):
+            fallback = VisionImageResolver.resolve_fallback_from_url(req.source_url)
+            return generate_images(
+                job_type="matting",
+                prompt=req.prompt,
+                source_url=fallback.payload_url,
+                count=req.count,
+                aspect_ratio=None,
+            )
+        raise

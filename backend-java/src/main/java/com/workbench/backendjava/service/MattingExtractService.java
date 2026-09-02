@@ -1,6 +1,7 @@
 package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.client.PythonAiClient;
@@ -14,6 +15,7 @@ import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.mapper.OpsMattingTaskMapper;
 import com.workbench.backendjava.mapper.PromptTemplateMapper;
 import com.workbench.backendjava.model.MattingConfig;
+import com.workbench.backendjava.model.MattingConfig.ConfirmedSource;
 import com.workbench.backendjava.model.MattingConfig.CropRegion;
 import com.workbench.backendjava.model.MattingConfig.ElementImage;
 import com.workbench.backendjava.model.MattingConfig.ElementItem;
@@ -41,6 +43,7 @@ public class MattingExtractService {
     private final PromptTemplateMapper promptTemplateMapper;
     private final PythonAiClient pythonAiClient;
     private final AssetService assetService;
+    private final MattingImageCropService mattingImageCropService;
     private final AiCallLogMapper aiCallLogMapper;
     private final ObjectMapper objectMapper;
 
@@ -83,7 +86,8 @@ public class MattingExtractService {
                 String regionId = regionEntry.getKey();
                 List<ElementItem> regionElements = regionEntry.getValue();
                 String regionSourceUrl = resolveRegionImageUrl(config, regionId, userId, sourceUrl);
-                if (regionSourceUrl == null) {
+                byte[] regionImageBytes = resolveRegionImageBytes(config, regionId, userId);
+                if (regionSourceUrl == null && (regionImageBytes == null || regionImageBytes.length == 0)) {
                     markRegionFailed(config, regionElements, "区域图片不可用");
                     saveConfig(taskId, userId, config);
                     continue;
@@ -111,7 +115,7 @@ public class MattingExtractService {
                     try {
                         long t0 = System.currentTimeMillis();
                         PythonImageGenerateResponse groupResp = pythonAiClient.opsExtractElement(
-                                regionSourceUrl, groupPrompt, 1);
+                                regionSourceUrl, groupPrompt, 1, regionImageBytes);
                         writeLog(userId, "matting_extract", groupResp.getProvider(), groupPrompt,
                                 "success", (int) (System.currentTimeMillis() - t0), "group image");
                         groupImageUrl = groupResp.getCandidates().get(0).getUrl();
@@ -158,15 +162,10 @@ public class MattingExtractService {
                 }
             }
 
-            OpsMattingTask task = loadTask(taskId, userId);
-            MattingConfig finalConfig = parseConfig(task.getConfigJson());
+            MattingConfig finalConfig = parseConfig(loadTask(taskId, userId).getConfigJson());
             finalConfig.setExtractStatus("done");
             finalConfig.setExtractError(null);
-            task.setStatus("done");
-            task.setStage(4);
-            task.setConfigJson(writeJson(finalConfig));
-            task.setUpdatedAt(LocalDateTime.now());
-            mattingTaskMapper.updateById(task);
+            updateTaskFields(taskId, userId, finalConfig, "done", 4);
         } catch (Exception e) {
             log.error("抠图提取任务失败 taskId={}", taskId, e);
             failExtract(taskId, userId, truncate(e.getMessage(), 400));
@@ -179,10 +178,12 @@ public class MattingExtractService {
             MattingConfig config = parseConfig(task.getConfigJson());
             config.setExtractStatus("failed");
             config.setExtractError(message);
-            task.setConfigJson(writeJson(config));
-            task.setStatus("draft");
-            task.setUpdatedAt(LocalDateTime.now());
-            mattingTaskMapper.updateById(task);
+            mattingTaskMapper.update(null, new LambdaUpdateWrapper<OpsMattingTask>()
+                    .eq(OpsMattingTask::getId, taskId)
+                    .eq(OpsMattingTask::getUserId, userId)
+                    .set(OpsMattingTask::getConfigJson, writeJson(config))
+                    .set(OpsMattingTask::getStatus, "draft")
+                    .set(OpsMattingTask::getUpdatedAt, LocalDateTime.now()));
         } catch (Exception ex) {
             log.error("更新提取失败状态出错", ex);
         }
@@ -239,12 +240,60 @@ public class MattingExtractService {
             return sourceUrl;
         }
         if (region.getSubAssetId() != null) {
-            return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
+            try {
+                return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
         }
         if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
-            return region.getSubAssetUrl();
+            if (region.getSubAssetUrl().startsWith("http://") || region.getSubAssetUrl().startsWith("https://")) {
+                return region.getSubAssetUrl();
+            }
+            return assetService.buildPublicUrlFromStoredPath(region.getSubAssetUrl());
         }
         return sourceUrl;
+    }
+
+    /** 供元素提取 L2 inline base64：优先 subAsset，useOriginal 读整图源图 */
+    private byte[] resolveRegionImageBytes(MattingConfig config, String regionId, Long userId) {
+        CropRegion region = config.getCropRegions().stream()
+                .filter(r -> regionId.equals(r.getId()))
+                .findFirst().orElse(null);
+        if (region == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(region.getUseOriginal())) {
+            ConfirmedSource source = findConfirmedSource(config, region.getSourceId());
+            if (source == null) {
+                return null;
+            }
+            return mattingImageCropService.readSourceBytes(userId, source);
+        }
+        if (region.getSubAssetId() != null) {
+            try {
+                return assetService.readOwnedAssetBytes(region.getSubAssetId(), userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
+        }
+        if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
+            if (region.getSubAssetUrl().startsWith("http://") || region.getSubAssetUrl().startsWith("https://")) {
+                return assetService.downloadImageBytes(region.getSubAssetUrl());
+            }
+            return assetService.readWorkflowImageBytes(region.getSubAssetUrl());
+        }
+        return null;
+    }
+
+    private ConfirmedSource findConfirmedSource(MattingConfig config, String sourceId) {
+        if (config.getConfirmedSources() == null || sourceId == null) {
+            return null;
+        }
+        return config.getConfirmedSources().stream()
+                .filter(cs -> sourceId.equals(cs.getId()))
+                .findFirst()
+                .orElse(null);
     }
 
     private String renderTemplate(String scene, Map<String, String> vars) {
@@ -265,10 +314,22 @@ public class MattingExtractService {
     }
 
     private void saveConfig(Long taskId, Long userId, MattingConfig config) {
-        OpsMattingTask task = loadTask(taskId, userId);
-        task.setConfigJson(writeJson(config));
-        task.setUpdatedAt(LocalDateTime.now());
-        mattingTaskMapper.updateById(task);
+        loadTask(taskId, userId);
+        mattingTaskMapper.update(null, new LambdaUpdateWrapper<OpsMattingTask>()
+                .eq(OpsMattingTask::getId, taskId)
+                .eq(OpsMattingTask::getUserId, userId)
+                .set(OpsMattingTask::getConfigJson, writeJson(config))
+                .set(OpsMattingTask::getUpdatedAt, LocalDateTime.now()));
+    }
+
+    private void updateTaskFields(Long taskId, Long userId, MattingConfig config, String status, Integer stage) {
+        mattingTaskMapper.update(null, new LambdaUpdateWrapper<OpsMattingTask>()
+                .eq(OpsMattingTask::getId, taskId)
+                .eq(OpsMattingTask::getUserId, userId)
+                .set(OpsMattingTask::getConfigJson, writeJson(config))
+                .set(OpsMattingTask::getStatus, status)
+                .set(OpsMattingTask::getStage, stage)
+                .set(OpsMattingTask::getUpdatedAt, LocalDateTime.now()));
     }
 
     private OpsMattingTask loadTask(Long taskId, Long userId) {

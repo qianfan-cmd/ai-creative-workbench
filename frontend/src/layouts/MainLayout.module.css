@@ -43,3 +43,7 @@
     margin: 0 auto;
     width: 100%;
   }
+
+  .contentInner_fullBleed {
+    max-width: none;
+  }

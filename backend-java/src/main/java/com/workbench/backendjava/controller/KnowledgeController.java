@@ -1,6 +1,7 @@
 package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
 import com.workbench.backendjava.service.KnowledgeService;
 import com.workbench.backendjava.service.KnowledgeSessionService;
@@ -11,7 +12,9 @@ import com.workbench.backendjava.vo.KnowledgeTurnVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -76,5 +79,19 @@ public class KnowledgeController {
             @Valid @RequestBody KnowledgeTurnCreateRequest request
     ) {
         return Result.ok(knowledgeSessionService.updateTurn(sessionId, turnId, request));
+    }
+
+    @DeleteMapping("/sessions/{id}")
+    public Result<Void> deleteSession(@PathVariable Long id) {
+        knowledgeSessionService.deleteSession(id);
+        return Result.ok(null);
+    }
+
+    @PatchMapping("/sessions/{id}")
+    public Result<KnowledgeSessionVO> patchSession(
+            @PathVariable Long id,
+            @RequestBody KnowledgeSessionPatchRequest request
+    ) {
+        return Result.ok(knowledgeSessionService.patchSession(id, request));
     }
 }

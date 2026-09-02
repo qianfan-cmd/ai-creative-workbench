@@ -1,0 +1,35 @@
+.rowWrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rowWrap .rowBtn {
+  flex: 1;
+  min-width: 0;
+}
+
+.menuBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.rowWrap:hover .menuBtn,
+.rowWrap:focus-within .menuBtn {
+  opacity: 1;
+}
+
+.menuBtn:hover {
+  background: var(--color-bg-hover);
+}

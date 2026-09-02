@@ -37,6 +37,8 @@ public class MattingConfig {
     public static class SourceScheme {
         private String id;
         private String imageUrl;
+        /** 入库后的稳定素材 id，用于长期展示 */
+        private Long assetId;
         private String prompt;
         private String aspectRatio;
         private List<String> referenceUrls;

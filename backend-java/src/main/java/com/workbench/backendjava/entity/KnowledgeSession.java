@@ -25,6 +25,9 @@ public class KnowledgeSession {
     /** 侧栏展示标题，通常取首问前 30 字 */
     private String title;
 
+    /** 1=置顶 */
+    private Integer pinned;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

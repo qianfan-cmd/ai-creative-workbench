@@ -6,6 +6,9 @@ import lombok.Data;
 public class MattingTaskPatchRequest {
     private String title;
     private Integer stage;
+    private Long groupId;
+    private Boolean pinned;
+    private Integer sortOrder;
     private Long sourceAssetId;
     private String configJson;
     private String selectedCandidate;
