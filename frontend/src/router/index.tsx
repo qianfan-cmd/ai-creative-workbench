@@ -11,6 +11,7 @@ import TagsPage from '@/pages/TagsPage'
 import ChatPage from '@/pages/ChatPage'
 import KnowledgePage from '@/pages/KnowledgePage'
 import KnowledgeDocumentListPage from '@/pages/KnowledgeDocumentListPage'
+import KnowledgeDocumentEditorPage from '@/pages/KnowledgeDocumentEditorPage'
 import CampaignPage from '@/pages/CampaignPage'
 import MattingPage from '@/pages/MattingPage'
 
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
           { path: 'chat', element: <ChatPage /> },
           { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'knowledge/documents', element: <KnowledgeDocumentListPage /> },
+          { path: 'knowledge/documents/:id', element: <KnowledgeDocumentEditorPage /> },
           { path: 'ops/matting', element: <MattingPage /> },
           { path: 'ops/campaign', element: <CampaignPage /> },
         ],

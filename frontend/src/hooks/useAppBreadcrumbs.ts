@@ -7,8 +7,7 @@ export interface BreadcrumbItem {
 }
 
 export function useAppBreadcrumbs(): BreadcrumbItem[] {
-    const { pathname } = useLocation(); // 获取当前路径
-    console.log('本地钩子',useLocation());
+    const { pathname } = useLocation()
 
     return useMemo(() => {
         const home: BreadcrumbItem = { label: 'Workbench', href: '/assets' };
@@ -34,6 +33,15 @@ export function useAppBreadcrumbs(): BreadcrumbItem[] {
             home,
             { label: '知识库 Knowledge', href: '/knowledge' },
             { label: '文档库 Documents', href: '/knowledge/documents' },
+        ];
+    }
+
+    if (pathname.startsWith('/knowledge/documents/')) {
+        return [
+            home,
+            { label: '知识库 Knowledge', href: '/knowledge' },
+            { label: '文档库 Documents', href: '/knowledge/documents' },
+            { label: '编辑文档' },
         ];
     }
 

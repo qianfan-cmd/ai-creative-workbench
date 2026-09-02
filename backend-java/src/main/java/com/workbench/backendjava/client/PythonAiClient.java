@@ -234,20 +234,56 @@ public class PythonAiClient {
     }
 
     /**
-     * 按 Chroma source 删除文档向量。
+     * 按 Chroma source / document_id 删除文档向量（POST JSON，避免 query 编码问题）。
+     *
+     * @param expectedChunkCount MySQL 记录的 chunk 数；&gt;0 时要求至少删除 1 条
+     * @return 实际删除的 chunk 数
      */
-    public void deleteDocument(String source) {
-        if (source == null || source.isBlank()) {
-            return;
+    public int deleteDocument(String source, Long documentId, int expectedChunkCount) {
+        boolean hasSource = source != null && !source.isBlank();
+        boolean hasDocumentId = documentId != null && documentId > 0;
+        if (!hasSource && !hasDocumentId) {
+            return 0;
         }
-        String base = aiServiceProperties.getBaseUrl().replaceAll("/$", "");
-        String url = base + "/ai/documents?source=" + java.net.URLEncoder.encode(source, java.nio.charset.StandardCharsets.UTF_8);
+
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/delete";
+
+        Map<String, Object> body = new HashMap<>();
+        if (hasDocumentId) {
+            body.put("document_id", documentId);
+        }
+        if (hasSource) {
+            body.put("source", source.trim());
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
         try {
-            restTemplate.delete(url);
+            PythonDocumentDeleteResponse response = restTemplate.postForObject(
+                    url,
+                    entity,
+                    PythonDocumentDeleteResponse.class
+            );
+            int deletedCount = response != null && response.getDeletedCount() != null
+                    ? response.getDeletedCount()
+                    : 0;
+
+            if (expectedChunkCount > 0 && deletedCount <= 0) {
+                throw new BusinessException(502, "向量索引未删除，请重试");
+            }
+            return deletedCount;
         } catch (RestClientException e) {
-            log.error("调用 Python 文档删除失败 source={}: {}", source, e.getMessage(), e);
+            log.error("调用 Python 文档删除失败 source={}, documentId={}: {}",
+                    source, documentId, e.getMessage(), e);
             throw new BusinessException(502, "删除向量索引失败，请确认 ai-service-python 已启动");
         }
+    }
+
+    /** 重命名/重索引等场景：按 source 删除，不要求 chunk 校验 */
+    public void deleteDocument(String source) {
+        deleteDocument(source, null, 0);
     }
 
     /**
@@ -589,6 +625,17 @@ public class PythonAiClient {
 
         @JsonProperty("chunk_count")
         private Integer chunkCount;
+    }
+
+    @Data
+    static class PythonDocumentDeleteResponse {
+        private String source;
+
+        @JsonProperty("document_id")
+        private Long documentId;
+
+        @JsonProperty("deleted_count")
+        private Integer deletedCount;
     }
 
     @Data

@@ -19,7 +19,7 @@ import {
 
 } from '@ant-design/icons'
 
-import { Button, Dropdown, Input, Modal, message } from 'antd'
+import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd'
 import type { MenuProps } from 'antd'
 
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
@@ -66,6 +66,8 @@ interface IndexedDoc {
     filename: string
 
     chunkCount: number
+
+    hasOriginalFile?: boolean
 
 }
 
@@ -409,6 +411,8 @@ export default function KnowledgePage() {
 
                     chunkCount: d.chunkCount,
 
+                    hasOriginalFile: d.hasOriginalFile !== false,
+
                 })),
 
             )
@@ -460,6 +464,7 @@ export default function KnowledgePage() {
                         id: String(d.id),
                         filename: d.filename,
                         chunkCount: d.chunkCount,
+                        hasOriginalFile: d.hasOriginalFile !== false,
                     })),
                 )
                 setSessions(sessionList)
@@ -1045,27 +1050,44 @@ export default function KnowledgePage() {
 
                             ) : (
 
-                                docs.map((doc) => (
+                                docs.map((doc) => {
+                                    const canEdit = doc.hasOriginalFile !== false
+                                    const docContent = (
+                                        <>
+                                            <FileTextOutlined className={styles.docIcon} />
+                                            <div className={styles.docMeta}>
+                                                <span className={styles.docName} title={doc.filename}>
+                                                    {doc.filename}
+                                                </span>
+                                                <span className={styles.docChunks}>{doc.chunkCount} chunks</span>
+                                            </div>
+                                        </>
+                                    )
 
-                                    <div key={doc.id} className={styles.docItem}>
+                                    if (canEdit) {
+                                        return (
+                                            <button
+                                                key={doc.id}
+                                                type="button"
+                                                className={`${styles.docItem} ${styles.docItemBtn}`}
+                                                onClick={() => navigate(`/knowledge/documents/${doc.id}`)}
+                                            >
+                                                {docContent}
+                                            </button>
+                                        )
+                                    }
 
-                                        <FileTextOutlined className={styles.docIcon} />
-
-                                        <div className={styles.docMeta}>
-
-                                            <span className={styles.docName} title={doc.filename}>
-
-                                                {doc.filename}
-
-                                            </span>
-
-                                            <span className={styles.docChunks}>{doc.chunkCount} chunks</span>
-
-                                        </div>
-
-                                    </div>
-
-                                ))
+                                    return (
+                                        <Tooltip
+                                            key={doc.id}
+                                            title="旧索引文档无原文件，请重新上传"
+                                        >
+                                            <div className={`${styles.docItem} ${styles.docItemDisabled}`}>
+                                                {docContent}
+                                            </div>
+                                        </Tooltip>
+                                    )
+                                })
 
                             )}
 

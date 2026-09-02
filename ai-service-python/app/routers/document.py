@@ -10,10 +10,10 @@
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form
 
-from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse, DocumentDeleteResponse
+from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse, DocumentDeleteRequest, DocumentDeleteResponse
 from app.services.document_parser import parse_upload_file
 from app.services.text_splitter import split_text
-from app.services.vector_store import add_chunks, list_documents, delete_by_source
+from app.services.vector_store import add_chunks, list_documents, delete_by_source, delete_document_vectors
 from app.services.embedding_service import embed_texts
 
 # prefix会把所有路由前缀都加上/ai/documents
@@ -116,13 +116,24 @@ async def index_document(
         indexed_count = indexed,
     )
 
+@router.post("/delete", response_model = DocumentDeleteResponse)
+async def delete_document_post(body: DocumentDeleteRequest):
+    """按 document_id 和/或 source 删除 Chroma 中该文档的全部 chunk（JSON body，支持 emoji 等特殊文件名）。"""
+    source = body.source.strip() if body.source else None
+    document_id = body.document_id
+    if (not source) and (document_id is None or document_id <= 0):
+        raise HTTPException(status_code = 400, detail = "source 与 document_id 至少提供一个")
+    deleted = delete_document_vectors(source = source, document_id = document_id)
+    return DocumentDeleteResponse(source = source, document_id = document_id, deleted_count = deleted)
+
 @router.delete("", response_model = DocumentDeleteResponse)
 async def delete_document(source: str):
-    """按 source 文件名删除 Chroma 中该文档的全部 chunk。"""
+    """按 source 文件名删除 Chroma 中该文档的全部 chunk（兼容旧调用）。"""
     if not source or not source.strip():
         raise HTTPException(status_code = 400, detail = "source 不能为空")
-    deleted = delete_by_source(source.strip())
-    return DocumentDeleteResponse(source = source.strip(), deleted_count = deleted)
+    source = source.strip()
+    deleted = delete_by_source(source)
+    return DocumentDeleteResponse(source = source, document_id = None, deleted_count = deleted)
 
 @router.get("/list", response_model = DocumentListResponse)
 async def list_indexed_documents():

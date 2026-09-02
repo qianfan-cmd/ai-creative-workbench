@@ -85,7 +85,6 @@ public class KnowledgeDocumentService {
 
     public PageResult<KnowledgeDocumentVO> listPage(long page, long size, String keyword, String sort) {
         Long userId = requireUserId();
-        syncFromChromaIfNeeded(userId);
 
         if (page < 1) page = 1;
         if (size < 1) size = 10;
@@ -111,7 +110,6 @@ public class KnowledgeDocumentService {
 
     public List<KnowledgeDocumentVO> listRecent(int limit) {
         Long userId = requireUserId();
-        syncFromChromaIfNeeded(userId);
 
         if (limit < 1) limit = 50;
         if (limit > 100) limit = 100;
@@ -144,27 +142,55 @@ public class KnowledgeDocumentService {
             throw new BusinessException(400, "该文档无原文件，请重新上传后再重命名");
         }
 
-        String oldSource = doc.getChromaSource();
         byte[] bytes = readStoredBytes(doc.getStoredPath());
+        reindexDocument(doc, userId, newFilename, bytes);
+        return toVO(doc);
+    }
 
-        pythonAiClient.deleteDocument(oldSource);
+    @Transactional
+    public KnowledgeDocumentVO saveContent(Long id, String content) {
+        Long userId = requireUserId();
+        KnowledgeDocument doc = getOwnedDocument(id, userId);
 
-        String newStoredPath = storeKnowledgeFile(userId, doc.getId(), newFilename, bytes);
-        deleteStoredFile(doc.getStoredPath());
+        if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
+            throw new BusinessException(400, "该文档无原文件，请重新上传后再编辑");
+        }
+        if (content == null) {
+            throw new BusinessException(400, "内容不能为空");
+        }
 
-        KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, newFilename, doc.getId(), userId);
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > uploadProperties.getMaxSize()) {
+            throw new BusinessException(400, "文件不能大于50M");
+        }
 
-        doc.setFilename(newFilename);
-        doc.setChromaSource(newFilename);
+        reindexDocument(doc, userId, doc.getFilename(), bytes);
+        return toVO(doc);
+    }
+
+    private void reindexDocument(KnowledgeDocument doc, Long userId, String filename, byte[] bytes) {
+        String oldSource = doc.getChromaSource();
+        if (oldSource != null && !oldSource.isBlank()) {
+            pythonAiClient.deleteDocument(oldSource, doc.getId(), 0);
+        }
+
+        String oldStoredPath = doc.getStoredPath();
+        String newStoredPath = storeKnowledgeFile(userId, doc.getId(), filename, bytes);
+        if (oldStoredPath != null && !oldStoredPath.equals(newStoredPath)) {
+            deleteStoredFile(oldStoredPath);
+        } 
+
+        KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, filename, doc.getId(), userId);
+
+        doc.setFilename(filename);
+        doc.setChromaSource(filename);
         doc.setStoredPath(newStoredPath);
-        doc.setFileType(mimeOf(extensionOf(newFilename)));
+        doc.setFileType(mimeOf(extensionOf(filename)));
         doc.setFileSize((long) bytes.length);
         doc.setCharCount(indexed.getCharCount());
         doc.setChunkCount(indexed.getChunkCount());
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
-
-        return toVO(doc);
     }
 
     @Transactional
@@ -172,12 +198,13 @@ public class KnowledgeDocumentService {
         Long userId = requireUserId();
         KnowledgeDocument doc = getOwnedDocument(id, userId);
 
-        if (doc.getChromaSource() != null && !doc.getChromaSource().isBlank()) {
-            try {
-                pythonAiClient.deleteDocument(doc.getChromaSource());
-            } catch (BusinessException e) {
-                log.warn("删除 Chroma 文档失败 source={}, reason={}", doc.getChromaSource(), e.getMessage());
-            }
+        int chunkCount = doc.getChunkCount() != null ? doc.getChunkCount() : 0;
+        String source = doc.getChromaSource();
+        boolean hasVectors = chunkCount > 0
+                || (source != null && !source.isBlank());
+
+        if (hasVectors) {
+            pythonAiClient.deleteDocument(source, doc.getId(), chunkCount);
         }
         if (doc.getStoredPath() != null && !doc.getStoredPath().isBlank()) {
             deleteStoredFile(doc.getStoredPath());
@@ -195,6 +222,7 @@ public class KnowledgeDocumentService {
         KnowledgeDocumentContentVO vo = new KnowledgeDocumentContentVO();
         vo.setId(doc.getId());
         vo.setFilename(doc.getFilename());
+        vo.setFileType(doc.getFileType());
         vo.setContent(new String(bytes, StandardCharsets.UTF_8));
         return vo;
     }
@@ -209,6 +237,7 @@ public class KnowledgeDocumentService {
         List<String> existingSources = documentMapper.selectList(
                 new LambdaQueryWrapper<KnowledgeDocument>()
                         .select(KnowledgeDocument::getChromaSource)
+                        .eq(KnowledgeDocument::getUserId, userId)
         ).stream()
                 .map(KnowledgeDocument::getChromaSource)
                 .filter(s -> s != null && !s.isBlank())
@@ -371,7 +400,6 @@ public class KnowledgeDocumentService {
 
     public long countForCurrentUser() {
         Long userId = requireUserId();
-        syncFromChromaIfNeeded(userId);
         return documentMapper.selectCount(
                 new LambdaQueryWrapper<KnowledgeDocument>().eq(KnowledgeDocument::getUserId, userId)
         );

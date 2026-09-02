@@ -6,6 +6,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    dedupe: ['react', 'react-dom'], // 避免重复打包 react 和 react-dom
     alias: {
       '@': path.resolve(__dirname, './src')
     }

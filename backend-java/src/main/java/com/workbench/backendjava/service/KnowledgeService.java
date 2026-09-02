@@ -44,6 +44,10 @@ public class KnowledgeService {
         return knowledgeDocumentService.getContent(id);
     }
 
+    public KnowledgeDocumentVO saveDocumentContent(Long id, String content) {
+        return knowledgeDocumentService.saveContent(id, content);
+    }
+
     public long countDocuments() {
         return knowledgeDocumentService.countForCurrentUser();
     }

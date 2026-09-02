@@ -98,6 +98,24 @@
     background: var(--color-bg-hover);
 }
 
+.docItemBtn {
+    width: 100%;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+}
+
+.docItemDisabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.docItemDisabled:hover {
+    background: transparent;
+}
+
 .docIcon {
     color: var(--color-accent);
     margin-top: 2px;

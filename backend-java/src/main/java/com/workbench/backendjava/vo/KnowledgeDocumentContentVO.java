@@ -6,5 +6,6 @@ import lombok.Data;
 public class KnowledgeDocumentContentVO {
     private Long id;
     private String filename;
+    private String fileType;
     private String content;
 }

@@ -2,6 +2,7 @@ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.KnowledgeDocumentContentUpdateRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
@@ -73,6 +74,13 @@ public class KnowledgeController {
     @GetMapping("/documents/{id}/content")
     public Result<KnowledgeDocumentContentVO> getDocumentContent(@PathVariable Long id) {
         return Result.ok(knowledgeService.getDocumentContent(id));
+    }
+
+    @PutMapping("/documents/{id}/content")
+    public Result<KnowledgeDocumentVO> saveDocumentContent(
+            @PathVariable Long id,
+            @Valid @RequestBody KnowledgeDocumentContentUpdateRequest request) {
+        return Result.ok(knowledgeService.saveDocumentContent(id, request.getContent()));
     }
 
     /** 历史问答侧栏列表 */

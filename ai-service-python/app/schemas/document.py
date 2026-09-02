@@ -43,6 +43,11 @@ class DocumentListItem(BaseModel):
 class DocumentListResponse(BaseModel):
     documents: list[DocumentListItem] = Field(default_factory=list, description = "已索引文档列表")
 
+class DocumentDeleteRequest(BaseModel):
+    source: str | None = Field(None, description = "Chroma metadata.source 文件名")
+    document_id: int | None = Field(None, description = "Chroma metadata.document_id")
+
 class DocumentDeleteResponse(BaseModel):
-    source: str = Field(..., description = "被删除的 source 文件名")
+    source: str | None = Field(None, description = "被删除的 source 文件名")
+    document_id: int | None = Field(None, description = "被删除的 document_id")
     deleted_count: int = Field(..., description = "删除的 chunk 数量")

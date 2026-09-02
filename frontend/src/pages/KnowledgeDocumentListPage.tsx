@@ -155,8 +155,15 @@ export default function KnowledgeDocumentListPage() {
       fixed: 'right',
       render: (_, record) => (
         <div className={styles.actionCell}>
-          <Tooltip title="预览即将推出">
-            <Button type="link" size="small" disabled>
+          <Tooltip
+            title={record.hasOriginalFile ? undefined : '旧索引文档无原文件，请重新上传后编辑'}
+          >
+            <Button
+              type="link"
+              size="small"
+              disabled={!record.hasOriginalFile}
+              onClick={() => navigate(`/knowledge/documents/${record.id}`)}
+            >
               查看
             </Button>
           </Tooltip>

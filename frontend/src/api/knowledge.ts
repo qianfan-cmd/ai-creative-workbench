@@ -42,6 +42,13 @@ export interface ListKnowledgeDocumentsParams {
     sort?: 'asc' | 'desc'
 }
 
+export interface KnowledgeDocumentContentVO {
+    id: number
+    filename: string
+    fileType?: string
+    content: string
+}
+
 /** 历史会话侧栏项 */
 export interface KnowledgeSessionVO {
     id: number
@@ -99,6 +106,22 @@ export async function patchKnowledgeDocumentApi(id: number, payload: { filename:
 
 export async function deleteKnowledgeDocumentApi(id: number) {
     await request.delete<ApiResponse<null>>(`/knowledge/documents/${id}`)
+}
+
+export async function getKnowledgeDocumentContentApi(id: number) {
+    const res = await request.get<ApiResponse<KnowledgeDocumentContentVO>>(
+        `/knowledge/documents/${id}/content`,
+    )
+    return res.data.data
+}
+
+export async function saveKnowledgeDocumentContentApi(id: number, content: string) {
+    const res = await request.put<ApiResponse<KnowledgeDocumentVO>>(
+        `/knowledge/documents/${id}/content`,
+        { content },
+        { timeout: 180000 },
+    )
+    return res.data.data
 }
 
 /** 历史会话列表 */

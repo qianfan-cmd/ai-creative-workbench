@@ -153,9 +153,46 @@ def delete_by_source(source: str) -> int:
     if not source or not source.strip():
         return 0
     collection = _get_collection()
-    result = collection.get(where={"source": source}, include=[])
+    result = collection.get(where={"source": source.strip()}, include=[])
     ids = result.get("ids") or []
     if not ids:
         return 0
     collection.delete(ids=ids)
     return len(ids)
+
+
+def delete_by_document_id(document_id: int) -> int:
+    """按 metadata.document_id 删除该文档的全部 chunk。"""
+    if document_id is None or document_id <= 0:
+        return 0
+    collection = _get_collection()
+    result = collection.get(where={"document_id": document_id}, include=[])
+    ids = result.get("ids") or []
+    if not ids:
+        return 0
+    collection.delete(ids=ids)
+    return len(ids)
+
+
+def delete_document_vectors(*, source: str | None = None, document_id: int | None = None) -> int:
+    """
+    按 document_id 与/或 source 删除向量，两者都传则都尝试（去重后的 id 并集）。
+    """
+    if (not source or not source.strip()) and (document_id is None or document_id <= 0):
+        return 0
+
+    collection = _get_collection()
+    id_set: set[str] = set()
+
+    if document_id is not None and document_id > 0:
+        by_id = collection.get(where={"document_id": document_id}, include=[])
+        id_set.update(by_id.get("ids") or [])
+
+    if source and source.strip():
+        by_source = collection.get(where={"source": source.strip()}, include=[])
+        id_set.update(by_source.get("ids") or [])
+
+    if not id_set:
+        return 0
+    collection.delete(ids=list(id_set))
+    return len(id_set)
