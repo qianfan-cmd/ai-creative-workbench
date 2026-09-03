@@ -555,6 +555,41 @@ public class AssetService {
         return downloadBytesFromUrl(imageUrl);
     }
 
+    /** 将 AI 提供商临时 URL 下载并写入 uploads/{subdir}，返回 /uploads/... 稳定路径 */
+    public String persistProviderImage(String providerUrl, String subdir, String fileName) {
+        if (providerUrl == null || providerUrl.isBlank()) {
+            throw new BusinessException(400, "图片 URL 无效");
+        }
+        byte[] bytes = downloadImageBytes(providerUrl);
+        String safeName = fileName != null && !fileName.isBlank() ? fileName : "provider-image";
+        if (!safeName.toLowerCase().endsWith(".png")) {
+            safeName = safeName + ".png";
+        }
+        safeName = safeName.replaceAll("[^a-zA-Z0-9_.-]", "_");
+        return fileStorageService.storeFromBytes(safeName, bytes, "image/png", subdir);
+    }
+
+    /** workflow source / 候选图对外展示 URL：优先 assetId，其次本地 uploads，最后遗留外链 */
+    public String resolveWorkflowImageUrl(String imageUrl, String storagePath, Long assetId, Long userId) {
+        if (assetId != null && userId != null) {
+            try {
+                return getPublicUrlForOwnedAsset(assetId, userId);
+            } catch (BusinessException ignored) {
+                /* fall through */
+            }
+        }
+        if (storagePath != null && !storagePath.isBlank()) {
+            return buildPublicUrlFromStoredPath(storagePath);
+        }
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            if (imageUrl.startsWith("/uploads/") || imageUrl.startsWith("uploads/")) {
+                return buildPublicUrlFromStoredPath(imageUrl);
+            }
+            return imageUrl;
+        }
+        return imageUrl;
+    }
+
     private byte[] readBytesFromStoredPath(String storedUrl) {
         if (storedUrl == null || storedUrl.isBlank()) {
             throw new BusinessException(400, "素材路径无效");
@@ -626,9 +661,45 @@ public class AssetService {
         return toAssetVO(asset);
     }
 
+    /** 从 uploads/ 本地路径读取并入库 — Campaign 配图上传保存用 */
+    @Transactional
+    public AssetVO importFromStoredPath(String storedPath, String name, List<String> tagNames) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+        byte[] bytes = readWorkflowImageBytes(storedPath);
+        String fileName = name != null && !name.isBlank() ? name : "ops-import.png";
+        if (!fileName.contains(".")) {
+            fileName = fileName + ".png";
+        }
+        String path = fileStorageService.storeFromBytes(fileName, bytes, "image/png");
+
+        Asset asset = new Asset();
+        asset.setUserId(userId);
+        asset.setName(fileName);
+        asset.setType("image/png");
+        asset.setUrl(path);
+        asset.setSize((long) bytes.length);
+        asset.setCreatedAt(LocalDateTime.now());
+        asset.setUpdatedAt(LocalDateTime.now());
+        assetMapper.insert(asset);
+
+        if (tagNames != null && !tagNames.isEmpty()) {
+            List<Long> tagIds = tagNames.stream().map(this::findOrCreateTagId).collect(Collectors.toList());
+            AssetTagsUpdateRequest req = new AssetTagsUpdateRequest();
+            req.setTagIds(tagIds);
+            replaceTags(asset.getId(), req);
+        }
+        return toAssetVO(asset);
+    }
+
     /** 从外链下载图片字节（不带 Authorization，避免 TOS 签名 URL 被 RestTemplate 破坏） */
     private byte[] downloadBytesFromUrl(String imageUrl) {
         String url = imageUrl != null ? imageUrl.trim() : "";
+        if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+            return readWorkflowImageBytes(url);
+        }
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             throw new BusinessException(400, "图片 URL 无效");
         }

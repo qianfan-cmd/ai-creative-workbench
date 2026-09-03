@@ -6,6 +6,10 @@ import lombok.Data;
 /**
  * Chat 流式请求 — 可选 conversationId 用于多轮上下文。
  */
+import lombok.Data;
+
+import java.util.List;
+
 @Data
 public class ChatStreamRequest {
 
@@ -14,4 +18,7 @@ public class ChatStreamRequest {
 
     @NotBlank(message = "消息不能为空")
     private String message;
+
+    /** 附图 URL 列表（多模态 Chat） */
+    private List<String> imageUrls;
 }

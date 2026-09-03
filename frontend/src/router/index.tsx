@@ -14,6 +14,7 @@ import KnowledgeDocumentListPage from '@/pages/KnowledgeDocumentListPage'
 import KnowledgeDocumentEditorPage from '@/pages/KnowledgeDocumentEditorPage'
 import CampaignPage from '@/pages/CampaignPage'
 import MattingPage from '@/pages/MattingPage'
+import SettingsPage from '@/pages/SettingsPage'
 
 export const router = createBrowserRouter([
   {
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
           { path: 'knowledge/documents/:id', element: <KnowledgeDocumentEditorPage /> },
           { path: 'ops/matting', element: <MattingPage /> },
           { path: 'ops/campaign', element: <CampaignPage /> },
+          { path: 'settings', element: <SettingsPage /> },
         ],
       },
     ],

@@ -13,6 +13,7 @@ import com.workbench.backendjava.mapper.MessageMapper;
 import com.workbench.backendjava.vo.ConversationDetailVO;
 import com.workbench.backendjava.vo.ConversationVO;
 import com.workbench.backendjava.vo.MessageVO;
+import com.workbench.backendjava.util.ChatMultimodalUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -82,10 +83,13 @@ public class ConversationService {
     }
 
     /**
-     * 构建发给 Python 的多轮 messages 数组（DeepSeek 格式）。
+     * 构建发给 Python 的多轮 messages 数组（DeepSeek / OpenAI 多模态格式）。
      * 只取最近 {@link #CONTEXT_MESSAGE_LIMIT} 条，再追加当前 user 句。
      */
-    public List<Map<String, String>> buildMessagesForLlm(Long conversationId, String currentUserMessage) {
+    public List<Map<String, Object>> buildMessagesForLlm(
+            Long conversationId,
+            String currentUserMessage,
+            List<String> currentImageUrls) {
         Long userId = requireUserId();
         getOwnedConversation(conversationId, userId);
 
@@ -95,21 +99,25 @@ public class ConversationService {
                         .orderByDesc(Message::getCreatedAt)
                         .last("LIMIT " + CONTEXT_MESSAGE_LIMIT)
         );
-        // 倒序取出后需反转为时间正序
         history = new ArrayList<>(history);
         java.util.Collections.reverse(history);
 
-        List<Map<String, String>> messages = new ArrayList<>();
+        List<Map<String, Object>> messages = new ArrayList<>();
         for (Message msg : history) {
-            Map<String, String> item = new HashMap<>();
+            Map<String, Object> item = new HashMap<>();
             item.put("role", msg.getRole());
-            item.put("content", msg.getContent());
+            if ("user".equals(msg.getRole())) {
+                ChatMultimodalUtil.ParsedUserContent parsed = ChatMultimodalUtil.parseUserContent(msg.getContent());
+                item.put("content", ChatMultimodalUtil.buildLlmContent(parsed.text(), parsed.imageUrls()));
+            } else {
+                item.put("content", msg.getContent());
+            }
             messages.add(item);
         }
 
-        Map<String, String> current = new HashMap<>();
+        Map<String, Object> current = new HashMap<>();
         current.put("role", "user");
-        current.put("content", currentUserMessage.trim());
+        current.put("content", ChatMultimodalUtil.buildLlmContent(currentUserMessage.trim(), currentImageUrls));
         messages.add(current);
         return messages;
     }
@@ -122,7 +130,9 @@ public class ConversationService {
         Message userMsg = new Message();
         userMsg.setConversationId(conversationId);
         userMsg.setRole("user");
-        userMsg.setContent(request.getUserContent().trim());
+        userMsg.setContent(ChatMultimodalUtil.encodeUserContent(
+                request.getUserContent(),
+                request.getUserImageUrls()));
         userMsg.setCreatedAt(LocalDateTime.now());
         messageMapper.insert(userMsg);
 
@@ -134,7 +144,7 @@ public class ConversationService {
         messageMapper.insert(assistantMsg);
 
         if ("新对话".equals(conversation.getTitle()) || conversation.getTitle().isBlank()) {
-            conversation.setTitle(truncateTitle(request.getUserContent()));
+            conversation.setTitle(truncateTitle(ChatMultimodalUtil.parseUserContent(request.getUserContent()).text()));
         }
         conversation.setUpdatedAt(LocalDateTime.now());
         conversationMapper.updateById(conversation);
@@ -228,7 +238,7 @@ public class ConversationService {
         MessageVO vo = new MessageVO();
         vo.setId(message.getId());
         vo.setRole(message.getRole());
-        vo.setContent(message.getContent());
+        ChatMultimodalUtil.applyParsedContent(vo, message.getContent());
         return vo;
     }
 }

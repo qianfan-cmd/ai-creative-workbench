@@ -59,10 +59,14 @@ export async function uploadAssetApi(file: File, options?: UploadAssetOptions) {
     const res = await request.post<ApiResponse<AssetUploadVO>>('/assets/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (e) => {
-            if (!e.total || !options.onProgress) return;
-            const percent = Math.round((e.loaded / e.total) * 100);
-            options.onProgress(percent);
+            if (!e.total) return;
+            options?.onProgress?.(Math.round((e.loaded / e.total) * 100));
         },
     })
     return res.data.data;
+}
+
+export async function importAssetFromUrlApi(url: string, name?: string, tags?: string[]) {
+    const res = await request.post<ApiResponse<AssetVO>>('/assets/import-url', { url, name, tags })
+    return res.data.data
 }

@@ -1,12 +1,11 @@
 package com.workbench.backendjava.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 @Data
 public class CampaignDraftCreateRequest {
 
-    @NotBlank(message = "活动主题不能为空")
+    /** 可为空；空时草稿标题默认为「活动帖」 */
     private String theme;
 
     /** 如 "2026-08-15 ~ 2026-08-31"，前端 DateRange 格式化后传入 */

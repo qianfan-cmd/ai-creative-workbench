@@ -1,88 +1,61 @@
-import { Button, Input, Select } from 'antd'
+import { Select } from 'antd'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import AiImageComposer, { type AiComposerPayload } from '@/components/ai/AiImageComposer'
 import styles from '@/components/ops/SourceGenerateComposer.module.css'
-
-const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6].map((n) => ({ value: n, label: `${n} 张` }))
-
-const RATIO_OPTIONS = [
-  '智能',
-  '21:9',
-  '16:9',
-  '5:4',
-  '3:2',
-  '4:3',
-  '1:1',
-  '3:4',
-  '2:3',
-  '4:5',
-  '9:16',
-].map((r) => ({ value: r, label: r }))
 
 export interface SourceGeneratePayload {
   prompt: string
   count: number
   aspectRatio: string
+  referenceUrls?: string[]
 }
+
+const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6].map((n) => ({ value: n, label: `${n} 张` }))
 
 interface SourceGenerateComposerProps {
   loading?: boolean
+  aspectRatio?: string
+  placeholder?: string
   onSend: (payload: SourceGeneratePayload) => void
   confirmAction?: ReactNode
 }
 
 export default function SourceGenerateComposer({
   loading = false,
+  aspectRatio = '9:16',
+  placeholder = '描述要生成的源图，Enter 发送，Shift+Enter 换行',
   onSend,
   confirmAction,
 }: SourceGenerateComposerProps) {
-  const [prompt, setPrompt] = useState('')
   const [count, setCount] = useState(4)
-  const [aspectRatio, setAspectRatio] = useState('9:16')
 
-  const handleSend = () => {
-    const text = prompt.trim()
-    if (!text) return
-    onSend({ prompt: text, count, aspectRatio })
+  const handleSend = ({ text, attachments }: AiComposerPayload) => {
+    onSend({
+      prompt: text,
+      count,
+      aspectRatio,
+      referenceUrls: attachments.map((a) => a.url),
+    })
   }
 
   return (
-    <div className={styles.composer}>
-      <Input.TextArea
-        className={styles.textarea}
-        rows={3}
-        placeholder="描述要生成的源图，Enter 发送，Shift+Enter 换行"
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault()
-            if (!loading) handleSend()
-          }
-        }}
-      />
-      <div className={styles.toolbar}>
+    <AiImageComposer
+      loading={loading}
+      placeholder={placeholder}
+      onSend={handleSend}
+      confirmAction={confirmAction}
+      toolbarExtra={
         <Select
-          className={styles.select}
+          size="small"
+          className={styles.countSelect}
           value={count}
           options={COUNT_OPTIONS}
           onChange={setCount}
           disabled={loading}
+          popupMatchSelectWidth={false}
         />
-        <Select
-          className={styles.select}
-          value={aspectRatio}
-          options={RATIO_OPTIONS}
-          onChange={setAspectRatio}
-          disabled={loading}
-        />
-        <div className={styles.toolbarActions}>
-          {confirmAction}
-          <Button type="primary" loading={loading} onClick={handleSend}>
-            发送生成
-          </Button>
-        </div>
-      </div>
-    </div>
+      }
+    />
   )
 }

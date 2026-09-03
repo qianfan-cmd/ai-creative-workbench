@@ -101,6 +101,20 @@
   background: var(--checker-light, #e5e5e5);
 }
 
+.imageExpired {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  line-height: 1.4;
+  background: var(--color-bg-subtle);
+}
+
 .checkerboard {
   width: 100%;
   height: 100%;

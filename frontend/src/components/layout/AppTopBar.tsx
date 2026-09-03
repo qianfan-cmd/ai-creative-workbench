@@ -23,7 +23,11 @@ export default function AppTopBar({ items, sidebarCollapsed, onToggleSidebar }: 
 
   const menuItems: MenuProps['items'] = [
     { key: 'profile', label: '个人资料', disabled: true },
-    { key: 'settings', label: '设置', disabled: true },
+    {
+      key: 'settings',
+      label: '设置',
+      onClick: () => navigate('/settings'),
+    },
     { type: 'divider' },
     {
       key: 'logout',

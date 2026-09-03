@@ -1,18 +1,28 @@
 import request from "@/api/request"
 import type { ApiResponse } from "@/types/api"
+import { readSseTextStream } from '@/api/sseTextStream'
 import { getToken } from "@/utils/token"
 
 /** 与后端 CampaignDraftVO 对齐 */
 export interface CampaignDraftVO {
     id: number
     title: string
-    activity: Record<string, string>
+    activity: Record<string, unknown>
     copyTitle?: string | null
     copyBody?: string | null
     status: string
     coverAssetId?: number | null
     coverUrl?: string | null
     imageAssetIds?: number[]
+    updatedAt?: string
+}
+
+export interface CampaignDraftListItemVO {
+    id: number
+    title: string
+    status: string
+    pinned?: boolean
+    coverUrl?: string | null
     updatedAt?: string
 }
 
@@ -96,6 +106,7 @@ export interface PromptTemplateVO {
     id: number
     name: string
     scene: string
+    content?: string
 }
 export interface GenerateCopyOptions {
     mode: 'draft' | 'refine'
@@ -109,6 +120,31 @@ export interface GenerateCopyOptions {
 export async function createCampaignDraft(form: CampaignActivityForm) {
     const res = await request.post<ApiResponse<CampaignDraftVO>>('/ops/campaign/draft', form);
     return res.data.data;
+}
+
+export async function listCampaignDraftsApi() {
+    const res = await request.get<ApiResponse<CampaignDraftListItemVO[]>>('/ops/campaign/drafts')
+    return res.data.data
+}
+
+export async function deleteCampaignDraftApi(id: number) {
+    await request.delete<ApiResponse<null>>(`/ops/campaign/${id}`)
+}
+
+export async function patchCampaignDraftApi(
+    id: number,
+    payload: { title?: string; pinned?: boolean },
+) {
+    const res = await request.patch<ApiResponse<CampaignDraftVO>>(`/ops/campaign/${id}`, payload)
+    return res.data.data
+}
+
+export async function saveCampaignDraftMetaApi(
+    id: number,
+    meta: { postSchemes?: MattingSourceScheme[]; selectedAssetIds?: number[] },
+) {
+    const res = await request.put<ApiResponse<CampaignDraftVO>>(`/ops/campaign/${id}/meta`, meta)
+    return res.data.data
 }
 
 export async function getCampaignDraftApi(id: number) {
@@ -138,6 +174,12 @@ export async function saveCampaignCopyApi(
 export async function getStyleTemplateApi() {
     const res = await request.get<ApiResponse<PromptTemplateVO[]>>('/prompts');
     return res.data.data.filter((t) => t.scene.startsWith('copy_style_'));
+}
+
+/** 视觉风格预设 — campaign_visual_* */
+export async function getVisualStyleOptionsApi() {
+    const res = await request.get<ApiResponse<PromptTemplateVO[]>>('/prompts');
+    return res.data.data.filter((t) => t.scene.startsWith('campaign_visual_'));
 }
 
 /**
@@ -172,49 +214,10 @@ export async function generateCopyStreamApi(
     const reader = res.body?.getReader();
     if (!reader) throw new Error('浏览器不支持流式响应');
 
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let currentEvent = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        /** decode(buffer, options) buffer 是已解码的字符串，options 是解码选项 */
-        buffer += decoder.decode(value, { stream: true});
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-            if (line.startsWith('event:')) {
-                currentEvent = line.slice(6).trim();
-                continue;
-            }
-
-            if (line.startsWith('data:')) {
-                const data = line.slice(5).trim();
-
-                if (currentEvent === 'done' || data === '[DONE]') {
-                    options.onDone();
-                } else if (currentEvent === 'error') {
-                    throw new Error(data);
-                } else if (currentEvent === 'message') {
-                    let chunk = data;
-                    try {
-                        chunk = JSON.parse(data) as string
-                    } catch (err) {
-                        console.error('解析 SSE 消息失败:', err);
-                    }
-                    options.onChunk(chunk)
-                }
-                continue;
-            }
-
-            if (line === '') currentEvent = '';
-        }
-    }
-
-    options.onDone()
+    await readSseTextStream(reader, {
+        onChunk: options.onChunk,
+        onDone: options.onDone,
+    })
 }
 
 /**
@@ -236,26 +239,81 @@ export function parseCampaignCopyFromLlm(raw: string): {
 
   try {
     const obj = JSON.parse(jsonText) as { title?: string; body?: string }
-    if (obj.title?.trim() && obj.body?.trim()) {
-      return { copyTitle: obj.title.trim(), copyBody: obj.body.trim() }
+    const title = obj.title?.trim() ?? ''
+    const body = obj.body?.trim() ?? ''
+    if (title && body) {
+      return { copyTitle: title, copyBody: body }
+    }
+    if (title && !body) {
+      return { copyTitle: title, copyBody: '' }
     }
   } catch {
     // 继续尝试正则提取（模型偶发未闭合 JSON）
   }
 
+  const unescape = (s: string) =>
+    s.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+
   const titleMatch = jsonText.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/)
   const bodyMatch = jsonText.match(/"body"\s*:\s*"((?:\\.|[^"\\])*)"/s)
   if (titleMatch && bodyMatch) {
-    const unescape = (s: string) =>
-      s.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
     const copyTitle = unescape(titleMatch[1]).trim()
     const copyBody = unescape(bodyMatch[1]).trim()
     if (copyTitle && copyBody) {
       return { copyTitle, copyBody }
     }
+    if (copyTitle && !copyBody) {
+      return { copyTitle, copyBody: '' }
+    }
+  }
+
+  if (titleMatch && !bodyMatch) {
+    const copyTitle = unescape(titleMatch[1]).trim()
+    if (copyTitle) {
+      return { copyTitle, copyBody: '' }
+    }
   }
 
   return null
+}
+
+/** 将 LLM 原始输出转为可保存的标题+正文 */
+export function buildCampaignCopyPayload(
+  raw: string,
+  fallbackTitle: string,
+): { copyTitle: string; copyBody: string } {
+  const trimmed = raw.trim()
+  if (!trimmed) {
+    return { copyTitle: fallbackTitle.trim() || '未命名活动', copyBody: '' }
+  }
+
+  const parsed = parseCampaignCopyFromLlm(trimmed)
+  if (parsed?.copyTitle && parsed.copyBody.trim()) {
+    return parsed
+  }
+
+  const stripped = trimmed
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  if (parsed?.copyTitle) {
+    const bodyMatch = stripped.match(/"body"\s*:\s*"((?:\\.|[^"\\])*)"/s)
+    const unescape = (s: string) =>
+      s.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    const bodyFromRegex = bodyMatch ? unescape(bodyMatch[1]).trim() : ''
+    const copyBody = bodyFromRegex || (stripped.startsWith('{') ? '' : stripped) || trimmed
+    return {
+      copyTitle: parsed.copyTitle,
+      copyBody,
+    }
+  }
+
+  return {
+    copyTitle: fallbackTitle.trim() || '未命名活动',
+    copyBody: stripped || trimmed,
+  }
 }
 
 export interface MattingElementsVO {
@@ -451,7 +509,13 @@ export async function patchMattingSourceSchemesApi(
 
 export async function confirmMattingSourceApi(
   id: number,
-  body: { schemeIds?: string[]; sourceAssetIds?: number[]; schemeId?: string; sourceAssetId?: number },
+  body: {
+    workflowSourceIds?: number[]
+    schemeIds?: string[]
+    sourceAssetIds?: number[]
+    schemeId?: string
+    sourceAssetId?: number
+  },
 ) {
   const res = await request.post<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}/source/confirm`, body)
   return res.data.data

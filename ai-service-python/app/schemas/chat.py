@@ -8,8 +8,8 @@
 本文件不处理业务逻辑，只描述「接口长什么样」。
 """
 
-# pydantic：FastAPI 内置依赖，用 class 定义数据结构并做校验
-# Field：给字段加约束（最小长度、描述等），类似 Java @NotBlank @Size
+from typing import Any, Union
+
 from pydantic import BaseModel, Field
 
 
@@ -39,10 +39,10 @@ class ChatResponse(BaseModel):
 
 
 class ChatMessageItem(BaseModel):
-    """DeepSeek 多轮对话中的一条消息。"""
+    """DeepSeek 多轮对话中的一条消息（content 支持纯文本或多模态数组）。"""
 
     role: str = Field(..., description="user | assistant | system")
-    content: str = Field(..., min_length=1, description="消息正文")
+    content: Union[str, list[dict[str, Any]]] = Field(..., description="消息正文或多模态 parts")
 
 
 class ChatStreamRequest(BaseModel):

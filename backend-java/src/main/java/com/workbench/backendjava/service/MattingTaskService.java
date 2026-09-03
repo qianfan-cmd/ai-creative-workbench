@@ -11,6 +11,7 @@ import com.workbench.backendjava.dto.*;
 import com.workbench.backendjava.entity.AiCallLog;
 import com.workbench.backendjava.entity.GenerationJob;
 import com.workbench.backendjava.entity.OpsMattingTask;
+import com.workbench.backendjava.entity.OpsWorkflowSource;
 import com.workbench.backendjava.entity.PromptTemplate;
 import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.entity.OpsMattingTaskGroup;
@@ -59,6 +60,7 @@ public class MattingTaskService {
     private final PythonAiClient pythonAiClient;
     private final AiCallLogMapper aiCallLogMapper;
     private final ObjectMapper objectMapper;
+    private final WorkflowSourceService workflowSourceService;
 
     public List<MattingTaskVO> listTasks() {
         Long userId = requireUserId();
@@ -660,6 +662,16 @@ public class MattingTaskService {
         return buildExtractStatusVO(config);
     }
 
+    private String resolveElementImagePublicUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return url;
+        }
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        return assetService.buildPublicUrlFromStoredPath(url);
+    }
+
     @Transactional
     public List<AssetVO> saveElements(Long taskId, MattingElementsSaveRequest request) {
         Long userId = requireUserId();
@@ -720,87 +732,30 @@ public class MattingTaskService {
     @Transactional
     public MattingSourceSchemesVO getSourceSchemes(Long taskId) {
         Long userId = requireUserId();
-        OpsMattingTask task = getOwnedTask(taskId, userId);
-        MattingConfig config = parseConfig(task.getConfigJson());
-        if (repairSourceSchemeUrls(config, userId)) {
-            task.setConfigJson(writeJson(config));
-            task.setUpdatedAt(LocalDateTime.now());
-            mattingTaskMapper.updateById(task);
-        }
-        return buildSourceSchemesVO(config, userId);
+        getOwnedTask(taskId, userId);
+        return workflowSourceService.listAsMattingSchemes(
+                WorkflowSourceService.CONTEXT_MATTING, taskId, null, userId);
     }
 
     @Transactional
     public MattingSourceSchemesVO generateSourceSchemes(Long taskId, MattingSourceGenerateRequest request) {
         Long userId = requireUserId();
-        OpsMattingTask task = getOwnedTask(taskId, userId);
-        String prompt = request.getPrompt().trim();
-        int count = request.getCount() != null ? request.getCount() : 4;
-        if (count < 1 || count > 6) {
-            throw new BusinessException(400, "生成张数须在 1–6 之间");
-        }
-        String aspectRatio = request.getAspectRatio() != null && !request.getAspectRatio().isBlank()
-                ? request.getAspectRatio().trim() : "9:16";
-        List<String> refUrls = request.getReferenceUrls() != null ? request.getReferenceUrls() : List.of();
-        String sourceUrl = refUrls.isEmpty() ? null : refUrls.get(0);
-
-        GenerationJobVO job = generationJobService.runJob(
-                userId, "image_gen", taskId, null, prompt, sourceUrl, count, aspectRatio);
-
-        MattingConfig config = parseConfig(task.getConfigJson());
-        if (config.getSourceSchemes() == null) {
-            config.setSourceSchemes(new ArrayList<>());
-        }
-        List<ImageCandidateVO> candidates = job.getCandidates();
-        if (candidates != null) {
-            for (ImageCandidateVO c : candidates) {
-                if (c.getUrl() == null || c.getUrl().isBlank()) continue;
-                SourceScheme scheme = new SourceScheme();
-                scheme.setId("s_" + UUID.randomUUID().toString().substring(0, 8));
-                scheme.setImageUrl(c.getUrl());
-                scheme.setPrompt(prompt);
-                scheme.setAspectRatio(aspectRatio);
-                scheme.setReferenceUrls(new ArrayList<>(refUrls));
-                scheme.setSelected(false);
-                scheme.setGenerationJobId(job.getId());
-                config.getSourceSchemes().add(scheme);
-            }
-        }
-        task.setConfigJson(writeJson(config));
-        task.setUpdatedAt(LocalDateTime.now());
-        mattingTaskMapper.updateById(task);
-        return buildSourceSchemesVO(config, userId);
+        getOwnedTask(taskId, userId);
+        return workflowSourceService.generateAiMatting(taskId, request, userId);
     }
 
     @Transactional
     public MattingSourceSchemesVO patchSourceSchemes(Long taskId, MattingSourceSchemesPatchRequest request) {
-        OpsMattingTask task = getOwnedTask(taskId, requireUserId());
-        MattingConfig config = parseConfig(task.getConfigJson());
-        if (config.getSourceSchemes() == null) {
-            config.setSourceSchemes(new ArrayList<>());
-        }
-
-        if (request.getDeleteIds() != null && !request.getDeleteIds().isEmpty()) {
-            for (String deleteId : request.getDeleteIds()) {
-                removeSourceData(config, deleteId);
-            }
-            config.getSourceSchemes().removeIf(s -> request.getDeleteIds().contains(s.getId()));
-        }
-
-        if (request.getSchemeId() != null) {
-            String schemeId = request.getSchemeId();
-            boolean selected = Boolean.TRUE.equals(request.getSelected());
-            for (SourceScheme s : config.getSourceSchemes()) {
-                if (schemeId.equals(s.getId())) {
-                    s.setSelected(selected);
-                }
-            }
-        }
-
-        task.setConfigJson(writeJson(config));
-        task.setUpdatedAt(LocalDateTime.now());
-        mattingTaskMapper.updateById(task);
-        return buildSourceSchemesVO(config, requireUserId());
+        Long userId = requireUserId();
+        getOwnedTask(taskId, userId);
+        return workflowSourceService.patchBySchemeId(
+                WorkflowSourceService.CONTEXT_MATTING,
+                taskId,
+                null,
+                request.getSchemeId(),
+                request.getSelected(),
+                request.getDeleteIds(),
+                userId);
     }
 
     @Transactional
@@ -809,65 +764,32 @@ public class MattingTaskService {
         OpsMattingTask task = getOwnedTask(taskId, userId);
         MattingConfig config = parseConfig(task.getConfigJson());
 
-        List<String> schemeIds = new ArrayList<>();
-        if (request.getSchemeIds() != null) {
-            schemeIds.addAll(request.getSchemeIds());
-        }
-        if (request.getSchemeId() != null && !request.getSchemeId().isBlank()) {
-            schemeIds.add(request.getSchemeId());
-        }
-
-        List<Long> sourceAssetIds = new ArrayList<>();
-        if (request.getSourceAssetIds() != null) {
-            sourceAssetIds.addAll(request.getSourceAssetIds());
-        }
-        if (request.getSourceAssetId() != null) {
-            sourceAssetIds.add(request.getSourceAssetId());
-        }
-
-        if (schemeIds.isEmpty() && sourceAssetIds.isEmpty()) {
+        List<OpsWorkflowSource> selectedRows = resolveWorkflowSourcesForConfirm(taskId, request, userId);
+        if (selectedRows.isEmpty()) {
             throw new BusinessException(400, "请至少选择一张源图");
         }
 
         List<ConfirmedSource> newSources = new ArrayList<>();
         int sort = 0;
-        Set<String> schemeIdSet = new LinkedHashSet<>(schemeIds);
-
-        for (String schemeId : schemeIdSet) {
-            SourceScheme scheme = config.getSourceSchemes().stream()
-                    .filter(s -> schemeId.equals(s.getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException(404, "方案不存在: " + schemeId));
-            String displayUrl = resolveSchemeDisplayUrl(scheme, userId);
-            if (displayUrl == null || displayUrl.isBlank()) {
-                throw new BusinessException(400, "方案图片无效");
-            }
+        for (OpsWorkflowSource row : selectedRows) {
             ConfirmedSource cs = new ConfirmedSource();
-            cs.setId(schemeId);
-            cs.setSchemeId(schemeId);
-            cs.setSourceImageUrl(displayUrl);
-            cs.setLabel("方案 " + (sort + 1));
+            String wsKey = "ws_" + row.getId();
+            cs.setId(wsKey);
+            cs.setSchemeId(wsKey);
             cs.setSortOrder(sort++);
             cs.setUseOriginal(false);
-            newSources.add(cs);
-        }
-
-        Set<Long> assetIdSet = new LinkedHashSet<>(sourceAssetIds);
-        for (Long assetId : assetIdSet) {
-            assetService.getPublicUrlForOwnedAsset(assetId, userId);
-            ConfirmedSource cs = new ConfirmedSource();
-            cs.setId("a_" + assetId);
-            cs.setSourceAssetId(assetId);
-            cs.setLabel("素材 " + (sort + 1));
-            cs.setSortOrder(sort++);
-            cs.setUseOriginal(false);
-            newSources.add(cs);
-        }
-
-        if (config.getSourceSchemes() != null) {
-            for (SourceScheme s : config.getSourceSchemes()) {
-                s.setSelected(schemeIdSet.contains(s.getId()));
+            if (WorkflowSourceService.TYPE_LIBRARY.equals(row.getSourceType()) && row.getAssetId() != null) {
+                assetService.getPublicUrlForOwnedAsset(row.getAssetId(), userId);
+                cs.setSourceAssetId(row.getAssetId());
+                cs.setLabel("素材 " + sort);
+            } else {
+                if (row.getImageUrl() == null || row.getImageUrl().isBlank()) {
+                    throw new BusinessException(400, "源图 URL 无效");
+                }
+                cs.setSourceImageUrl(row.getImageUrl());
+                cs.setLabel("源图 " + sort);
             }
+            newSources.add(cs);
         }
 
         boolean sourceChanged = !sourcesEqual(config.getConfirmedSources(), newSources);
@@ -888,6 +810,55 @@ public class MattingTaskService {
         task.setUpdatedAt(LocalDateTime.now());
         mattingTaskMapper.updateById(task);
         return toVO(task);
+    }
+
+    private List<OpsWorkflowSource> resolveWorkflowSourcesForConfirm(
+            Long taskId, MattingSourceConfirmRequest request, Long userId) {
+        if (request.getWorkflowSourceIds() != null && !request.getWorkflowSourceIds().isEmpty()) {
+            return workflowSourceService.listByIdsForTask(taskId, request.getWorkflowSourceIds(), userId);
+        }
+        List<OpsWorkflowSource> fromDb = workflowSourceService.listSelected(
+                WorkflowSourceService.CONTEXT_MATTING, taskId, null, userId);
+        if (!fromDb.isEmpty()) {
+            return fromDb;
+        }
+        return resolveLegacyConfirmSources(taskId, request, userId);
+    }
+
+    /** 兼容旧前端：schemeIds + sourceAssetIds */
+    private List<OpsWorkflowSource> resolveLegacyConfirmSources(
+            Long taskId, MattingSourceConfirmRequest request, Long userId) {
+        MattingSourceSchemesVO schemes = workflowSourceService.listAsMattingSchemes(
+                WorkflowSourceService.CONTEXT_MATTING, taskId, null, userId);
+        List<String> schemeIds = new ArrayList<>();
+        if (request.getSchemeIds() != null) schemeIds.addAll(request.getSchemeIds());
+        if (request.getSchemeId() != null && !request.getSchemeId().isBlank()) schemeIds.add(request.getSchemeId());
+
+        List<OpsWorkflowSource> result = new ArrayList<>();
+        if (!schemeIds.isEmpty()) {
+            Set<String> idSet = new LinkedHashSet<>(schemeIds);
+            for (MattingSourceSchemesVO.SchemeItem item : schemes.getSchemes()) {
+                if (idSet.contains(item.getId())) {
+                    OpsWorkflowSource row = new OpsWorkflowSource();
+                    row.setId(Long.parseLong(item.getId()));
+                    row.setSourceType(WorkflowSourceService.TYPE_AI_GEN);
+                    row.setImageUrl(item.getImageUrl());
+                    row.setAssetId(item.getAssetId());
+                    result.add(row);
+                }
+            }
+        }
+        List<Long> assetIds = new ArrayList<>();
+        if (request.getSourceAssetIds() != null) assetIds.addAll(request.getSourceAssetIds());
+        if (request.getSourceAssetId() != null) assetIds.add(request.getSourceAssetId());
+        for (Long assetId : new LinkedHashSet<>(assetIds)) {
+            OpsWorkflowSource row = new OpsWorkflowSource();
+            row.setSourceType(WorkflowSourceService.TYPE_LIBRARY);
+            row.setAssetId(assetId);
+            row.setImageUrl(assetService.getPublicUrlForOwnedAsset(assetId, userId));
+            result.add(row);
+        }
+        return result;
     }
 
     private boolean sourcesEqual(List<ConfirmedSource> a, List<ConfirmedSource> b) {
@@ -1176,7 +1147,7 @@ public class MattingTaskService {
             ev.setImages(imgs.stream().map(img -> {
                 MattingExtractStatusVO.ImageSlotVO slot = new MattingExtractStatusVO.ImageSlotVO();
                 slot.setSlotIndex(img.getSlotIndex());
-                slot.setUrl(img.getUrl());
+                slot.setUrl(resolveElementImagePublicUrl(img.getUrl()));
                 slot.setSelected(img.getSelected());
                 slot.setStatus(img.getStatus());
                 return slot;

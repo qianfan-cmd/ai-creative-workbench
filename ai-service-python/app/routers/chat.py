@@ -76,8 +76,8 @@ def chat_stream(req: ChatStreamRequest):
 
     def event_generator():
         try:
-            # Pydantic 模型转 dict，供 DeepSeek API 使用
-            messages = [item.model_dump() for item in req.messages]
+            # Pydantic 模型转 dict，保留多模态 content 结构
+            messages = [item.model_dump(mode="json") for item in req.messages]
             for chunk in stream_chat_with_messages(messages):
                 payload = json.dumps(chunk, ensure_ascii=False)
                 yield f"event: message\ndata: {payload}\n\n"

@@ -290,7 +290,7 @@ public class PythonAiClient {
      * 调用 Python POST /ai/chat/stream，把 SSE 事件转发到 emitter。
      * messages 为 DeepSeek 多轮格式 [{role, content}, ...]。
      */
-    public void chatStream(List<Map<String, String>> messages, SseEmitter emitter) {
+    public void chatStream(List<Map<String, Object>> messages, SseEmitter emitter) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/chat/stream";
 
         CompletableFuture.runAsync(() -> {
@@ -379,7 +379,8 @@ public class PythonAiClient {
                         sendStreamError(emitter, data);
                         return;
                     } else {
-                        emitter.send(SseEmitter.event().name(currentEvent).data(data));
+                        String eventName = currentEvent.isBlank() ? "message" : currentEvent;
+                        emitter.send(SseEmitter.event().name(eventName).data(data));
                     }
                 } else if (line.isEmpty()) {
                     currentEvent = "";

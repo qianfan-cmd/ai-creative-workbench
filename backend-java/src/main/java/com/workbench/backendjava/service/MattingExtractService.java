@@ -137,7 +137,7 @@ public class MattingExtractService {
 
                         for (int slot = 0; slot < candidateCount; slot++) {
                             ElementImage img = findImage(config, element.getId(), slot);
-                            extractSingleSlot(userId, config, element, slot, groupImageUrl, singlePrompt, img);
+                            extractSingleSlot(taskId, userId, config, element, slot, groupImageUrl, singlePrompt, img);
                             saveConfig(taskId, userId, config);
                         }
                     }
@@ -223,7 +223,7 @@ public class MattingExtractService {
                     "nonTargetNames", String.join("、", nonTargetInGroup)
             ));
 
-            extractSingleSlot(userId, config, element, slotIndex, groupImageUrl, singlePrompt, img);
+            extractSingleSlot(taskId, userId, config, element, slotIndex, groupImageUrl, singlePrompt, img);
             finishRegenerate(taskId, userId, config);
         } catch (Exception e) {
             log.error("单元素再生成失败 taskId={} elementId={}", taskId, elementId, e);
@@ -270,7 +270,7 @@ public class MattingExtractService {
         return groupResp.getCandidates().get(0).getUrl();
     }
 
-    private void extractSingleSlot(Long userId, MattingConfig config, ElementItem element, int slot,
+    private void extractSingleSlot(Long taskId, Long userId, MattingConfig config, ElementItem element, int slot,
                                    String groupImageUrl, String singlePrompt, ElementImage img) {
         if (img == null) {
             return;
@@ -282,7 +282,12 @@ public class MattingExtractService {
             writeLog(userId, "matting_single", singleResp.getProvider(), singlePrompt,
                     "success", (int) (System.currentTimeMillis() - t0), element.getElementName());
             PythonImageCandidate cand = singleResp.getCandidates().get(0);
-            img.setUrl(cand.getUrl());
+            String safeElementId = element.getId().replaceAll("[^a-zA-Z0-9_-]", "_");
+            String persisted = assetService.persistProviderImage(
+                    cand.getUrl(),
+                    "matting/" + taskId,
+                    "candidate-" + safeElementId + "-slot" + slot);
+            img.setUrl(persisted);
             img.setStatus("done");
         } catch (Exception e) {
             log.error("单体提取失败 element={} slot={}", element.getElementName(), slot, e);

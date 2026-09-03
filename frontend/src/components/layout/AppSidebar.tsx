@@ -30,7 +30,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { key: 'knowledge', label: '知识库 Knowledge', icon: <BookOutlined />, to: '/knowledge' },
   { key: 'matting', label: '抠图 Matting', icon: <ScissorOutlined />, to: '/ops/matting' },
   { key: 'campaign', label: '活动帖 Campaign', icon: <RocketOutlined />, to: '/ops/campaign' },
-  { key: 'settings', label: '设置 Settings', icon: <SettingOutlined /> },
+  { key: 'settings', label: '设置 Settings', icon: <SettingOutlined />, to: '/settings' },
 ]
 
 export default function AppSidebar({ collapsed }: AppSidebarProps) {

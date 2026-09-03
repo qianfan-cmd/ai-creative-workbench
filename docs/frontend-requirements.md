@@ -808,7 +808,7 @@ POST /api/rag/query            { question } → { answer, references[] }
 | PreviewCandidateGallery | CandidateGallery | checkerboard、选中勾（Campaign 等复用） |
 | PreviewOpsDialog | OpsDialog | 新建/重命名任务 |
 | PreviewHistoryDrawer | HistoryDrawer | 右侧历史生成列表 |
-| PreviewImageSourcePanel | ImageSourcePanel | 上传 / 素材库·已有 / 素材库·AI 入库 |
+| PreviewImageSourcePanel | OpsImageSourcePicker | 上传 / 素材库·已有 / 素材库·AI |
 | PreviewTagAssetDialog | TagAssetDialog | AI 候选打标入库 |
 | PreviewMattingStepFrame | MattingStepFrame | 五步共用外壳 |
 
@@ -850,12 +850,11 @@ GET  /api/ops/matting/{id}/history     历史生成
 #### 布局线框
 
 ```
-┌─────────────────────┬────────────────────────────────────────┐
-│ 活动信息（表单）~360px│  Tab: [配图] [文案] [预览]              │
-│ 主题/时间/受众/福利  │  配图: ImageSourcePanel + 生候选 + Gallery │
-│ 风格/画幅/禁用词     │  文案: 生成初稿 + 风格模板 + prose 块     │
-│ [保存草稿]          │  预览: CampaignPostCard + 下载/草稿包     │
-└─────────────────────┴────────────────────────────────────────┘
+┌──────────────┬──────────────────────────────────────────────────┐
+│ CampaignDraft│  Tab: [配图] [文案] [预览]                          │
+│ Sidebar      │  左栏表单 ~360px + [保存草稿]                       │
+│ 多任务草稿    │  配图: OpsImageSourcePicker（最多 9 张，选中即预览）  │
+└──────────────┴──────────────────────────────────────────────────┘
 ```
 
 #### 左栏表单字段
@@ -872,21 +871,27 @@ GET  /api/ops/matting/{id}/history     历史生成
 
 #### 配图 Tab 图片来源
 
-与 Matting 步骤 ① 共用 `PreviewImageSourcePanel`（contextLabel=`参考图`）：
+与 Matting 步骤 ① 共用 **`OpsImageSourcePicker`**（contextLabel=`参考图`，`maxSelection=9`）：
 
-1. **直接上传** 或 **素材库**（已有素材 / AI 生图打标入库）
-2. 参考图选定后 → 「生成 4 张候选」→ CandidateGallery
-3. 选中配图进入草稿包；可另存 Assets · `generated`
-
-独立三态对比：`PreviewCampaignImageSources`（三列并排）
+1. **直接上传** / **素材库**（已有素材 / AI 生图）
+2. 选中即更新预览 Tab 九宫格（无需「生成 4 张候选」「选为封面并入库」）
+3. AI 方案 URL 存 `activityJson.postSchemes`；预览页「保存活动帖」时导入为 asset
 
 #### 右栏 Tab
 
 | Tab | 内容 |
 |-----|------|
-| 配图 | ImageSourcePanel + 「生成 4 张候选」+ CandidateGallery + 选用说明 |
+| 配图 | OpsImageSourcePicker + AiImageComposer（referenceUrls） |
 | 文案 | 「生成初稿」+ 风格模板 Select + 「优化」；**prose 文档块**（非 Chat 气泡） |
-| 预览 | CampaignPostCard（16:9 封面 + 标题 + 正文 + #活动）+ 下载 zip / 保存草稿包 |
+| 预览 | 牛客 Web/Mobile 双预览 + **1+8 九宫格** + **保存活动帖** + **发布（占位）** + 复制 + zip |
+
+#### 草稿分工
+
+| 按钮 | 职责 |
+|------|------|
+| 左栏 **保存草稿** | 表单 + activityJson（postSchemes、selectedAssetIds） |
+| 预览 **保存活动帖** | 表单 + 文案 + 配图 assetIds（含 scheme 导入） |
+| 预览 **发布** | disabled + Tooltip「即将支持牛客发帖 API」 |
 
 #### 草稿包结构（MVP）
 
@@ -911,12 +916,12 @@ GET  /api/ops/campaign/{id}/export      导出 zip
 
 #### 验收标准（Week 12+）
 
-- [ ] 左表单 + 右三 Tab 与 PreviewCampaignWorkspace 一致
-- [ ] 配图 Tab 含 ImageSourcePanel + 生图候选；三态预览块可对照
-- [ ] 预览 Tab 牛客帖卡片与 PreviewCampaignPostCard 一致
-- [ ] 文案区为 prose 块，**不用** PreviewMessageRow 气泡
-- [ ] 模块 B 独立路由 `/ops/campaign`
-- [ ] MVP 底部提示「复制到牛客手动发布」
+- [x] 左表单 + 右三 Tab + **CampaignDraftSidebar** 多任务草稿
+- [x] 配图 Tab：`OpsImageSourcePicker` 三态 + 最多 9 张选中即预览
+- [x] 预览 Tab：牛客 Web/Mobile + 九宫格 + **保存活动帖** + **发布占位**
+- [x] 文案区为 prose 块，**不用** PreviewMessageRow 气泡
+- [x] 模块 B 独立路由 `/ops/campaign`
+- [x] AI 生图 / Chat 共用 `AiImageComposer`（拖拽/粘贴/素材库）
 
 ---
 
@@ -949,10 +954,10 @@ GET  /api/ops/campaign/{id}/export      导出 zip
 | PreviewMattingStepSave | MattingSavePanel | `pages/MattingPage.tsx`（步骤 ⑤） |
 | PreviewMattingStageNav | StepNav | `components/ops/StepNav.tsx` |
 | PreviewMattingStepFrame | MattingStepFrame | `components/ops/MattingStepFrame.tsx` |
-| PreviewImageSourcePanel | ImageSourcePanel | `components/ops/ImageSourcePanel.tsx` |
+| PreviewImageSourcePanel | OpsImageSourcePicker | `components/ops/OpsImageSourcePicker.tsx` |
 | PreviewTagAssetDialog | TagAssetDialog | `components/ops/TagAssetDialog.tsx` |
 | PreviewCampaignWorkspace | CampaignPage | `pages/CampaignPage.tsx` |
-| PreviewCampaignImageSources | — | 配图来源三态参考（实现时并入 ImageSourcePanel） |
+| PreviewCampaignImageSources | — | 配图来源三态参考（实现于 OpsImageSourcePicker） |
 | PreviewCampaignPostCard | CampaignPostCard | `components/ops/CampaignPostCard.tsx` |
 | tokens.css | 全局 tokens | `src/styles/tokens.css` |
 | antdTheme.ts | 主题 | `src/theme/antdTheme.ts` |
@@ -1054,6 +1059,10 @@ Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 - [x] References 列表 + 底部 Composer
 - [x] RAG 联调通过，引用可追溯
 - [x] 文档列表 API 持久化（Chroma）；历史会话 MySQL 持久化
+- [x] 文档库列表：分页 / 搜索 / 删除 / 查看进编辑
+- [x] 双栏 Markdown 编辑 + 保存写盘并重索引
+- [x] 知识页侧栏文档可进编辑（有原文件时）
+- [x] 删除后列表不再复活（Chroma + MySQL 一致）
 
 ### 7.8 MattingPage（Week 12+）
 
@@ -1064,10 +1073,19 @@ Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 
 ### 7.9 CampaignPage（Week 12+）
 
-- [ ] 左表单 + 右三 Tab 与 PreviewCampaignWorkspace 一致
-- [ ] 配图 Tab：ImageSourcePanel + 生图候选；三态预览可对照
-- [ ] 文案 prose 块（非 Chat 气泡）
-- [ ] 预览 Tab PostCard + 导出草稿包
+- [x] 左表单 + 右三 Tab + CampaignDraftSidebar 多任务
+- [x] 配图 Tab：OpsImageSourcePicker + AiImageComposer（最多 9 张）
+- [x] 文案 prose 块 + 「管理风格模板」Drawer
+- [x] 预览 Tab：牛客 Web / Mobile 双预览 + 九宫格 + 保存活动帖 + 发布占位 + zip
+- [x] 视觉风格 Select 从 `campaign_visual_*` Prompt 加载（无数据 fallback）
+- [x] 草稿 status Badge（draft / ready）
+
+### 7.10 SettingsPage（Week 12+）
+
+- [x] 路由 `/settings`，Sidebar / TopBar 入口可用
+- [x] Tab：账户（只读 + 退出）| 外观（Light/Dark/系统 + localStorage）| Prompt 模板 CRUD
+- [x] 系统内置模板只读；用户模板可增删改
+- [x] 设计 Agent 需求见 [`settings-design-brief.md`](settings-design-brief.md)
 
 ---
 
@@ -1112,7 +1130,7 @@ Step 10 （Phase 2）MattingPage + CampaignPage（图文运营）
 |------|------|------|
 | 素材上传 Upload | `/assets/upload` | 拖拽区、进度条、类型校验 |
 | 标签管理 Tags | `/tags` | CRUD、颜色标记 |
-| 设置 Settings | `/settings` | 账户、主题偏好 |
+| 设置 Settings | `/settings` | 账户、主题偏好、Prompt 模板（已实装，见 settings-design-brief.md） |
 | Canvas 标注 | `/assets/:id` | 图片预览、矩形标注、缩放拖拽 |
 | 虚拟列表 | Chat / Assets | 长列表性能优化 |
 | Dark 主题持久化 | 全局 | localStorage + ThemeToggle |

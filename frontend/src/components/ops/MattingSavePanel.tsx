@@ -1,5 +1,6 @@
 import { CheckOutlined, DownloadOutlined } from '@ant-design/icons'
 import { Select } from 'antd'
+import { useState } from 'react'
 import type { MattingExtractStatusVO } from '@/api/ops'
 import type { TagVO } from '@/api/tags'
 import styles from '@/components/ops/MattingSavePanel.module.css'
@@ -23,6 +24,17 @@ export default function MattingSavePanel({
   availableTags,
   sourceCount,
 }: MattingSavePanelProps) {
+  const [brokenNames, setBrokenNames] = useState<Set<string>>(() => new Set())
+
+  const markBroken = (name: string) => {
+    setBrokenNames((prev) => {
+      if (prev.has(name)) return prev
+      const next = new Set(prev)
+      next.add(name)
+      return next
+    })
+  }
+
   const items =
     status?.elements
       .map((el) => {
@@ -47,7 +59,16 @@ export default function MattingSavePanel({
         {(items ?? []).map((item) => (
           <div key={item.name} className={styles.card}>
             <div className={styles.cardThumb}>
-              <img src={item.url} alt="" className={styles.cardImg} />
+              {brokenNames.has(item.name) ? (
+                <span className={styles.imageExpired}>图片链接已过期，请再生成</span>
+              ) : (
+                <img
+                  src={item.url}
+                  alt=""
+                  className={styles.cardImg}
+                  onError={() => markBroken(item.name)}
+                />
+              )}
             </div>
             <span className={styles.cardName}>{item.name}</span>
             <a href={item.url} download className={styles.cardDl} target="_blank" rel="noreferrer">

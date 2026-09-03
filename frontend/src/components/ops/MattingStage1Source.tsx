@@ -1,169 +1,100 @@
-import { CloudUploadOutlined, SearchOutlined } from '@ant-design/icons'
-
-import { Button, Input, Progress, Select, Spin, message } from 'antd'
-
+import { Button, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
-
-import { listAssetsApi, uploadAssetApi } from '@/api/assets'
+import { listAssetsApi } from '@/api/assets'
 import { listTagsApi, type TagVO } from '@/api/tags'
-import TagOptionLabel from '@/components/assets/TagOptionLabel'
 import useDebouncedValue from '@/hooks/useDebouncedValue'
-
-import type { MattingSourceScheme, MattingTaskVO } from '@/api/ops'
-
+import type { MattingTaskVO } from '@/api/ops'
 import {
-
   confirmMattingSourceApi,
-
   generateMattingSourceApi,
-
-  getMattingSourceSchemesApi,
-
   patchMattingSourceSchemesApi,
-
 } from '@/api/ops'
-
-import SourceGenerateComposer from '@/components/ops/SourceGenerateComposer'
-
-import SourceSchemeGrid from '@/components/ops/SourceSchemeGrid'
+import SourceGenerateComposer, { type SourceGeneratePayload } from '@/components/ops/SourceGenerateComposer'
+import OpsImageSourcePicker from '@/components/ops/OpsImageSourcePicker'
 import ImageLightbox from '@/components/common/ImageLightbox'
-
-import type { AssetVO } from '@/types/api'
-
-import styles from '@/components/ops/MattingStage1Source.module.css'
-
-
-
-type TopMode = 'upload' | 'library'
-
-type LibraryTab = 'existing' | 'ai'
-
-
+import {
+  addWorkflowSourcesFromLibraryApi,
+  deleteWorkflowSourceApi,
+  listWorkflowSourcesApi,
+  patchWorkflowSourceApi,
+  uploadSourcesToAssetLike,
+  uploadWorkflowSourceApi,
+  workflowSourceToScheme,
+  type WorkflowSourceVO,
+} from '@/api/workflowSource'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
-
 const ACCEPT_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
 
-
+type TopMode = 'upload' | 'library'
+type LibraryTab = 'existing' | 'ai'
 
 interface MattingStage1SourceProps {
-
   taskId: number
-
   sourceAssetId?: number | null
-
   sourceAssetUrl?: string | null
-
   configJson?: string | null
-
   onConfirmed: (task: MattingTaskVO) => void
-
   onBeforeConfirm?: () => Promise<boolean>
-
 }
-
-
 
 function validateFile(file: File): string | null {
-
   if (!ACCEPT_TYPES.includes(file.type)) return '仅支持 PNG / JPG / WebP'
-
   if (file.size > MAX_FILE_BYTES) return '文件不能超过 10MB'
-
   return null
-
 }
-
-
-
-function parseSchemesFromConfig(configJson?: string | null): MattingSourceScheme[] {
-
-  if (!configJson) return []
-
-  try {
-
-    const cfg = JSON.parse(configJson) as { sourceSchemes?: MattingSourceScheme[] }
-
-    return cfg.sourceSchemes ?? []
-
-  } catch {
-
-    return []
-
-  }
-
-}
-
-
 
 export default function MattingStage1Source({
-
   taskId,
-
-  configJson,
-
   onConfirmed,
-
   onBeforeConfirm,
-
 }: MattingStage1SourceProps) {
-
   const [topMode, setTopMode] = useState<TopMode>('upload')
-
   const [libraryTab, setLibraryTab] = useState<LibraryTab>('existing')
-
-  const [assets, setAssets] = useState<AssetVO[]>([])
-
-  const [loadingAssets, setLoadingAssets] = useState(false)
-
+  const [sources, setSources] = useState<WorkflowSourceVO[]>([])
+  const [loadingSources, setLoadingSources] = useState(false)
+  const [libraryAssets, setLibraryAssets] = useState<Awaited<ReturnType<typeof listAssetsApi>>['records']>([])
+  const [loadingLibrary, setLoadingLibrary] = useState(false)
   const [uploading, setUploading] = useState(false)
-
   const [uploadPercent, setUploadPercent] = useState(0)
-
   const [dragActive, setDragActive] = useState(false)
-
-  const [uploadedAssets, setUploadedAssets] = useState<AssetVO[]>([])
-
-  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<number>>(new Set())
-
-  const [schemes, setSchemes] = useState<MattingSourceScheme[]>(() => parseSchemesFromConfig(configJson))
-  const [loadingSchemes, setLoadingSchemes] = useState(false)
   const [aiGenerating, setAiGenerating] = useState(false)
   const [assetTagId, setAssetTagId] = useState<number | undefined>()
   const [assetKeywordInput, setAssetKeywordInput] = useState('')
   const assetKeyword = useDebouncedValue(assetKeywordInput.trim(), 300)
   const [tags, setTags] = useState<TagVO[]>([])
-
   const [confirming, setConfirming] = useState(false)
-
   const [preview, setPreview] = useState<{ url: string; alt: string } | null>(null)
 
-  const fileRef = useRef<HTMLInputElement>(null)
+  const taskIdRef = useRef(taskId)
+  useEffect(() => {
+    taskIdRef.current = taskId
+  }, [taskId])
 
-
-
-  const loadSchemes = useCallback(async () => {
-    setLoadingSchemes(true)
+  const loadSources = useCallback(async () => {
+    const entityId = taskIdRef.current
+    setLoadingSources(true)
     try {
-      const data = await getMattingSourceSchemesApi(taskId)
-      setSchemes(data.schemes ?? [])
-    } catch {
-      setSchemes(parseSchemesFromConfig(configJson))
+      const list = await listWorkflowSourcesApi({ context: 'matting', taskId: entityId })
+      if (taskIdRef.current !== entityId) return
+      setSources(list)
+    } catch (e) {
+      if (taskIdRef.current === entityId) {
+        message.error(e instanceof Error ? e.message : '加载源图失败')
+      }
     } finally {
-      setLoadingSchemes(false)
+      if (taskIdRef.current === entityId) {
+        setLoadingSources(false)
+      }
     }
-  }, [taskId, configJson])
+  }, [taskId])
 
   useEffect(() => {
-    void loadSchemes()
-  }, [loadSchemes, taskId])
+    void loadSources()
+  }, [loadSources])
 
-  useEffect(() => {
-    if (topMode === 'library' && libraryTab === 'ai') void loadSchemes()
-  }, [topMode, libraryTab, loadSchemes])
-
-  const loadAssets = useCallback(async () => {
-    setLoadingAssets(true)
+  const loadLibrary = useCallback(async () => {
+    setLoadingLibrary(true)
     try {
       const page = await listAssetsApi({
         page: 1,
@@ -171,17 +102,17 @@ export default function MattingStage1Source({
         tagId: assetTagId,
         keyword: assetKeyword || undefined,
       })
-      setAssets(page.records ?? [])
+      setLibraryAssets(page.records ?? [])
     } catch (e) {
       message.error(e instanceof Error ? e.message : '加载素材失败')
     } finally {
-      setLoadingAssets(false)
+      setLoadingLibrary(false)
     }
   }, [assetTagId, assetKeyword])
 
   useEffect(() => {
-    if (topMode === 'library' && libraryTab === 'existing') void loadAssets()
-  }, [topMode, libraryTab, loadAssets])
+    if (topMode === 'library' && libraryTab === 'existing') void loadLibrary()
+  }, [topMode, libraryTab, loadLibrary])
 
   useEffect(() => {
     if (topMode === 'library') {
@@ -189,234 +120,147 @@ export default function MattingStage1Source({
     }
   }, [topMode])
 
-
-
-  const toggleAssetSelection = (assetId: number) => {
-
-    setSelectedAssetIds((prev) => {
-
-      const next = new Set(prev)
-
-      if (next.has(assetId)) next.delete(assetId)
-
-      else next.add(assetId)
-
-      return next
-
-    })
-
-  }
-
-
-
-  const handleUpload = async (file: File) => {
-
-    const err = validateFile(file)
-
-    if (err) {
-
-      message.error(err)
-
-      return
-
-    }
-
-    setUploading(true)
-
-    setUploadPercent(0)
-
-    try {
-
-      const uploaded = await uploadAssetApi(file, { onProgress: (p) => setUploadPercent(p) })
-
-      const asset: AssetVO = {
-
-        id: uploaded.id,
-
-        name: uploaded.name,
-
-        url: uploaded.url,
-
-        path: uploaded.path,
-
-        size: uploaded.size,
-
-        type: uploaded.type,
-
-        createdAt: '',
-
-        tags: [],
-
-      }
-
-      setUploadedAssets((prev) => {
-
-        if (prev.some((a) => a.id === asset.id)) return prev
-
-        return [...prev, asset]
-
-      })
-
-      setSelectedAssetIds((prev) => new Set(prev).add(asset.id))
-
-      message.success('上传成功，可继续上传或勾选后确认')
-
-    } catch (e) {
-
-      message.error(e instanceof Error ? e.message : '上传失败')
-
-    } finally {
-
-      setUploading(false)
-
-      setUploadPercent(0)
-
-    }
-
-  }
-
-
-
-  const handleAiGenerate = async (payload: { prompt: string; count: number; aspectRatio: string }) => {
-
-    setAiGenerating(true)
-
-    try {
-
-      const data = await generateMattingSourceApi(taskId, {
-
-        prompt: payload.prompt,
-
-        count: payload.count,
-
-        aspectRatio: payload.aspectRatio === '智能' ? undefined : payload.aspectRatio,
-
-      })
-
-      setSchemes(data.schemes ?? [])
-
-      message.success('生成完成')
-
-    } catch (e) {
-
-      message.error(e instanceof Error ? e.message : '生图失败')
-
-    } finally {
-
-      setAiGenerating(false)
-
-    }
-
-  }
-
-
-
-  const handleToggleScheme = async (schemeId: string, selected: boolean) => {
-
-    try {
-
-      const data = await patchMattingSourceSchemesApi(taskId, { schemeId, selected })
-
-      setSchemes(data.schemes ?? [])
-
-    } catch (e) {
-
-      message.error(e instanceof Error ? e.message : '更新失败')
-
-    }
-
-  }
-
-
-
-  const handleDeleteScheme = async (schemeId: string) => {
-
-    try {
-
-      const data = await patchMattingSourceSchemesApi(taskId, { deleteIds: [schemeId] })
-
-      setSchemes(data.schemes ?? [])
-
-    } catch (e) {
-
-      message.error(e instanceof Error ? e.message : '删除失败')
-
-    }
-
-  }
-
-
-
-  const selectedSchemes = schemes.filter((s) => s.selected)
-
-  const selectedAssetCount = [...selectedAssetIds].filter(
-
-    (id) => uploadedAssets.some((a) => a.id === id) || assets.some((a) => a.id === id),
-
-  ).length
-
-  const totalSelected = selectedSchemes.length + selectedAssetCount
-
-
+  const uploadItems = uploadSourcesToAssetLike(sources)
+  const aiSchemes = sources.filter((s) => s.sourceType === 'ai_gen').map(workflowSourceToScheme)
+  const selectedUploadIds = new Set(
+    sources.filter((s) => s.sourceType === 'upload' && s.selected).map((s) => s.id),
+  )
+  const libraryByAssetId = new Map(
+    sources.filter((s) => s.sourceType === 'library' && s.assetId).map((s) => [s.assetId!, s]),
+  )
+  const selectedLibraryAssetIds = new Set(
+    sources.filter((s) => s.sourceType === 'library' && s.selected && s.assetId).map((s) => s.assetId!),
+  )
+  const totalSelected = sources.filter((s) => s.selected).length
 
   const selectionLabel =
-
     totalSelected === 0
-
       ? '请先选择或生成源图'
+      : `已选中 ${totalSelected} 张${sources.some((s) => s.sourceType === 'ai_gen' && s.selected) ? '（含 AI 方案）' : ''}，将进入整图区域切割`
 
-      : `已选中 ${totalSelected} 张${selectedSchemes.length > 0 ? '（含 AI 方案）' : ''}，将进入整图区域切割`
+  const handleUpload = async (file: File) => {
+    const entityId = taskIdRef.current
+    const err = validateFile(file)
+    if (err) {
+      message.error(err)
+      return
+    }
+    setUploading(true)
+    setUploadPercent(0)
+    try {
+      const row = await uploadWorkflowSourceApi(
+        file,
+        { context: 'matting', taskId: entityId },
+        { onProgress: (p) => setUploadPercent(p) },
+      )
+      if (taskIdRef.current !== entityId) return
+      await patchWorkflowSourceApi(row.id, { selected: true })
+      if (taskIdRef.current !== entityId) return
+      await loadSources()
+      message.success('上传成功（工作流暂存，未入素材库）')
+    } catch (e) {
+      if (taskIdRef.current === entityId) {
+        message.error(e instanceof Error ? e.message : '上传失败')
+      }
+    } finally {
+      if (taskIdRef.current === entityId) {
+        setUploading(false)
+        setUploadPercent(0)
+      }
+    }
+  }
+
+  const toggleUpload = async (workflowSourceId: number) => {
+    const row = sources.find((s) => s.id === workflowSourceId)
+    if (!row) return
+    try {
+      await patchWorkflowSourceApi(workflowSourceId, { selected: !row.selected })
+      await loadSources()
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '更新失败')
+    }
+  }
+
+  const toggleLibraryAsset = async (assetId: number) => {
+    const entityId = taskIdRef.current
+    const existing = libraryByAssetId.get(assetId)
+    try {
+      if (existing) {
+        await patchWorkflowSourceApi(existing.id, { selected: !existing.selected })
+      } else {
+        const rows = await addWorkflowSourcesFromLibraryApi({
+          context: 'matting',
+          taskId: entityId,
+          assetIds: [assetId],
+        })
+        if (rows[0]) await patchWorkflowSourceApi(rows[0].id, { selected: true })
+      }
+      await loadSources()
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '更新失败')
+    }
+  }
+
+  const handleAiGenerate = async (payload: SourceGeneratePayload) => {
+    const entityId = taskIdRef.current
+    setAiGenerating(true)
+    try {
+      await generateMattingSourceApi(entityId, {
+        prompt: payload.prompt,
+        count: payload.count,
+        aspectRatio: payload.aspectRatio === '智能' ? undefined : payload.aspectRatio,
+        referenceUrls: payload.referenceUrls,
+      })
+      if (taskIdRef.current !== entityId) return
+      await loadSources()
+      message.success('生成完成')
+    } catch (e) {
+      if (taskIdRef.current === entityId) {
+        message.error(e instanceof Error ? e.message : '生图失败')
+      }
+    } finally {
+      if (taskIdRef.current === entityId) {
+        setAiGenerating(false)
+      }
+    }
+  }
+
+  const handleToggleScheme = async (schemeId: string, selected: boolean) => {
+    try {
+      await patchMattingSourceSchemesApi(taskIdRef.current, { schemeId, selected })
+      await loadSources()
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '更新失败')
+    }
+  }
+
+  const handleDeleteScheme = async (schemeId: string) => {
+    try {
+      await deleteWorkflowSourceApi(Number(schemeId))
+      await loadSources()
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '删除失败')
+    }
+  }
 
   const handleConfirm = async () => {
-
     if (totalSelected === 0) {
-
       message.warning('请至少选择一张源图')
-
       return
-
     }
-
     if (onBeforeConfirm && !(await onBeforeConfirm())) return
 
     setConfirming(true)
-
     try {
-
-      const schemeIds = selectedSchemes.map((s) => s.id)
-
-      const assetIdSet = new Set<number>()
-
-      for (const id of selectedAssetIds) {
-
-        if (uploadedAssets.some((a) => a.id === id) || assets.some((a) => a.id === id)) {
-
-          assetIdSet.add(id)
-
-        }
-
-      }
-
-      const sourceAssetIds = [...assetIdSet]
-
-
-
-      const updated = await confirmMattingSourceApi(taskId, { schemeIds, sourceAssetIds })
-
+      const workflowSourceIds = sources.filter((s) => s.selected).map((s) => s.id)
+      const updated = await confirmMattingSourceApi(taskIdRef.current, { workflowSourceIds })
       onConfirmed(updated)
-
       message.success(`已确认 ${totalSelected} 张源图`)
-
     } catch (e) {
-
       message.error(e instanceof Error ? e.message : '确认失败')
-
     } finally {
-
       setConfirming(false)
-
     }
-
   }
 
   const confirmButton = (
@@ -430,320 +274,48 @@ export default function MattingStage1Source({
     </Button>
   )
 
-  const showPanelFooter =
-    topMode === 'upload' || (topMode === 'library' && libraryTab === 'existing')
-
-  const renderAssetGrid = (items: AssetVO[], emptyHint: string) => (
-
-    <div className={styles.assetGrid}>
-
-      {items.length === 0 && <p className={styles.emptyHint}>{emptyHint}</p>}
-
-      {items.map((a) => (
-
-        <label
-
-          key={a.id}
-
-          className={[
-
-            styles.assetCell,
-
-            selectedAssetIds.has(a.id) ? styles.assetCellActive : '',
-
-          ].join(' ')}
-
-        >
-
-          <input
-
-            type="checkbox"
-
-            className={styles.assetCheckbox}
-
-            checked={selectedAssetIds.has(a.id)}
-
-            onChange={() => toggleAssetSelection(a.id)}
-
-          />
-
-          <img src={a.url} alt={a.name} className={styles.assetThumb} />
-
-          <span className={styles.assetName}>{a.name}</span>
-
-        </label>
-
-      ))}
-
-    </div>
-
-  )
-
-
-
   return (
-
-    <div className={styles.stage1}>
-
-      <div className={styles.panel}>
-
-        <div className={styles.header}>
-
-          <div className={styles.headerLeft}>
-
-            <span className={styles.contextLabel}>源图</span>
-            <p className={styles.selectionHint}>{selectionLabel}</p>
-
-          </div>
-
-          <div className={styles.topSegment}>
-
-            <button
-
-              type="button"
-
-              className={[styles.segment, topMode === 'upload' ? styles.segmentActive : ''].join(' ')}
-
-              onClick={() => setTopMode('upload')}
-
-            >
-
-              直接上传
-
-            </button>
-
-            <button
-
-              type="button"
-
-              className={[styles.segment, topMode === 'library' ? styles.segmentActive : ''].join(' ')}
-
-              onClick={() => setTopMode('library')}
-
-            >
-
-              素材库
-
-            </button>
-
-          </div>
-
-        </div>
-
-
-
-        {topMode === 'upload' && (
-
-          <div className={styles.scrollArea}>
-
-            <button
-
-              type="button"
-
-              className={[
-
-                styles.dropzone,
-
-                dragActive ? styles.dropzoneActive : '',
-
-                uploading ? styles.dropzoneBusy : '',
-
-              ].join(' ')}
-
-              disabled={uploading}
-
-              onClick={() => fileRef.current?.click()}
-
-              onDragOver={(e) => {
-
-                e.preventDefault()
-
-                setDragActive(true)
-
-              }}
-
-              onDragLeave={() => setDragActive(false)}
-
-              onDrop={(e) => {
-
-                e.preventDefault()
-
-                setDragActive(false)
-
-                if (uploading) return
-
-                const file = e.dataTransfer.files?.[0]
-
-                if (file) void handleUpload(file)
-
-              }}
-
-            >
-
-              {uploading ? <Spin size="large" /> : <CloudUploadOutlined className={styles.dropzoneIcon} />}
-
-              <span className={styles.dropzoneTitle}>
-
-                {uploading ? '上传中…' : '拖拽或点击上传 PNG / JPG（可多次上传）'}
-
-              </span>
-
-              <span className={styles.dropzoneHint}>单文件 ≤ 10MB</span>
-
-              {uploading && uploadPercent > 0 && (
-
-                <Progress percent={uploadPercent} size="small" className={styles.uploadProgress} />
-
-              )}
-
-            </button>
-
-            <input
-
-              ref={fileRef}
-
-              type="file"
-
-              accept="image/png,image/jpeg,image/jpg,image/webp"
-
-              className={styles.hiddenInput}
-
-              onChange={(e) => {
-
-                const f = e.target.files?.[0]
-
-                if (f) void handleUpload(f)
-
-                e.target.value = ''
-
-              }}
-
-            />
-
-            {uploadedAssets.length > 0 && renderAssetGrid(uploadedAssets, '')}
-
-          </div>
-
-        )}
-
-
-
-        {topMode === 'library' && (
-
-          <>
-
-            <div className={styles.librarySubSegment}>
-
-              <button
-
-                type="button"
-
-                className={[styles.subSegment, libraryTab === 'existing' ? styles.subSegmentActive : ''].join(' ')}
-
-                onClick={() => setLibraryTab('existing')}
-
-              >
-
-                已有素材
-
-              </button>
-
-              <button
-
-                type="button"
-
-                className={[styles.subSegment, libraryTab === 'ai' ? styles.subSegmentActive : ''].join(' ')}
-
-                onClick={() => setLibraryTab('ai')}
-
-              >
-
-                AI 生图
-
-              </button>
-
-            </div>
-
-
-
-            {libraryTab === 'existing' && (
-              <div className={styles.scrollArea}>
-                <div className={styles.assetFilters}>
-                  <Input
-                    className={styles.assetSearch}
-                    placeholder="搜索素材"
-                    prefix={<SearchOutlined />}
-                    allowClear
-                    value={assetKeywordInput}
-                    onChange={(e) => setAssetKeywordInput(e.target.value)}
-                  />
-                  <Select
-                    className={styles.assetTagSelect}
-                    placeholder="按标签筛选"
-                    allowClear
-                    value={assetTagId}
-                    onChange={(v) => setAssetTagId(v)}
-                    options={tags.map((t) => ({
-                      value: t.id,
-                      label: <TagOptionLabel tag={t} />,
-                    }))}
-                  />
-                </div>
-                <Spin spinning={loadingAssets}>
-                  {renderAssetGrid(
-                    assets,
-                    assetTagId ? '该标签下暂无素材' : '暂无素材，请先上传或使用 AI 生图',
-                  )}
-                </Spin>
-              </div>
-            )}
-
-            {libraryTab === 'ai' && (
-              <div className={styles.aiLayout}>
-                <div className={styles.scrollArea}>
-                  <Spin spinning={loadingSchemes}>
-                    <SourceSchemeGrid
-                      schemes={schemes}
-                      onToggleSelect={(id, selected) => void handleToggleScheme(id, selected)}
-                      onDelete={(id) => void handleDeleteScheme(id)}
-                      onPreview={(url, alt) => setPreview({ url, alt: alt ?? '预览' })}
-                    />
-                  </Spin>
-                </div>
-
-                <div className={styles.dock}>
-
-                  <SourceGenerateComposer
-                    loading={aiGenerating}
-                    onSend={(p) => void handleAiGenerate(p)}
-                    confirmAction={confirmButton}
-                  />
-
-                </div>
-
-              </div>
-
-            )}
-
-          </>
-
-        )}
-
-        {showPanelFooter && <div className={styles.panelFooter}>{confirmButton}</div>}
-
-      </div>
-
-
-
-      <ImageLightbox
-        url={preview?.url ?? null}
-        alt={preview?.alt}
-        onClose={() => setPreview(null)}
+    <>
+      <OpsImageSourcePicker
+        contextLabel="源图"
+        selectionHint={selectionLabel}
+        topMode={topMode}
+        onTopModeChange={setTopMode}
+        libraryTab={libraryTab}
+        onLibraryTabChange={setLibraryTab}
+        uploading={uploading}
+        uploadPercent={uploadPercent}
+        dragActive={dragActive}
+        onDragActiveChange={setDragActive}
+        onPickUploadFile={(file) => void handleUpload(file)}
+        uploadItems={uploadItems}
+        libraryAssets={libraryAssets ?? []}
+        loadingLibrary={loadingLibrary}
+        selectedUploadIds={selectedUploadIds}
+        selectedLibraryAssetIds={selectedLibraryAssetIds}
+        onToggleUpload={(id) => void toggleUpload(id)}
+        onToggleLibraryAsset={(id) => void toggleLibraryAsset(id)}
+        tags={tags}
+        assetTagId={assetTagId}
+        onAssetTagIdChange={setAssetTagId}
+        assetKeywordInput={assetKeywordInput}
+        onAssetKeywordInputChange={setAssetKeywordInput}
+        schemes={aiSchemes}
+        loadingSchemes={loadingSources}
+        onToggleScheme={(id, selected) => void handleToggleScheme(id, selected)}
+        onDeleteScheme={(id) => void handleDeleteScheme(id)}
+        onPreviewScheme={(url, alt) => setPreview({ url, alt: alt ?? '预览' })}
+        aiDock={
+          <SourceGenerateComposer
+            loading={aiGenerating}
+            onSend={(p) => void handleAiGenerate(p)}
+            confirmAction={confirmButton}
+          />
+        }
+        panelFooter={confirmButton}
       />
 
-    </div>
-
+      <ImageLightbox url={preview?.url ?? null} alt={preview?.alt} onClose={() => setPreview(null)} />
+    </>
   )
-
 }
-

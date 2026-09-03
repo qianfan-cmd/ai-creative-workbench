@@ -24,6 +24,9 @@ public class CampaignDraft {
     /** 列表/侧栏展示用，通常取活动主题 theme */
     private String title;
 
+    /** 侧栏置顶：0 否 1 是 */
+    private Integer pinned;
+
     /** 活动表单 JSON 字符串，与 KnowledgeTurn.referencesJson 同样处理方式 */
     private String activityJson;
 

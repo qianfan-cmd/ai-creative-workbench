@@ -1,0 +1,51 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: grid;
+  gap: 4px;
+}
+
+.img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-muted);
+}
+
+.imgWebSingle {
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+
+.imgMobile {
+  border-radius: var(--radius-sm);
+}
+
+.placeholder {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(
+    135deg,
+    var(--color-accent-subtle) 0%,
+    var(--color-bg-subtle) 50%,
+    var(--color-bg-muted) 100%
+  );
+}
+
+.placeholderBadge {
+  position: absolute;
+  bottom: var(--space-2);
+  right: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: rgba(24, 24, 27, 0.7);
+  color: #fff;
+}

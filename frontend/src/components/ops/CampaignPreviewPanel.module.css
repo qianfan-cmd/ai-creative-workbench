@@ -1,0 +1,43 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.segmentedWrap {
+  flex: 1;
+  min-width: 200px;
+}
+
+.hashtagField {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hashtagLabel {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.hashtagInput {
+  width: 140px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.previewArea {
+  min-height: 320px;
+}

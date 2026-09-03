@@ -21,6 +21,16 @@ export default function ElementCandidateGallery({
 }: ElementCandidateGalleryProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewAlt, setPreviewAlt] = useState('')
+  const [brokenKeys, setBrokenKeys] = useState<Set<string>>(() => new Set())
+
+  const markBroken = (key: string) => {
+    setBrokenKeys((prev) => {
+      if (prev.has(key)) return prev
+      const next = new Set(prev)
+      next.add(key)
+      return next
+    })
+  }
   if (loading && !status?.elements?.length) {
     return (
       <div className={styles.shell}>
@@ -88,6 +98,7 @@ export default function ElementCandidateGallery({
                 <div className={styles.elemName}>{el.elementName}</div>
                 <div className={styles.thumbRow}>
                   {el.images.map((img) => {
+                    const thumbKey = `${el.elementId}-${img.slotIndex}`
                     if (img.status === 'pending') {
                       return (
                         <div
@@ -112,21 +123,30 @@ export default function ElementCandidateGallery({
                           .join(' ')}
                       >
                         {img.url && img.status === 'done' ? (
-                          <>
-                            <button
-                              type="button"
-                              className={styles.thumbDetail}
-                              aria-label="预览大图"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setPreviewUrl(img.url!)
-                                setPreviewAlt(el.elementName)
-                              }}
-                            >
-                              <ExpandOutlined />
-                            </button>
-                            <img src={img.url} alt="" className={styles.thumbImg} />
-                          </>
+                          brokenKeys.has(thumbKey) ? (
+                            <div className={styles.imageExpired}>图片链接已过期，请再生成</div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className={styles.thumbDetail}
+                                aria-label="预览大图"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setPreviewUrl(img.url!)
+                                  setPreviewAlt(el.elementName)
+                                }}
+                              >
+                                <ExpandOutlined />
+                              </button>
+                              <img
+                                src={img.url}
+                                alt=""
+                                className={styles.thumbImg}
+                                onError={() => markBroken(thumbKey)}
+                              />
+                            </>
+                          )
                         ) : (
                           <div className={styles.checkerboard} title="生成失败" />
                         )}

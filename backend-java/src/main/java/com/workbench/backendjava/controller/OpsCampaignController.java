@@ -3,10 +3,13 @@ package com.workbench.backendjava.controller;
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.dto.CampaignCopySaveRequest;
 import com.workbench.backendjava.dto.CampaignDraftCreateRequest;
+import com.workbench.backendjava.dto.CampaignDraftMetaRequest;
+import com.workbench.backendjava.dto.CampaignDraftPatchRequest;
 import com.workbench.backendjava.dto.CampaignGenerateCopyRequest;
 import com.workbench.backendjava.dto.CampaignGenerateImagesRequest;
 import com.workbench.backendjava.dto.CampaignImagesSaveRequest;
 import com.workbench.backendjava.service.CampaignDraftService;
+import com.workbench.backendjava.vo.CampaignDraftListItemVO;
 import com.workbench.backendjava.vo.CampaignDraftVO;
 import com.workbench.backendjava.vo.GenerationJobVO;
 import jakarta.validation.Valid;
@@ -17,12 +20,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/ops/campaign")
 @RequiredArgsConstructor
 public class OpsCampaignController {
 
     private final CampaignDraftService campaignDraftService;
+
+    @GetMapping("/drafts")
+    public Result<List<CampaignDraftListItemVO>> listDrafts() {
+        return Result.ok(campaignDraftService.listDrafts());
+    }
 
     /** 创建活动帖草稿 — Phase 1 入口 */
     @PostMapping("/draft")
@@ -42,6 +52,28 @@ public class OpsCampaignController {
             @Valid @RequestBody CampaignDraftCreateRequest request
     ) {
         return Result.ok(campaignDraftService.updateDraft(id, request));
+    }
+
+    @PatchMapping("/{id}")
+    public Result<CampaignDraftVO> patchDraft(
+            @PathVariable Long id,
+            @Valid @RequestBody CampaignDraftPatchRequest request
+    ) {
+        return Result.ok(campaignDraftService.patchDraft(id, request));
+    }
+
+    @PutMapping("/{id}/meta")
+    public Result<CampaignDraftVO> saveMeta(
+            @PathVariable Long id,
+            @RequestBody CampaignDraftMetaRequest request
+    ) {
+        return Result.ok(campaignDraftService.saveActivityMeta(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> deleteDraft(@PathVariable Long id) {
+        campaignDraftService.deleteDraft(id);
+        return Result.ok(null);
     }
 
     @PostMapping(value = "/{id}/generate-copy", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

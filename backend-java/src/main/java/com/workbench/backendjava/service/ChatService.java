@@ -10,10 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.workbench.backendjava.util.ChatMultimodalUtil;
 
 @Slf4j
 @Service
@@ -51,16 +51,14 @@ public class ChatService {
         log.info("Chat stream, userId={}, conversationId={}, message={}",
                 userId, request.getConversationId(), trimmed);
 
-        List<Map<String, String>> messages;
+        List<Map<String, Object>> messages;
         if (request.getConversationId() != null) {
-            messages = conversationService.buildMessagesForLlm(request.getConversationId(), trimmed);
+            messages = conversationService.buildMessagesForLlm(
+                    request.getConversationId(),
+                    trimmed,
+                    request.getImageUrls());
         } else {
-            // 无会话 id：单轮（Phase B 默认路径）
-            messages = new ArrayList<>();
-            Map<String, String> userMsg = new HashMap<>();
-            userMsg.put("role", "user");
-            userMsg.put("content", trimmed);
-            messages.add(userMsg);
+            messages = ChatMultimodalUtil.singleTurnMessages(trimmed, request.getImageUrls());
         }
 
         SseEmitter emitter = new SseEmitter(120_000L);

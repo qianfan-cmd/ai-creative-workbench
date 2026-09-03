@@ -18,6 +18,7 @@ export interface MessageVO {
     id: number
     role: 'user' | 'assistant'
     content: string
+    imageUrls?: string[]
 }
 
 export interface ConversationDetailVO {
@@ -67,7 +68,7 @@ export async function patchConversationApi(
 /** 流式结束后批量写入 user + assistant（Phase C 接线） */
 export async function saveChatMessagesApi(
     conversationId: number,
-    payload: { userContent: string; assistantContent: string },
+    payload: { userContent: string; assistantContent: string; userImageUrls?: string[] },
 ) {
     await request.post<ApiResponse<null>>(
         `/conversations/${conversationId}/messages`,
@@ -91,6 +92,8 @@ export async function updateChatAssistantApi(
 export interface ChatStreamOptions {
     /** 可选：有值时 Java 从 DB 加载历史做多轮 LLM（Phase C 接线） */
     conversationId?: number
+    /** 附图 URL（多模态） */
+    imageUrls?: string[]
     onChunk: (chunk: string) => void
     onDone: () => void
 }
@@ -115,6 +118,7 @@ export async function chatStreamApi(
         body: JSON.stringify({
             message,
             ...(options.conversationId != null ? { conversationId: options.conversationId } : {}),
+            ...(options.imageUrls?.length ? { imageUrls: options.imageUrls } : {}),
         }),
         signal,
     })

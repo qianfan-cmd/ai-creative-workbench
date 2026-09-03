@@ -732,6 +732,7 @@ export default function MattingPage() {
           <>
             {viewStage === 1 && (
               <MattingStage1Source
+                key={task.id}
                 taskId={task.id}
                 sourceAssetId={task.sourceAssetId}
                 sourceAssetUrl={task.sourceAssetUrl}

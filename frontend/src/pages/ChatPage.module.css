@@ -58,34 +58,35 @@
   justify-content: center;
 }
 
-.composerPill {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
+.composerBox {
   width: 100%;
-  max-width: 640px;
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  background: var(--color-bg-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.composerPill :global(.ant-input) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  padding: var(--space-2) 0 !important;
+  max-width: 720px;
 }
 
 .composer {
   flex-shrink: 0;
   border-top: 1px solid var(--color-border);
   padding: var(--space-4);
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
   background: var(--color-bg-surface);
+}
+
+.composerBoxActive {
+  width: 100%;
+}
+
+.userImages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.userImageThumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
 }
 
 .composerActions {

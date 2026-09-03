@@ -2,6 +2,7 @@ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.AssetImportUrlRequest;
 import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
 import com.workbench.backendjava.dto.AssetUpdateRequest;
 import com.workbench.backendjava.service.AssetService;
@@ -12,6 +13,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/assets")
@@ -95,6 +98,14 @@ public class AssetController {
     public Result<Void> bindTag(@PathVariable Long assetId, @PathVariable Long tagId) {
         assetService.bindTag(assetId, tagId);
         return Result.ok();
+    }
+
+    @PostMapping("/import-url")
+    public Result<AssetVO> importUrl(@Valid @RequestBody AssetImportUrlRequest request) {
+        String name = request.getName() != null && !request.getName().isBlank()
+                ? request.getName().trim() : "imported.png";
+        List<String> tags = request.getTags() != null ? request.getTags() : List.of("generated");
+        return Result.ok(assetService.importFromUrl(request.getUrl().trim(), name, tags));
     }
 
     /**

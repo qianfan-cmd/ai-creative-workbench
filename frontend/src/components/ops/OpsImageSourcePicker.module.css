@@ -1,3 +1,11 @@
+.stage1 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
@@ -6,10 +14,8 @@
   border-radius: var(--radius-panel);
   padding: var(--space-4);
   background: var(--color-surface);
-}
-
-.panelCompact {
-  padding: var(--space-3);
+  flex: 1;
+  min-height: 0;
 }
 
 .header {
@@ -18,6 +24,14 @@
   justify-content: space-between;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
 }
 
 .contextLabel {
@@ -48,6 +62,78 @@
   font-weight: 600;
 }
 
+.selectionHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.panelFooter {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.scrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.assetFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.assetSearch {
+  flex: 1;
+  min-width: 160px;
+}
+
+.assetTagSelect {
+  min-width: 160px;
+}
+
+.dock {
+  flex-shrink: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.librarySubSegment {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.subSegment {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.subSegmentActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 .dropzone {
   width: 100%;
   border: 1px dashed var(--color-border);
@@ -71,11 +157,6 @@
   opacity: 0.85;
 }
 
-.uploadProgress {
-  width: 60%;
-  margin-top: var(--space-2);
-}
-
 .dropzoneIcon {
   font-size: 28px;
   color: var(--color-text-tertiary);
@@ -95,11 +176,25 @@
   display: none;
 }
 
+.uploadProgress {
+  width: 60%;
+  margin-top: var(--space-2);
+}
+
 .selectedRow {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-3);
+  padding: var(--space-2);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.selectedRowActive {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
 }
 
 .selectedThumb {
@@ -122,12 +217,21 @@
 }
 
 .assetCell {
+  position: relative;
   border: 2px solid var(--color-border);
   border-radius: var(--radius-control);
   padding: var(--space-1);
   background: var(--color-surface);
   cursor: pointer;
   text-align: center;
+}
+
+.assetCheckbox {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--space-1);
+  z-index: 1;
+  accent-color: var(--color-accent);
 }
 
 .assetCellActive {
@@ -151,38 +255,18 @@
   margin-top: var(--space-1);
 }
 
-.aiSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.librarySubSegment {
-  display: inline-flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.subSegment {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: transparent;
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.subSegmentActive {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
 .emptyHint {
   grid-column: 1 / -1;
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
   text-align: center;
   padding: var(--space-4);
+}
+
+.aiLayout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-3);
 }

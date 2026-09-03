@@ -56,6 +56,11 @@ export function useAppBreadcrumbs(): BreadcrumbItem[] {
     if (pathname === '/ops/campaign') {
         return [home, { label: '活动帖 Campaign', href: '/ops/campaign' }]
     }
+
+    if (pathname === '/settings') {
+        return [home, { label: '设置 Settings', href: '/settings' }]
+    }
+
     return [home, { label: 'Workbench' }];
     }, [pathname])
 }

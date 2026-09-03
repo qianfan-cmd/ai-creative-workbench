@@ -1,15 +1,16 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ConfigProvider } from 'antd'
-import zhCN from 'antd/locale/zh_CN'
-import { getWorkbenchTheme } from '@/theme/antdTheme'
 import '@/styles/global.css'
 import App from './App.tsx'
+import ThemeProvider from '@/components/theme/ThemeProvider'
+import { applyDocumentTheme, getThemePreference, resolveThemeMode } from '@/utils/themePreference'
+
+applyDocumentTheme(resolveThemeMode(getThemePreference()))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider theme={getWorkbenchTheme('light')} locale={zhCN}>
+    <ThemeProvider>
       <App />
-    </ConfigProvider>
+    </ThemeProvider>
   </StrictMode>,
 )
