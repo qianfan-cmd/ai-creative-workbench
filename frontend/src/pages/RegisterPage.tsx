@@ -45,9 +45,12 @@ export default function RegisterPage() {
         <Form.Item
           label="密码"
           name="password"
-          rules={[{ required: true, message: '请输入密码' }]}
+          rules={[
+            { required: true, message: '请输入密码' },
+            { min: 6, message: '密码至少 6 位' },
+          ]}
         >
-          <Input.Password placeholder="请输入密码" />
+          <Input.Password placeholder="至少 6 位" />
         </Form.Item>
 
         <Form.Item label="邮箱" name="email">

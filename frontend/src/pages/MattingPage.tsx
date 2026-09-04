@@ -1,5 +1,5 @@
 import { ScissorOutlined } from '@ant-design/icons'
-import { Alert, Modal, message } from 'antd'
+import { Alert, Modal, Spin, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   MattingElementsVO,
@@ -780,17 +780,22 @@ export default function MattingPage() {
               </>
             )}
 
-            {viewStage === 5 && (
-              <MattingSavePanel
-                status={extractStatus}
-                saveSourceToAssets={saveSourceToAssets}
-                onSaveSourceChange={setSaveSourceToAssets}
-                sourceTagIds={sourceTagIds}
-                onSourceTagIdsChange={setSourceTagIds}
-                availableTags={availableTags}
-                sourceCount={sourceCount}
-              />
-            )}
+            {viewStage === 5 &&
+              (extractStatus == null ? (
+                <div className={styles.stageLoading}>
+                  <Spin tip="加载保存结果…" />
+                </div>
+              ) : (
+                <MattingSavePanel
+                  status={extractStatus}
+                  saveSourceToAssets={saveSourceToAssets}
+                  onSaveSourceChange={setSaveSourceToAssets}
+                  sourceTagIds={sourceTagIds}
+                  onSourceTagIdsChange={setSourceTagIds}
+                  availableTags={availableTags}
+                  sourceCount={sourceCount}
+                />
+              ))}
           </>
         )}
       </MattingWorkspaceFrame>

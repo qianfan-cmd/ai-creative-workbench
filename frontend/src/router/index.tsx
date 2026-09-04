@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import MainLayout from '@/layouts/MainLayout'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import ResetPasswordPage from '@/pages/ResetPasswordPage'
 import AssetUploadPage from '@/pages/AssetUploadPage'
 import AssetListPage from '@/pages/AssetListPage'
 import AuthGuard from '@/components/AuthGuard'
@@ -22,6 +24,8 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/forgot-password', element: <ForgotPasswordPage /> },
+      { path: '/reset-password', element: <ResetPasswordPage /> },
     ],
   },
   {

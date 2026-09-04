@@ -1,5 +1,7 @@
 import dayjs from 'dayjs'
 import CampaignPreviewMediaGrid from '@/components/ops/CampaignPreviewMediaGrid'
+import UserAvatar from '@/components/common/UserAvatar'
+import { useAuthStore } from '@/stores/authStore'
 import styles from '@/components/ops/CampaignNowcoderMobilePreview.module.css'
 
 interface CampaignNowcoderMobilePreviewProps {
@@ -17,6 +19,8 @@ export default function CampaignNowcoderMobilePreview({
   body,
   hashtag = '#活动',
 }: CampaignNowcoderMobilePreviewProps) {
+  const user = useAuthStore((s) => s.user)
+  const displayName = user?.username ?? '运营账号'
   const timeLabel = dayjs().format('MM-DD HH:mm')
   const urls = imageUrls?.length ? imageUrls : coverUrl ? [coverUrl] : []
 
@@ -30,10 +34,10 @@ export default function CampaignNowcoderMobilePreview({
         </div>
 
         <header className={styles.userRow}>
-          <div className={styles.avatar} aria-hidden />
+          <UserAvatar user={user} size={36} className={styles.avatar} />
           <div className={styles.userMeta}>
             <p className={styles.userName}>
-              运营账号
+              {displayName}
               <span className={styles.level}>LV.4</span>
             </p>
             <p className={styles.userSub}>活动运营 · 官方</p>

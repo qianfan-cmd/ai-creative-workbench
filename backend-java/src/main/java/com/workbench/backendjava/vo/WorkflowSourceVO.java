@@ -20,4 +20,6 @@ public class WorkflowSourceVO {
     private String aspectRatio;
     private List<String> referenceUrls;
     private Long generationJobId;
+    /** AI Composer 参考图暂存，不在「直接上传」区展示 */
+    private Boolean ephemeralReference;
 }

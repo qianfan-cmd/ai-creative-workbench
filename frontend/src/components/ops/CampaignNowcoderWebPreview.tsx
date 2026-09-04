@@ -1,5 +1,7 @@
 import dayjs from 'dayjs'
 import CampaignPreviewMediaGrid from '@/components/ops/CampaignPreviewMediaGrid'
+import UserAvatar from '@/components/common/UserAvatar'
+import { useAuthStore } from '@/stores/authStore'
 import styles from '@/components/ops/CampaignNowcoderWebPreview.module.css'
 
 interface CampaignNowcoderWebPreviewProps {
@@ -19,6 +21,8 @@ export default function CampaignNowcoderWebPreview({
   hashtag = '#活动',
   aspectLabel = '16:9 封面',
 }: CampaignNowcoderWebPreviewProps) {
+  const user = useAuthStore((s) => s.user)
+  const displayName = user?.username ?? '运营账号'
   const timeLabel = dayjs().format('MM-DD HH:mm')
   const urls = imageUrls?.length ? imageUrls : coverUrl ? [coverUrl] : []
 
@@ -26,9 +30,9 @@ export default function CampaignNowcoderWebPreview({
     <div className={styles.frame}>
       <article className={styles.card}>
         <header className={styles.header}>
-          <div className={styles.avatar} aria-hidden />
+          <UserAvatar user={user} size={40} className={styles.avatar} />
           <div className={styles.headerMeta}>
-            <p className={styles.userName}>运营账号</p>
+            <p className={styles.userName}>{displayName}</p>
             <p className={styles.userSub}>{timeLabel} · 活动运营</p>
           </div>
           <button type="button" className={styles.followBtn} tabIndex={-1}>

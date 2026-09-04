@@ -63,6 +63,12 @@ public class WorkflowSourceService {
 
     @Transactional
     public WorkflowSourceVO upload(String context, Long taskId, Long draftId, MultipartFile file, Long userId) {
+        return upload(context, taskId, draftId, file, userId, false);
+    }
+
+    @Transactional
+    public WorkflowSourceVO upload(String context, Long taskId, Long draftId, MultipartFile file, Long userId,
+                                   boolean ephemeralReference) {
         validateContextRef(context, taskId, draftId, userId);
         String subdir = storageSubdir(context, taskId, draftId);
         String url = fileStorageService.store(file, subdir);
@@ -76,10 +82,42 @@ public class WorkflowSourceService {
         row.setContentType(file.getContentType());
         row.setSelected(0);
         row.setSortOrder(nextSortOrder(context, taskId, draftId));
+        if (ephemeralReference) {
+            row.setMetaJson(writeEphemeralMeta());
+        }
         row.setCreatedAt(LocalDateTime.now());
         row.setUpdatedAt(LocalDateTime.now());
         workflowSourceMapper.insert(row);
         return toVO(row, userId);
+    }
+
+    /** 用户显式「加入素材库」：从 workflow 暂存路径入库并回写 assetId（幂等） */
+    @Transactional
+    public AssetVO importToAssets(Long id, Long userId, List<String> tags) {
+        OpsWorkflowSource row = getOwned(id, userId);
+        if (!TYPE_UPLOAD.equals(row.getSourceType()) && !TYPE_AI_GEN.equals(row.getSourceType())) {
+            throw new BusinessException(400, "仅上传图或 AI 生成图可加入素材库");
+        }
+        if (row.getAssetId() != null) {
+            return assetService.getDetail(row.getAssetId());
+        }
+        String storedPath = resolveStoredPath(row);
+        if (storedPath == null || storedPath.isBlank()) {
+            throw new BusinessException(400, "无法解析图片本地路径");
+        }
+        String name = row.getOriginalName() != null && !row.getOriginalName().isBlank()
+                ? row.getOriginalName()
+                : Optional.ofNullable(readPromptFromMeta(row.getMetaJson())).orElse("workflow-image.png");
+        List<String> tagList = tags != null && !tags.isEmpty()
+                ? tags
+                : List.of("generated", CONTEXT_CAMPAIGN.equals(row.getContext()) ? "campaign" : "matting");
+        AssetVO imported = assetService.importFromStoredPath(storedPath, name, tagList);
+        row.setAssetId(imported.getId());
+        row.setImageUrl(assetService.resolveWorkflowImageUrl(
+                imported.getUrl(), null, imported.getId(), userId));
+        row.setUpdatedAt(LocalDateTime.now());
+        workflowSourceMapper.updateById(row);
+        return imported;
     }
 
     @Transactional
@@ -235,6 +273,9 @@ public class WorkflowSourceService {
                 assetIds.add(row.getAssetId());
                 continue;
             }
+            if (isEphemeralReference(row)) {
+                continue;
+            }
             if (row.getAssetId() != null) {
                 assetIds.add(row.getAssetId());
                 continue;
@@ -283,6 +324,7 @@ public class WorkflowSourceService {
         List<ImageCandidateVO> candidates = job.getCandidates();
         if (candidates == null) return;
 
+        // 仅写 ops_workflow_source + 磁盘，不入 asset 表；入库由「加入素材库」或保存活动帖触发
         int sort = nextSortOrder(context, taskId, draftId);
         String subdir = storageSubdir(context, taskId, draftId);
         for (ImageCandidateVO c : candidates) {
@@ -601,8 +643,47 @@ public class WorkflowSourceService {
             if (refs instanceof List<?> list) {
                 vo.setReferenceUrls(list.stream().map(String::valueOf).collect(Collectors.toList()));
             }
+            Object ephemeral = meta.get("ephemeralReference");
+            if (Boolean.TRUE.equals(ephemeral) || "true".equals(String.valueOf(ephemeral))) {
+                vo.setEphemeralReference(true);
+            }
         } catch (JsonProcessingException ignored) {
             /* ignore */
+        }
+    }
+
+    private boolean isEphemeralReference(OpsWorkflowSource row) {
+        if (row.getMetaJson() == null || row.getMetaJson().isBlank()) {
+            return false;
+        }
+        try {
+            Map<String, Object> meta = objectMapper.readValue(row.getMetaJson(), new TypeReference<>() {});
+            Object ephemeral = meta.get("ephemeralReference");
+            return Boolean.TRUE.equals(ephemeral) || "true".equals(String.valueOf(ephemeral));
+        } catch (JsonProcessingException e) {
+            return false;
+        }
+    }
+
+    private String writeEphemeralMeta() {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("ephemeralReference", true);
+        try {
+            return objectMapper.writeValueAsString(meta);
+        } catch (JsonProcessingException e) {
+            return "{\"ephemeralReference\":true}";
+        }
+    }
+
+    private String readPromptFromMeta(String metaJson) {
+        if (metaJson == null || metaJson.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> meta = objectMapper.readValue(metaJson, new TypeReference<>() {});
+            return str(meta.get("prompt"));
+        } catch (JsonProcessingException e) {
+            return null;
         }
     }
 

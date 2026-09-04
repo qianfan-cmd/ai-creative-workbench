@@ -1,7 +1,8 @@
 import { Select } from 'antd'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
-import AiImageComposer, { type AiComposerPayload } from '@/components/ai/AiImageComposer'
+import { useCallback, useState } from 'react'
+import AiImageComposer, { type AiComposerAttachment, type AiComposerPayload } from '@/components/ai/AiImageComposer'
+import { uploadWorkflowSourceApi, type WorkflowContext } from '@/api/workflowSource'
 import styles from '@/components/ops/SourceGenerateComposer.module.css'
 
 export interface SourceGeneratePayload {
@@ -19,6 +20,11 @@ interface SourceGenerateComposerProps {
   placeholder?: string
   onSend: (payload: SourceGeneratePayload) => void
   confirmAction?: ReactNode
+  workflowContext: {
+    context: WorkflowContext
+    taskId?: number
+    draftId?: number
+  }
 }
 
 export default function SourceGenerateComposer({
@@ -27,8 +33,28 @@ export default function SourceGenerateComposer({
   placeholder = '描述要生成的源图，Enter 发送，Shift+Enter 换行',
   onSend,
   confirmAction,
+  workflowContext,
 }: SourceGenerateComposerProps) {
   const [count, setCount] = useState(4)
+
+  const handleUploadAttachment = useCallback(
+    async (file: File): Promise<AiComposerAttachment> => {
+      const row = await uploadWorkflowSourceApi(
+        file,
+        {
+          context: workflowContext.context,
+          taskId: workflowContext.taskId,
+          draftId: workflowContext.draftId,
+        },
+        { ephemeralReference: true },
+      )
+      return {
+        url: row.imageUrl,
+        name: row.originalName ?? file.name,
+      }
+    },
+    [workflowContext],
+  )
 
   const handleSend = ({ text, attachments }: AiComposerPayload) => {
     onSend({
@@ -44,6 +70,7 @@ export default function SourceGenerateComposer({
       loading={loading}
       placeholder={placeholder}
       onSend={handleSend}
+      onUploadAttachment={handleUploadAttachment}
       confirmAction={confirmAction}
       toolbarExtra={
         <Select

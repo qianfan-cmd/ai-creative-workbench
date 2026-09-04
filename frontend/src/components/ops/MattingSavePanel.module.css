@@ -7,6 +7,17 @@
   overflow-y: auto;
 }
 
+.loadingSlot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 160px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
 .success {
   display: flex;
   align-items: center;

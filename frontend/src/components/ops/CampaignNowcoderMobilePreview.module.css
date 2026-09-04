@@ -39,10 +39,6 @@
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #86efac, #0d9488);
   flex-shrink: 0;
 }
 

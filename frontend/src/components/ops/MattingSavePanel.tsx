@@ -1,8 +1,9 @@
-import { CheckOutlined, DownloadOutlined } from '@ant-design/icons'
+import { CheckOutlined, DownloadOutlined, LoadingOutlined } from '@ant-design/icons'
 import { Select } from 'antd'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { MattingExtractStatusVO } from '@/api/ops'
 import type { TagVO } from '@/api/tags'
+import { normalizeMediaUrl } from '@/utils/mediaUrl'
 import styles from '@/components/ops/MattingSavePanel.module.css'
 
 interface MattingSavePanelProps {
@@ -26,6 +27,16 @@ export default function MattingSavePanel({
 }: MattingSavePanelProps) {
   const [brokenNames, setBrokenNames] = useState<Set<string>>(() => new Set())
 
+  const items = useMemo(() => {
+    return (status?.elements ?? [])
+      .map((el) => {
+        const selected = el.images.find((img) => img.selected && img.url)
+        if (!selected?.url) return null
+        return { name: el.elementName, url: selected.url }
+      })
+      .filter(Boolean) as { name: string; url: string }[]
+  }, [status])
+
   const markBroken = (name: string) => {
     setBrokenNames((prev) => {
       if (prev.has(name)) return prev
@@ -35,16 +46,23 @@ export default function MattingSavePanel({
     })
   }
 
-  const items =
-    status?.elements
-      .map((el) => {
-        const selected = el.images.find((img) => img.selected && img.url)
-        if (!selected?.url) return null
-        return { name: el.elementName, url: selected.url }
-      })
-      .filter(Boolean) as { name: string; url: string }[]
+  const count = items.length
+  const itemsKey = items.map((i) => `${i.name}:${i.url}`).join('|')
 
-  const count = items?.length ?? 0
+  useEffect(() => {
+    setBrokenNames(new Set())
+  }, [itemsKey])
+
+  if (status == null) {
+    return (
+      <div className={styles.shell}>
+        <div className={styles.loadingSlot}>
+          <LoadingOutlined spin />
+          <span>加载保存结果…</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.shell}>
@@ -56,14 +74,14 @@ export default function MattingSavePanel({
       </div>
 
       <div className={styles.grid}>
-        {(items ?? []).map((item) => (
+        {items.map((item) => (
           <div key={item.name} className={styles.card}>
             <div className={styles.cardThumb}>
               {brokenNames.has(item.name) ? (
-                <span className={styles.imageExpired}>图片链接已过期，请再生成</span>
+                <span className={styles.imageExpired}>图片加载失败</span>
               ) : (
                 <img
-                  src={item.url}
+                  src={normalizeMediaUrl(item.url)}
                   alt=""
                   className={styles.cardImg}
                   onError={() => markBroken(item.name)}
@@ -71,7 +89,13 @@ export default function MattingSavePanel({
               )}
             </div>
             <span className={styles.cardName}>{item.name}</span>
-            <a href={item.url} download className={styles.cardDl} target="_blank" rel="noreferrer">
+            <a
+              href={normalizeMediaUrl(item.url)}
+              download
+              className={styles.cardDl}
+              target="_blank"
+              rel="noreferrer"
+            >
               <DownloadOutlined />
               下载
             </a>
@@ -97,7 +121,7 @@ export default function MattingSavePanel({
             placeholder="源图标签"
             value={sourceTagIds}
             onChange={onSourceTagIdsChange}
-            options={availableTags.map((t) => ({ value: t.id, label: t.name }))}
+            options={(availableTags ?? []).map((t) => ({ value: t.id, label: t.name }))}
           />
         )}
         <div className={styles.tagMock}>matted</div>

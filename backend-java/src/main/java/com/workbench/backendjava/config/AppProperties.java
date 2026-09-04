@@ -15,4 +15,10 @@ public class AppProperties {
      * 生产: https://api.xxx.com
      */
     private String publicBaseUrl = "http://localhost:8080";
+
+    /**
+     * 前端站点根地址，用于密码重置邮件链接
+     * 开发: http://localhost:5173
+     */
+    private String frontendBaseUrl = "http://localhost:5173";
 }

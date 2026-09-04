@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>美术机台制作工具 — 交互原型</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" class="app-logo-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <symbol id="app-logo" viewBox="0 0 24 24">
+          <path
+            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10c.55 0 1-.45 1-1 0-.22-.07-.42-.18-.59-.13-.2-.22-.45-.22-.73 0-.55.45-1 1-1H15c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 8 6.5 8 8 8.67 8 9.5 7.33 11 6.5 11zm3-4C8.67 7 8 6.33 8 5.5S8.67 4 9.5 4s1.5.67 1.5 1.5S10.33 7 9.5 7zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 4 14.5 4s1.5.67 1.5 1.5S15.33 7 14.5 7zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 8 17.5 8s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"
+            fill="currentColor"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <div class="app" id="app">
+      <div class="app__body">
+        <aside class="sidebar">
+          <div class="sidebar__brand">
+            <span class="sidebar__brand-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <use href="#app-logo" />
+              </svg>
+            </span>
+            <span class="sidebar__brand-text">美术机台制作工具</span>
+          </div>
+          <div class="sidebar__divider" role="presentation"></div>
+          <div class="sidebar__body">
+            <button type="button" class="sidebar__new" id="btn-new-task">
+              <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span>新建任务</span>
+            </button>
+            <div class="sidebar__divider sidebar__divider--inset" role="presentation"></div>
+            <div class="task-list" id="task-list" role="list"></div>
+          </div>
+        </aside>
+
+        <main class="workspace">
+          <div class="workspace__nav-row hidden" id="workspace-nav-row">
+            <nav class="stage-nav" id="stage-nav" aria-label="阶段导航"></nav>
+          </div>
+          <div class="workspace__body">
+            <!-- 欢迎区与侧栏共用 app-logo symbol；版式对齐 .pen MainContent（a1PJy） -->
+            <div class="welcome" id="view-welcome">
+              <div class="welcome__main">
+                <span class="welcome__icon" aria-hidden="true">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <use href="#app-logo" />
+                  </svg>
+                </span>
+                <h1 class="welcome__title">欢迎使用美术机台制作工具</h1>
+                <p class="welcome__desc">请在左侧创建新任务，或选择已有任务继续操作</p>
+              </div>
+            </div>
+            <div class="hidden" id="view-task">
+              <div class="workspace-panel" id="workspace-panel">
+                <div id="stage-content"></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

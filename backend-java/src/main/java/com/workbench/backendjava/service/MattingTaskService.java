@@ -663,13 +663,7 @@ public class MattingTaskService {
     }
 
     private String resolveElementImagePublicUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return url;
-        }
-        if (url.startsWith("http://") || url.startsWith("https://")) {
-            return url;
-        }
-        return assetService.buildPublicUrlFromStoredPath(url);
+        return assetService.resolveBrowserMediaUrl(url, null, null, null);
     }
 
     @Transactional
@@ -1185,16 +1179,16 @@ public class MattingTaskService {
     private String resolveCropRegionPublicUrl(CropRegion region, Long userId, String fallbackSourceUrl) {
         if (region.getSubAssetId() != null) {
             try {
-                return assetService.getPublicUrlForOwnedAsset(region.getSubAssetId(), userId);
+                return assetService.resolveBrowserMediaUrl(null, null, region.getSubAssetId(), userId);
             } catch (BusinessException ignored) {
                 /* fall through */
             }
         }
         if (region.getSubAssetUrl() != null && !region.getSubAssetUrl().isBlank()) {
             if (region.getSubAssetUrl().startsWith("http://") || region.getSubAssetUrl().startsWith("https://")) {
-                return region.getSubAssetUrl();
+                return assetService.resolveBrowserMediaUrl(region.getSubAssetUrl(), null, null, null);
             }
-            return assetService.buildPublicUrlFromStoredPath(region.getSubAssetUrl());
+            return assetService.resolveBrowserMediaUrl(null, region.getSubAssetUrl(), null, null);
         }
         return fallbackSourceUrl;
     }
@@ -1259,14 +1253,13 @@ public class MattingTaskService {
 
     private String resolveConfirmedSourceUrl(ConfirmedSource cs, Long userId) {
         if (cs.getSourceAssetId() != null) {
-            try {
-                return assetService.getPublicUrlForOwnedAsset(cs.getSourceAssetId(), userId);
-            } catch (BusinessException ignored) {
-                /* fall through to external url */
+            String url = assetService.resolveBrowserMediaUrl(null, null, cs.getSourceAssetId(), userId);
+            if (url != null && !url.isBlank()) {
+                return url;
             }
         }
         if (cs.getSourceImageUrl() != null && !cs.getSourceImageUrl().isBlank()) {
-            return cs.getSourceImageUrl();
+            return assetService.resolveBrowserMediaUrl(cs.getSourceImageUrl(), null, null, null);
         }
         return null;
     }
@@ -1417,10 +1410,9 @@ public class MattingTaskService {
         vo.setConfirmedSources(confirmed);
 
         if (task.getSourceAssetId() != null) {
-            try {
-                vo.setSourceAssetUrl(assetService.getPublicUrlForOwnedAsset(task.getSourceAssetId(), task.getUserId()));
-            } catch (BusinessException ignored) {
-                // 源图已删时不阻塞列表
+            String browserUrl = assetService.resolveBrowserMediaUrl(null, null, task.getSourceAssetId(), task.getUserId());
+            if (browserUrl != null && !browserUrl.isBlank()) {
+                vo.setSourceAssetUrl(browserUrl);
             }
         } else if (!confirmed.isEmpty() && confirmed.get(0).getSourceAssetUrl() != null) {
             vo.setSourceAssetUrl(confirmed.get(0).getSourceAssetUrl());

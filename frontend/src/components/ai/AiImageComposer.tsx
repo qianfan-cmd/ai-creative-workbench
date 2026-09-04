@@ -3,6 +3,7 @@ import { Button, Input, Modal, Spin, message } from 'antd'
 import { useCallback, useRef, useState } from 'react'
 import { listAssetsApi, uploadAssetApi } from '@/api/assets'
 import type { AssetVO } from '@/types/api'
+import { normalizeMediaUrl } from '@/utils/mediaUrl'
 import styles from '@/components/ai/AiImageComposer.module.css'
 
 export interface AiComposerAttachment {
@@ -23,6 +24,8 @@ interface AiImageComposerProps {
   placeholder?: string
   maxAttachments?: number
   onSend: (payload: AiComposerPayload) => void
+  /** 工作流暂存上传（Ops）；未提供时走素材库 uploadAssetApi */
+  onUploadAttachment?: (file: File) => Promise<AiComposerAttachment>
   confirmAction?: React.ReactNode
   toolbarExtra?: React.ReactNode
 }
@@ -36,6 +39,7 @@ export default function AiImageComposer({
   placeholder = '输入描述，Enter 发送，Shift+Enter 换行',
   maxAttachments = 4,
   onSend,
+  onUploadAttachment,
   confirmAction,
   toolbarExtra,
 }: AiImageComposerProps) {
@@ -71,12 +75,17 @@ export default function AiImageComposer({
         continue
       }
       try {
-        const uploaded = await uploadAssetApi(file)
-        addAttachment({
-          assetId: uploaded.id,
-          url: uploaded.url,
-          name: uploaded.name,
-        })
+        const item = onUploadAttachment
+          ? await onUploadAttachment(file)
+          : await (async () => {
+              const uploaded = await uploadAssetApi(file)
+              return {
+                assetId: uploaded.id,
+                url: uploaded.url,
+                name: uploaded.name,
+              }
+            })()
+        addAttachment(item)
       } catch (e) {
         message.error(e instanceof Error ? e.message : '上传失败')
       }
@@ -139,7 +148,7 @@ export default function AiImageComposer({
           <div className={styles.attachments}>
             {attachments.map((a) => (
               <div key={a.url} className={styles.chip}>
-                <img src={a.url} alt={a.name ?? '附件'} className={styles.chipImg} />
+                <img src={normalizeMediaUrl(a.url)} alt={a.name ?? '附件'} className={styles.chipImg} />
                 <button
                   type="button"
                   className={styles.chipRemove}
@@ -243,7 +252,7 @@ export default function AiImageComposer({
                       })
                     }}
                   />
-                  <img src={a.url} alt={a.name} className={styles.libraryThumb} />
+                  <img src={normalizeMediaUrl(a.url)} alt={a.name} className={styles.libraryThumb} />
                 </label>
               ))}
             </div>

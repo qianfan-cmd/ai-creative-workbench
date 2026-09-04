@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -535,6 +536,7 @@ public class AssetService {
         return fileStorageService.storeFromBytes(fileName, pngBytes, "image/png");
     }
 
+    /** Java ↔ Python L3 拉取用的绝对 URL（含 /uploads/ 前缀） */
     public String buildPublicUrlFromStoredPath(String storedPath) {
         if (storedPath == null || storedPath.isBlank()) {
             throw new BusinessException(400, "素材路径无效");
@@ -542,8 +544,159 @@ public class AssetService {
         if (storedPath.startsWith("http://") || storedPath.startsWith("https://")) {
             return storedPath;
         }
-        String path = storedPath.startsWith("/") ? storedPath : "/" + storedPath;
-        return buildFullUrl(path);
+        return buildFullUrl(toUploadsWebPath(storedPath));
+    }
+
+    /** 前端 img / Vite proxy 用的相对路径 */
+    public String resolveBrowserMediaUrl(String imageUrl, String storagePath, Long assetId, Long userId) {
+        if (assetId != null && userId != null) {
+            try {
+                Asset asset = assetMapper.selectById(assetId);
+                if (asset != null && asset.getUserId().equals(userId)) {
+                    return toBrowserUploadsPath(asset.getUrl());
+                }
+            } catch (Exception ignored) {
+                /* fall through */
+            }
+        }
+        if (storagePath != null && !storagePath.isBlank()) {
+            return toBrowserUploadsPath(storagePath);
+        }
+        if (imageUrl != null && !imageUrl.isBlank()) {
+            if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+                return normalizeLocalhostToRelative(imageUrl);
+            }
+            return toBrowserUploadsPath(imageUrl);
+        }
+        return imageUrl;
+    }
+
+    public record ProviderImageRef(String sourceUrl, byte[] imageBytes) {}
+
+    /** 供 Seedream / 视觉 API：公网 URL 直传，本地/内网则读盘转 base64 */
+    public ProviderImageRef resolveReferenceImageForProvider(String url, Long userId) {
+        if (url == null || url.isBlank()) {
+            return new ProviderImageRef(null, null);
+        }
+        String trimmed = url.trim();
+        if (isPublicHttpsUrl(trimmed)) {
+            return new ProviderImageRef(trimmed, null);
+        }
+        byte[] bytes = readReferenceImageBytes(trimmed, userId);
+        return new ProviderImageRef(trimmed, bytes);
+    }
+
+    private byte[] readReferenceImageBytes(String url, Long userId) {
+        if (url.startsWith("/uploads/") || url.startsWith("uploads/")) {
+            return readWorkflowImageBytes(url);
+        }
+        String localPath = extractLocalUploadsPath(url);
+        if (localPath != null) {
+            return readWorkflowImageBytes(localPath);
+        }
+        return downloadImageBytes(url);
+    }
+
+    private String extractLocalUploadsPath(String url) {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host == null || !isPrivateOrLocalHost(host)) {
+                return null;
+            }
+            String path = uri.getPath();
+            if (path != null && path.startsWith("/uploads/")) {
+                return path;
+            }
+        } catch (Exception ignored) {
+            /* ignore */
+        }
+        return null;
+    }
+
+    private boolean isPublicHttpsUrl(String url) {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            return !isPrivateOrLocalHost(host);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isPrivateOrLocalHost(String host) {
+        if (host == null || host.isBlank()) {
+            return true;
+        }
+        String h = host.toLowerCase();
+        if (h.equals("localhost") || h.equals("127.0.0.1") || h.equals("::1") || h.equals("0.0.0.0")) {
+            return true;
+        }
+        if (h.endsWith(".local")) {
+            return true;
+        }
+        try {
+            InetAddress addr = InetAddress.getByName(h);
+            return addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress();
+        } catch (Exception e) {
+            return h.indexOf('.') < 0;
+        }
+    }
+
+    private String toUploadsWebPath(String storedPath) {
+        if (storedPath.startsWith("/uploads/")) {
+            return storedPath;
+        }
+        if (storedPath.startsWith("uploads/")) {
+            return "/" + storedPath;
+        }
+        String relative = normalizeStoredPath(storedPath);
+        return "/uploads/" + relative;
+    }
+
+    private String toBrowserUploadsPath(String storedPath) {
+        if (storedPath.startsWith("http://") || storedPath.startsWith("https://")) {
+            return normalizeLocalhostToRelative(storedPath);
+        }
+        return toUploadsWebPath(storedPath);
+    }
+
+    private String normalizeLocalhostToRelative(String url) {
+        String base = appProperties.getPublicBaseUrl();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (url.startsWith(base + "/uploads/")) {
+            return url.substring(base.length());
+        }
+        if (url.startsWith(base)) {
+            String suffix = url.substring(base.length());
+            if (suffix.startsWith("/uploads/")) {
+                return suffix;
+            }
+        }
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host != null && isPrivateOrLocalHost(host)) {
+                String path = uri.getPath();
+                if (path != null && path.startsWith("/uploads/")) {
+                    return path;
+                }
+            }
+        } catch (Exception ignored) {
+            /* keep original */
+        }
+        return url;
     }
 
     public byte[] readWorkflowImageBytes(String storedPath) {
@@ -569,25 +722,9 @@ public class AssetService {
         return fileStorageService.storeFromBytes(safeName, bytes, "image/png", subdir);
     }
 
-    /** workflow source / 候选图对外展示 URL：优先 assetId，其次本地 uploads，最后遗留外链 */
+    /** workflow source / 候选图浏览器展示 URL */
     public String resolveWorkflowImageUrl(String imageUrl, String storagePath, Long assetId, Long userId) {
-        if (assetId != null && userId != null) {
-            try {
-                return getPublicUrlForOwnedAsset(assetId, userId);
-            } catch (BusinessException ignored) {
-                /* fall through */
-            }
-        }
-        if (storagePath != null && !storagePath.isBlank()) {
-            return buildPublicUrlFromStoredPath(storagePath);
-        }
-        if (imageUrl != null && !imageUrl.isBlank()) {
-            if (imageUrl.startsWith("/uploads/") || imageUrl.startsWith("uploads/")) {
-                return buildPublicUrlFromStoredPath(imageUrl);
-            }
-            return imageUrl;
-        }
-        return imageUrl;
+        return resolveBrowserMediaUrl(imageUrl, storagePath, assetId, userId);
     }
 
     private byte[] readBytesFromStoredPath(String storedUrl) {

@@ -33,6 +33,7 @@ public class GenerationJobService {
     private final GenerationJobMapper generationJobMapper;
     private final AiCallLogMapper aiCallLogMapper;
     private final PythonAiClient pythonAiClient;
+    private final AssetService assetService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -64,9 +65,14 @@ public class GenerationJobService {
 
         long startMs = System.currentTimeMillis();
         try {
+            AssetService.ProviderImageRef imageRef = (sourceUrl != null && !sourceUrl.isBlank())
+                    ? resolveReferenceForJob(sourceUrl, userId)
+                    : new AssetService.ProviderImageRef(null, null);
             PythonImageGenerateResponse resp = "matting".equals(jobType)
-                    ? pythonAiClient.opsMatting(prompt, sourceUrl, count, aspectRatio)
-                    : pythonAiClient.opsImageGen(prompt, sourceUrl, count, aspectRatio);
+                    ? pythonAiClient.opsMatting(
+                            prompt, imageRef.sourceUrl(), count, aspectRatio, imageRef.imageBytes())
+                    : pythonAiClient.opsImageGen(
+                            prompt, imageRef.sourceUrl(), count, aspectRatio, imageRef.imageBytes());
 
             job.setProviderUsed(resp.getProvider());
             job.setCandidatesJson(writeJson(resp.getCandidates()));
@@ -98,6 +104,10 @@ public class GenerationJobService {
                         .eq(GenerationJob::getRefTaskId, taskId)
                         .orderByDesc(GenerationJob::getCreatedAt)
         ).stream().map(j -> toVO(j, parseCandidates(j.getCandidatesJson()))).collect(Collectors.toList());
+    }
+
+    private AssetService.ProviderImageRef resolveReferenceForJob(String sourceUrl, Long userId) {
+        return assetService.resolveReferenceImageForProvider(sourceUrl, userId);
     }
 
     private void failJob(GenerationJob job, String message) {

@@ -8,23 +8,19 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("user")
-public class User {
+@TableName("password_reset_token")
+public class PasswordResetToken {
 
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    private String username;
+    private Long userId;
 
-    private String passwordHash;
+    private String tokenHash;
 
-    private String email;
+    private LocalDateTime expiresAt;
 
-    private String avatarUrl;
-
-    private String role;
+    private Integer used;
 
     private LocalDateTime createdAt;
-
-    private LocalDateTime updatedAt;
 }

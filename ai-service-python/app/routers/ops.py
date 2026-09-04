@@ -79,14 +79,25 @@ def _to_response(result) -> ImageGenerateResponse:
     )
 
 
+def _resolve_image_source(req: ImageGenerateRequest) -> str | None:
+    """解析图生图参考图：公网 URL / inline base64 / 本地拉取。"""
+    url = (req.source_url or "").strip() or None
+    b64 = (req.image_base64 or "").strip() or None
+    if not url and not b64:
+        return None
+    resolved = VisionImageResolver.resolve(image_url=url, image_base64=b64)
+    return resolved.payload_url
+
+
 @router.post("/image-gen", response_model=ImageGenerateResponse)
 def image_gen_handler(req: ImageGenerateRequest) -> ImageGenerateResponse:
     """Campaign 配图 / library-ai 文生图或图生图。"""
     try:
+        source_url = _resolve_image_source(req)
         result = generate_images(
             job_type="image_gen",
             prompt=req.prompt,
-            source_url=req.source_url,
+            source_url=source_url,
             count=req.count,
             aspect_ratio=req.aspect_ratio,
         )
@@ -98,14 +109,17 @@ def image_gen_handler(req: ImageGenerateRequest) -> ImageGenerateResponse:
 @router.post("/matting", response_model=ImageGenerateResponse)
 def matting_handler(req: ImageGenerateRequest) -> ImageGenerateResponse:
     """抠图多候选 — 必须提供 sourceUrl。"""
-    if not req.source_url:
+    if not req.source_url and not req.image_base64:
         raise HTTPException(status_code=400, detail="抠图需要 sourceUrl")
     prompt = req.prompt.strip() or _DEFAULT_MATTING_PROMPT
     try:
+        source_url = _resolve_image_source(req)
+        if not source_url:
+            raise HTTPException(status_code=400, detail="抠图需要 sourceUrl")
         result = generate_images(
             job_type="matting",
             prompt=prompt,
-            source_url=req.source_url,
+            source_url=source_url,
             count=req.count,
             aspect_ratio=req.aspect_ratio,
         )

@@ -5,5 +5,53 @@ spring:
   datasource:
     password: your-mysql-password
 
+  # --- QQ 邮箱 SMTP（找回密码）---
+  # 步骤：mail.qq.com → 设置 → 账户 → 开启 SMTP → 生成授权码
+  # password 填授权码，不是 QQ 登录密码
+  mail:
+    host: smtp.qq.com
+    port: 587
+    username: your-qq@qq.com
+    password: your-smtp-auth-code
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+  # --- 163 邮箱（后续可用，取消注释并替换 QQ 配置）---
+  # mail:
+  #   host: smtp.163.com
+  #   port: 465
+  #   username: your-name@163.com
+  #   password: your-smtp-auth-code
+  #   properties:
+  #     mail:
+  #       smtp:
+  #         auth: true
+  #         ssl:
+  #           enable: true
+
+  # --- Gmail（后续可用）---
+  # mail:
+  #   host: smtp.gmail.com
+  #   port: 587
+  #   username: your@gmail.com
+  #   password: your-app-password
+  #   properties:
+  #     mail:
+  #       smtp:
+  #         auth: true
+  #         starttls:
+  #           enable: true
+
 jwt:
   secret: your-local-jwt-secret-at-least-32-characters-long
+
+app:
+  frontend-base-url: http://localhost:5173
+  mail:
+    provider: qq
+    from-name: AI Creative Workbench

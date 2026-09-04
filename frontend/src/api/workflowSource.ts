@@ -1,5 +1,5 @@
 import request from '@/api/request'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse, AssetVO } from '@/types/api'
 import { getToken } from '@/utils/token'
 
 export type WorkflowContext = 'matting' | 'campaign'
@@ -20,6 +20,7 @@ export interface WorkflowSourceVO {
   aspectRatio?: string
   referenceUrls?: string[]
   generationJobId?: number
+  ephemeralReference?: boolean
 }
 
 export async function listWorkflowSourcesApi(params: {
@@ -45,7 +46,7 @@ export async function listSelectedWorkflowSourcesApi(params: {
 export async function uploadWorkflowSourceApi(
   file: File,
   params: { context: WorkflowContext; taskId?: number; draftId?: number },
-  options?: { onProgress?: (pct: number) => void },
+  options?: { onProgress?: (pct: number) => void; ephemeralReference?: boolean },
 ) {
   const form = new FormData()
   form.append('file', file)
@@ -54,6 +55,7 @@ export async function uploadWorkflowSourceApi(
   qs.set('context', params.context)
   if (params.taskId != null) qs.set('taskId', String(params.taskId))
   if (params.draftId != null) qs.set('draftId', String(params.draftId))
+  if (options?.ephemeralReference) qs.set('ephemeralReference', 'true')
 
   const res = await request.post<ApiResponse<WorkflowSourceVO>>(
     `/ops/workflow-sources/upload?${qs.toString()}`,
@@ -90,6 +92,13 @@ export async function patchWorkflowSourceApi(id: number, body: { selected?: bool
 
 export async function deleteWorkflowSourceApi(id: number) {
   await request.delete<ApiResponse<null>>(`/ops/workflow-sources/${id}`)
+}
+
+export async function importWorkflowSourceToAssetsApi(workflowSourceId: number) {
+  const res = await request.post<ApiResponse<AssetVO>>(
+    `/ops/workflow-sources/${workflowSourceId}/import-to-assets`,
+  )
+  return res.data.data
 }
 
 export async function generateCampaignWorkflowAiApi(body: {
@@ -130,7 +139,7 @@ export function workflowSourceToScheme(s: WorkflowSourceVO) {
 
 export function uploadSourcesToAssetLike(sources: WorkflowSourceVO[]) {
   return sources
-    .filter((s) => s.sourceType === 'upload')
+    .filter((s) => s.sourceType === 'upload' && !s.ephemeralReference)
     .map((s) => ({
       id: s.id,
       name: s.originalName ?? '上传图片',

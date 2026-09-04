@@ -1,7 +1,8 @@
 import { CheckOutlined, ExpandOutlined, LoadingOutlined, PlusOutlined } from '@ant-design/icons'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { MattingExtractStatusVO } from '@/api/ops'
 import ImageLightbox from '@/components/common/ImageLightbox'
+import { normalizeMediaUrl } from '@/utils/mediaUrl'
 import styles from '@/components/ops/ElementCandidateGallery.module.css'
 
 const MAX_CANDIDATES_PER_ELEMENT = 8
@@ -22,6 +23,19 @@ export default function ElementCandidateGallery({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewAlt, setPreviewAlt] = useState('')
   const [brokenKeys, setBrokenKeys] = useState<Set<string>>(() => new Set())
+
+  const statusKey = useMemo(() => {
+    if (!status?.elements?.length) return ''
+    return status.elements
+      .flatMap((el) =>
+        el.images.map((img) => `${el.elementId}:${img.slotIndex}:${img.status}:${img.url ?? ''}`),
+      )
+      .join('|')
+  }, [status])
+
+  useEffect(() => {
+    setBrokenKeys(new Set())
+  }, [statusKey])
 
   const markBroken = (key: string) => {
     setBrokenKeys((prev) => {
@@ -90,6 +104,8 @@ export default function ElementCandidateGallery({
             el.images.length < MAX_CANDIDATES_PER_ELEMENT &&
             !(isRunning && !hasDoneImages)
           const regenDisabled = isExtractBusy || hasPendingSlot
+          const showElementLoading =
+            (isRunning || loading) && el.images.length === 0 && el.status === 'running'
 
           return (
             <div key={el.elementId}>
@@ -97,6 +113,12 @@ export default function ElementCandidateGallery({
               <div className={styles.elemCard}>
                 <div className={styles.elemName}>{el.elementName}</div>
                 <div className={styles.thumbRow}>
+                  {showElementLoading ? (
+                    <div className={styles.loadingSlot}>
+                      <LoadingOutlined spin />
+                      <span>提取中…</span>
+                    </div>
+                  ) : null}
                   {el.images.map((img) => {
                     const thumbKey = `${el.elementId}-${img.slotIndex}`
                     if (img.status === 'pending') {
@@ -124,7 +146,7 @@ export default function ElementCandidateGallery({
                       >
                         {img.url && img.status === 'done' ? (
                           brokenKeys.has(thumbKey) ? (
-                            <div className={styles.imageExpired}>图片链接已过期，请再生成</div>
+                            <div className={styles.imageExpired}>图片加载失败</div>
                           ) : (
                             <>
                               <button
@@ -133,14 +155,14 @@ export default function ElementCandidateGallery({
                                 aria-label="预览大图"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  setPreviewUrl(img.url!)
+                                  setPreviewUrl(normalizeMediaUrl(img.url!))
                                   setPreviewAlt(el.elementName)
                                 }}
                               >
                                 <ExpandOutlined />
                               </button>
                               <img
-                                src={img.url}
+                                src={normalizeMediaUrl(img.url)}
                                 alt=""
                                 className={styles.thumbImg}
                                 onError={() => markBroken(thumbKey)}

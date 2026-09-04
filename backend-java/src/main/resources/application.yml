@@ -32,6 +32,10 @@ jwt:
 
 app:
   public-base-url: http://localhost:8080
+  frontend-base-url: http://localhost:5173
+  mail:
+    provider: qq
+    from-name: AI Creative Workbench
   storage:
     provider: local
     oss:

@@ -25,9 +25,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")          // 拦截所有 /api 接口
                 .excludePathPatterns(
-                        "/api/auth/login",           // 登录放行
-                        "/api/auth/register",        // 注册放行
-                        "/api/health",                // 健康检查放行
+                        "/api/auth/login",
+                        "/api/auth/register",
+                        "/api/auth/forgot-password",
+                        "/api/auth/reset-password",
+                        "/api/health",
                         "/api/ai/health"
                 );
     }

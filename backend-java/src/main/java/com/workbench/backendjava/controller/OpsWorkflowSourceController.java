@@ -7,6 +7,7 @@ import com.workbench.backendjava.dto.WorkflowSourcePatchRequest;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.service.WorkflowSourceService;
+import com.workbench.backendjava.vo.AssetVO;
 import com.workbench.backendjava.vo.WorkflowSourceVO;
 import jakarta.validation.Valid;
 import lombok.Data;
@@ -37,9 +38,12 @@ public class OpsWorkflowSourceController {
             @RequestParam String context,
             @RequestParam(required = false) Long taskId,
             @RequestParam(required = false) Long draftId,
+            @RequestParam(value = "ephemeralReference", required = false, defaultValue = "false")
+                    boolean ephemeralReference,
             @RequestParam("file") MultipartFile file) {
         Long userId = requireUserId();
-        return Result.ok(workflowSourceService.upload(context, taskId, draftId, file, userId));
+        return Result.ok(workflowSourceService.upload(
+                context, taskId, draftId, file, userId, ephemeralReference));
     }
 
     @PostMapping("/from-library")
@@ -89,6 +93,12 @@ public class OpsWorkflowSourceController {
             @RequestParam(required = false) Long draftId) {
         Long userId = requireUserId();
         return Result.ok(workflowSourceService.listSelectedVO(context, taskId, draftId, userId));
+    }
+
+    @PostMapping("/{id}/import-to-assets")
+    public Result<AssetVO> importToAssets(@PathVariable Long id) {
+        Long userId = requireUserId();
+        return Result.ok(workflowSourceService.importToAssets(id, userId, List.of("generated", "campaign")));
     }
 
     @Data

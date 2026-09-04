@@ -6,6 +6,7 @@ import SourceSchemeGrid from '@/components/ops/SourceSchemeGrid'
 import type { MattingSourceScheme } from '@/api/ops'
 import type { TagVO } from '@/api/tags'
 import type { AssetVO } from '@/types/api'
+import { normalizeMediaUrl } from '@/utils/mediaUrl'
 import styles from '@/components/ops/OpsImageSourcePicker.module.css'
 
 export type OpsImageTopMode = 'upload' | 'library'
@@ -100,7 +101,7 @@ export default function OpsImageSourcePicker({
             checked={selectedUploadIds.has(a.id)}
             onChange={() => onToggleUpload(a.id)}
           />
-          <img src={a.url} alt={a.name} className={styles.assetThumb} />
+          <img src={normalizeMediaUrl(a.url)} alt={a.name} className={styles.assetThumb} />
           <span className={styles.assetName}>{a.name}</span>
         </label>
       ))}
@@ -124,7 +125,7 @@ export default function OpsImageSourcePicker({
             checked={selectedLibraryAssetIds.has(a.id)}
             onChange={() => onToggleLibraryAsset(a.id)}
           />
-          <img src={a.url} alt={a.name} className={styles.assetThumb} />
+          <img src={normalizeMediaUrl(a.url)} alt={a.name} className={styles.assetThumb} />
           <span className={styles.assetName}>{a.name}</span>
         </label>
       ))}

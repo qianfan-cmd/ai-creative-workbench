@@ -1,8 +1,9 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
+import UserAvatar from '@/components/common/UserAvatar'
 import styles from '@/components/layout/AppTopBar.module.css'
-import { Button, Dropdown, Avatar } from 'antd'
+import { Dropdown } from 'antd'
 import type { MenuProps } from 'antd'
 import type { BreadcrumbItem } from '@/hooks/useAppBreadcrumbs'
 
@@ -19,10 +20,8 @@ export default function AppTopBar({ items, sidebarCollapsed, onToggleSidebar }: 
 
   const displayName = user?.username ?? '...'
   const roleLabel = user?.role ?? 'User'
-  const avatarText = displayName.slice(0, 2).toUpperCase()
 
   const menuItems: MenuProps['items'] = [
-    { key: 'profile', label: '个人资料', disabled: true },
     {
       key: 'settings',
       label: '设置',
@@ -69,14 +68,13 @@ export default function AppTopBar({ items, sidebarCollapsed, onToggleSidebar }: 
       </div>
 
       <div className={styles.actions}>
-        <Button type="default" size="small">文档 Docs</Button>
         <Dropdown menu={{ items: menuItems }} placement="bottomRight">
           <div className={styles.userBlock}>
             <div className={styles.userMeta}>
               <span className={styles.userName}>{displayName}</span>
               <span className={styles.userRole}>{roleLabel}</span>
             </div>
-            <Avatar size={32} className={styles.avatar}>{avatarText}</Avatar>
+            <UserAvatar user={user} size={32} className={styles.avatar} />
           </div>
         </Dropdown>
       </div>

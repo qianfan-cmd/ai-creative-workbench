@@ -17,6 +17,14 @@ public class Result<T> {
         return result;
     }
 
+    public static <T> Result<T> ok(T data, String message) {
+        Result<T> result = new Result<>();
+        result.code = 200;
+        result.message = message;
+        result.data = data;
+        return result;
+    }
+
     public static <T> Result<T> ok() {
         return ok(null);
     }

@@ -1,7 +1,8 @@
 import { DeleteOutlined } from '@ant-design/icons'
 import { Button } from 'antd'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { MattingSourceScheme } from '@/api/ops'
+import { normalizeMediaUrl } from '@/utils/mediaUrl'
 import styles from '@/components/ops/SourceSchemeGrid.module.css'
 
 interface SourceSchemeGridProps {
@@ -21,6 +22,15 @@ export default function SourceSchemeGrid({
 }: SourceSchemeGridProps) {
   const [importingId, setImportingId] = useState<string | null>(null)
   const [brokenIds, setBrokenIds] = useState<Set<string>>(() => new Set())
+
+  const schemesKey = useMemo(
+    () => schemes.map((s) => `${s.id}:${s.imageUrl}`).join('|'),
+    [schemes],
+  )
+
+  useEffect(() => {
+    setBrokenIds(new Set())
+  }, [schemesKey])
 
   if (schemes.length === 0) {
     return <p className={styles.empty}>暂无 AI 方案，在下方输入描述并发送生成</p>
@@ -58,10 +68,10 @@ export default function SourceSchemeGrid({
             onClick={() => onPreview(scheme.imageUrl, scheme.prompt ?? `方案 ${index + 1}`)}
           >
             {brokenIds.has(scheme.id) ? (
-              <span className={styles.imageExpired}>图片链接已过期，请再生成</span>
+              <span className={styles.imageExpired}>图片加载失败</span>
             ) : (
               <img
-                src={scheme.imageUrl}
+                src={normalizeMediaUrl(scheme.imageUrl)}
                 alt={scheme.prompt ?? `方案 ${index + 1}`}
                 className={styles.image}
                 onError={() => markBroken(scheme.id)}
@@ -79,16 +89,20 @@ export default function SourceSchemeGrid({
                 选为源图
               </label>
               {onAddToLibrary ? (
-                <Button
-                  type="link"
-                  size="small"
-                  className={styles.libraryBtn}
-                  loading={importingId === scheme.id}
-                  disabled={importingId != null && importingId !== scheme.id}
-                  onClick={() => void handleAddToLibrary(scheme)}
-                >
-                  加入素材库
-                </Button>
+                scheme.assetId ? (
+                  <span className={styles.libraryDone}>已在素材库</span>
+                ) : (
+                  <Button
+                    type="link"
+                    size="small"
+                    className={styles.libraryBtn}
+                    loading={importingId === scheme.id}
+                    disabled={importingId != null && importingId !== scheme.id}
+                    onClick={() => void handleAddToLibrary(scheme)}
+                  >
+                    加入素材库
+                  </Button>
+                )
               ) : null}
             </div>
             <button type="button" className={styles.deleteBtn} onClick={() => onDelete(scheme.id)} title="删除">

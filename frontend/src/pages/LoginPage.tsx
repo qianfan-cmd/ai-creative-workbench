@@ -57,6 +57,10 @@ export default function LoginPage() {
           <Input.Password placeholder="请输入密码" />
         </Form.Item>
 
+        <p className={styles.forgotLink}>
+          <Link to="/forgot-password">忘记密码？</Link>
+        </p>
+
         <Button type="primary" htmlType="submit" block loading={loading}>
           登录
         </Button>

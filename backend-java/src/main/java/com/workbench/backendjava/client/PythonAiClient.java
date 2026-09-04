@@ -455,12 +455,24 @@ public class PythonAiClient {
 
     /** 调用 Python POST /ai/ops/image-gen */
     public PythonImageGenerateResponse opsImageGen(String prompt, String sourceUrl, int count, String aspectRatio) {
-        return callImageEndpoint("/ai/ops/image-gen", prompt, sourceUrl, count, aspectRatio);
+        return opsImageGen(prompt, sourceUrl, count, aspectRatio, null);
+    }
+
+    public PythonImageGenerateResponse opsImageGen(
+            String prompt, String sourceUrl, int count, String aspectRatio, byte[] imageBytes
+    ) {
+        return callImageEndpoint("/ai/ops/image-gen", prompt, sourceUrl, count, aspectRatio, imageBytes);
     }
 
     /** 调用 Python POST /ai/ops/matting */
     public PythonImageGenerateResponse opsMatting(String prompt, String sourceUrl, int count, String aspectRatio) {
-        return callImageEndpoint("/ai/ops/matting", prompt, sourceUrl, count, aspectRatio);
+        return opsMatting(prompt, sourceUrl, count, aspectRatio, null);
+    }
+
+    public PythonImageGenerateResponse opsMatting(
+            String prompt, String sourceUrl, int count, String aspectRatio, byte[] imageBytes
+    ) {
+        return callImageEndpoint("/ai/ops/matting", prompt, sourceUrl, count, aspectRatio, imageBytes);
     }
 
     /** 视觉元素识别 POST /ai/ops/detect-elements */
@@ -536,13 +548,16 @@ public class PythonAiClient {
     }
 
     private PythonImageGenerateResponse callImageEndpoint(
-            String path, String prompt, String sourceUrl, int count, String aspectRatio
+            String path, String prompt, String sourceUrl, int count, String aspectRatio, byte[] imageBytes
     ) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + path;
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("prompt", prompt);
         if (sourceUrl != null && !sourceUrl.isBlank()) {
             body.put("sourceUrl", sourceUrl);
+        }
+        if (imageBytes != null && imageBytes.length > 0) {
+            body.put("imageBase64", Base64.getEncoder().encodeToString(imageBytes));
         }
         body.put("count", count);
         if (aspectRatio != null && !aspectRatio.isBlank()) {

@@ -22,14 +22,11 @@
   cursor: pointer;
   font-size: 14px;
   flex-shrink: 0;
-  opacity: 0;
+  opacity: 0.55;
 }
 
 .rowWrap:hover .menuBtn,
 .rowWrap:focus-within .menuBtn {
   opacity: 1;
-}
-
-.menuBtn:hover {
   background: var(--color-bg-hover);
 }

@@ -1,6 +1,6 @@
 import { message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { importAssetFromUrlApi, listAssetsApi } from '@/api/assets'
+import { listAssetsApi } from '@/api/assets'
 import type { MattingSourceScheme } from '@/api/ops'
 import { listTagsApi, type TagVO } from '@/api/tags'
 import ImageLightbox from '@/components/common/ImageLightbox'
@@ -11,6 +11,7 @@ import {
   addWorkflowSourcesFromLibraryApi,
   deleteWorkflowSourceApi,
   generateCampaignWorkflowAiApi,
+  importWorkflowSourceToAssetsApi,
   listWorkflowSourcesApi,
   patchWorkflowSourceApi,
   uploadSourcesToAssetLike,
@@ -247,7 +248,8 @@ export default function CampaignImagePicker({
 
   const handleAddToLibrary = async (scheme: MattingSourceScheme) => {
     try {
-      await importAssetFromUrlApi(scheme.imageUrl, scheme.prompt?.trim() || '活动配图')
+      await importWorkflowSourceToAssetsApi(Number(scheme.id))
+      await loadSources()
       message.success('已加入素材库')
     } catch (e) {
       message.error(e instanceof Error ? e.message : '入库失败')
@@ -322,6 +324,7 @@ export default function CampaignImagePicker({
             aspectRatio={aspectRatio}
             placeholder="描述要生成的活动配图，Enter 发送"
             onSend={(p) => void handleAiGenerate(p)}
+            workflowContext={{ context: 'campaign', draftId: draftId ?? undefined }}
           />
         }
       />

@@ -310,6 +310,7 @@ export default function MattingStage1Source({
             loading={aiGenerating}
             onSend={(p) => void handleAiGenerate(p)}
             confirmAction={confirmButton}
+            workflowContext={{ context: 'matting', taskId }}
           />
         }
         panelFooter={confirmButton}
