@@ -1,16 +1,11 @@
 package com.workbench.backendjava.common;
 
+import com.workbench.backendjava.common.BusinessException;
 
-/**
- * 用ThreadLocal保存当前请求的userId
- * 每个HTTP请求在独立线程里，互不干扰
- * Interceptor 验完 token 后 setUserId
- * Service 里 getUserId() 就知道是谁
- * 请求结束必须 clear()，否则线程池复用线程时会串数据（生产级必做）
- */
-public class LoginUserContext {
+public final class LoginUserContext {
 
     private static final ThreadLocal<Long> USER_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> ROLE = new ThreadLocal<>();
 
     public static void setUserId(Long userId) {
         USER_ID.set(userId);
@@ -20,7 +15,22 @@ public class LoginUserContext {
         return USER_ID.get();
     }
 
+    public static void setRole(String role) {
+        ROLE.set(role);
+    }
+
+    public static String getRole() {
+        return ROLE.get();
+    }
+
     public static void clear() {
         USER_ID.remove();
+        ROLE.remove();
+    }
+
+    public static void requireAdmin() {
+        if (!UserRole.ADMIN.equals(getRole())) {
+            throw new BusinessException(403, "需要管理员权限");
+        }
     }
 }

@@ -108,6 +108,8 @@ class ImageGenerateResponse(BaseModel):
 
     provider: str
 
+    model: str
+
     candidates: List[ImageCandidateDTO]
 
 
@@ -136,6 +138,10 @@ class DetectElementsResponse(BaseModel):
 
     groups: Dict[str, List[str]]
     resolve_strategy: Optional[str] = Field(None, alias="resolveStrategy")
+    model: Optional[str] = None
+    prompt_tokens: Optional[int] = Field(None, alias="promptTokens")
+    completion_tokens: Optional[int] = Field(None, alias="completionTokens")
+    total_tokens: Optional[int] = Field(None, alias="totalTokens")
 
     model_config = {"populate_by_name": True}
 

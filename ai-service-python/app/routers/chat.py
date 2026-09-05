@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.schemas.chat import ChatRequest, ChatResponse, ChatStreamRequest
-from app.services.llm_service import chat_with_llm, stream_chat_with_messages
+from app.services.llm_service import chat_with_llm, stream_chat_events
 
 # APIRouter：一组路由的容器
 # prefix="/ai" → 本 router 下所有路径前都会加 /ai
@@ -78,9 +78,13 @@ def chat_stream(req: ChatStreamRequest):
         try:
             # Pydantic 模型转 dict，保留多模态 content 结构
             messages = [item.model_dump(mode="json") for item in req.messages]
-            for chunk in stream_chat_with_messages(messages):
-                payload = json.dumps(chunk, ensure_ascii=False)
-                yield f"event: message\ndata: {payload}\n\n"
+            for event in stream_chat_events(messages):
+                if event.get("type") == "usage":
+                    payload = json.dumps(event, ensure_ascii=False)
+                    yield f"event: usage\ndata: {payload}\n\n"
+                else:
+                    payload = json.dumps(event.get("content", ""), ensure_ascii=False)
+                    yield f"event: message\ndata: {payload}\n\n"
             yield "event: done\ndata: [DONE]\n\n"
         except ValueError as e:
             yield f"event: error\ndata: {str(e)}\n\n"

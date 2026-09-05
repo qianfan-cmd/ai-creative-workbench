@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.config.AppProperties;
+import com.workbench.backendjava.common.UserRole;
+import com.workbench.backendjava.common.UserStatus;
 import com.workbench.backendjava.dto.ChangePasswordRequest;
 import com.workbench.backendjava.dto.LoginRequest;
 import com.workbench.backendjava.dto.ProfileUpdateRequest;
@@ -73,7 +75,8 @@ public class UserService {
         user.setUsername(request.getUsername());
         user.setPasswordHash(passwordHash);
         user.setEmail(request.getEmail());
-        user.setRole("USER");
+        user.setRole(UserRole.USER);
+        user.setStatus(UserStatus.ACTIVE);
 
         userMapper.insert(user);
         return toUserVO(user);
@@ -89,7 +92,11 @@ public class UserService {
             throw new BusinessException("用户名或密码错误");
         }
 
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+        if (UserStatus.DISABLED.equals(user.getStatus())) {
+            throw new BusinessException("账号已被禁用，请联系管理员");
+        }
+
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getRole());
 
         LoginResponse response = new LoginResponse();
         response.setToken(token);
@@ -202,6 +209,9 @@ public class UserService {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(401, "用户不存在");
+        }
+        if (UserStatus.DISABLED.equals(user.getStatus())) {
+            throw new BusinessException(401, "账号已被禁用");
         }
         return user;
     }

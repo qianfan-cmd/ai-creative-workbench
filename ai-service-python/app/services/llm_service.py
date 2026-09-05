@@ -81,7 +81,10 @@ def stream_chat_with_llm(message: str):
     流式调用 DeepSeek Chat Completions（单轮快捷入口）。
     内部转成 messages 数组后委托 stream_chat_with_messages。
     """
-    yield from stream_chat_with_messages([{"role": "user", "content": message}])
+    for chunk in stream_chat_with_messages([{"role": "user", "content": message}]):
+        if isinstance(chunk, dict) and chunk.get("__usage__"):
+            continue
+        yield chunk
 
 
 def stream_chat_with_messages(messages: list[dict]):
@@ -110,12 +113,15 @@ def stream_chat_with_messages(messages: list[dict]):
         "model": model,
         "messages": messages,
         "thinking": {"type": "disabled"},
-        "stream": True,  # 开启流式响应
+        "stream": True,
+        "stream_options": {"include_usage": True},
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     with httpx.Client(timeout=120.0) as client:
         with client.stream("POST", url, json=payload, headers=headers) as resp:
@@ -129,6 +135,28 @@ def stream_chat_with_messages(messages: list[dict]):
                     break
 
                 obj = json.loads(data)
-                delta = obj["choices"][0]["delta"].get("content")
+                if obj.get("usage"):
+                    usage.update(obj["usage"])
+                choices = obj.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {}).get("content")
                 if delta:
                     yield delta
+
+    yield {"__usage__": True, "model": model, **usage}
+
+
+def stream_chat_events(messages: list[dict]):
+    """Yield dict events: {type: chunk|usage, ...} for SSE routers."""
+    for item in stream_chat_with_messages(messages):
+        if isinstance(item, dict) and item.get("__usage__"):
+            yield {
+                "type": "usage",
+                "model": item.get("model"),
+                "prompt_tokens": item.get("prompt_tokens", 0),
+                "completion_tokens": item.get("completion_tokens", 0),
+                "total_tokens": item.get("total_tokens", 0),
+            }
+        else:
+            yield {"type": "chunk", "content": item}

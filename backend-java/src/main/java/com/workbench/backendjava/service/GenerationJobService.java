@@ -6,9 +6,7 @@ import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.client.PythonAiClient.PythonImageCandidate;
 import com.workbench.backendjava.client.PythonAiClient.PythonImageGenerateResponse;
 import com.workbench.backendjava.common.BusinessException;
-import com.workbench.backendjava.entity.AiCallLog;
 import com.workbench.backendjava.entity.GenerationJob;
-import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.mapper.GenerationJobMapper;
 import com.workbench.backendjava.vo.GenerationJobVO;
 import com.workbench.backendjava.vo.ImageCandidateVO;
@@ -31,7 +29,7 @@ import java.util.stream.Collectors;
 public class GenerationJobService {
 
     private final GenerationJobMapper generationJobMapper;
-    private final AiCallLogMapper aiCallLogMapper;
+    private final AiCallLogService aiCallLogService;
     private final PythonAiClient pythonAiClient;
     private final AssetService assetService;
     private final ObjectMapper objectMapper;
@@ -80,19 +78,21 @@ public class GenerationJobService {
             job.setUpdatedAt(LocalDateTime.now());
             generationJobMapper.updateById(job);
 
-            writeCallLog(userId, jobType, resp.getProvider(), prompt, "success",
+            int imageCount = resp.getCandidates() != null ? resp.getCandidates().size() : 0;
+            String modelId = resolveImageModel(resp);
+            writeCallLog(userId, jobType, resp.getProvider(), modelId, prompt, "success",
                     (int) (System.currentTimeMillis() - startMs),
-                    resp.getCandidates().size() + " images");
+                    imageCount + " images", imageCount);
             return toVO(job, resp.getCandidates());
         } catch (BusinessException e) {
             failJob(job, e.getMessage());
-            writeCallLog(userId, jobType, null, prompt, "failed",
-                    (int) (System.currentTimeMillis() - startMs), e.getMessage());
+            writeCallLog(userId, jobType, null, null, prompt, "failed",
+                    (int) (System.currentTimeMillis() - startMs), e.getMessage(), null);
             throw e;
         } catch (Exception e) {
             failJob(job, e.getMessage());
-            writeCallLog(userId, jobType, null, prompt, "failed",
-                    (int) (System.currentTimeMillis() - startMs), e.getMessage());
+            writeCallLog(userId, jobType, null, null, prompt, "failed",
+                    (int) (System.currentTimeMillis() - startMs), e.getMessage(), null);
             throw new BusinessException(502, "图像生成失败: " + e.getMessage());
         }
     }
@@ -117,18 +117,23 @@ public class GenerationJobService {
         generationJobMapper.updateById(job);
     }
 
-    private void writeCallLog(Long userId, String scene, String provider, String prompt,
-                              String status, int costMs, String summary) {
-        AiCallLog logRow = new AiCallLog();
-        logRow.setUserId(userId);
-        logRow.setScene(scene);
-        logRow.setProvider(provider);
-        logRow.setPrompt(prompt != null && prompt.length() > 2000 ? prompt.substring(0, 2000) : prompt);
-        logRow.setStatus(status);
-        logRow.setCostMs(costMs);
-        logRow.setResponseSummary(summary != null && summary.length() > 500 ? summary.substring(0, 500) : summary);
-        logRow.setCreatedAt(LocalDateTime.now());
-        aiCallLogMapper.insert(logRow);
+    private void writeCallLog(Long userId, String scene, String provider, String model, String prompt,
+                              String status, int costMs, String summary, Integer imageCount) {
+        aiCallLogService.logCall(userId, scene, provider, model, prompt, status, costMs, summary,
+                null, null, null, imageCount);
+    }
+
+    private static String resolveImageModel(PythonImageGenerateResponse resp) {
+        if (resp.getModel() != null && !resp.getModel().isBlank()) {
+            return resp.getModel();
+        }
+        if ("dashscope_wanx".equals(resp.getProvider())) {
+            return "wan2.7-image-pro";
+        }
+        if ("seedream".equals(resp.getProvider())) {
+            return "doubao-seedream-5-0-260128";
+        }
+        return resp.getProvider();
     }
 
     private String writeJson(Object obj) {

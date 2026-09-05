@@ -33,5 +33,14 @@ public class AiCallLog {
 
     private Integer costMs;
 
+    private Integer promptTokens;
+
+    private Integer completionTokens;
+
+    private Integer totalTokens;
+
+    /** 生图成功张数（按张计费模型） */
+    private Integer imageCount;
+
     private LocalDateTime createdAt;
 }

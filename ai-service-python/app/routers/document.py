@@ -86,7 +86,7 @@ async def index_document(
     delete_by_source(filename)
 
     # 批量 Embedding
-    embeddings = embed_texts(pieces)
+    embed_result = embed_texts(pieces)
 
     ids: list[str] = []
     metadatas: list[dict] = []
@@ -105,7 +105,7 @@ async def index_document(
     indexed = add_chunks(
         ids = ids,
         documents = pieces,
-        embeddings = embeddings,
+        embeddings = embed_result.embeddings,
         metadatas = metadatas,
     )
 
@@ -114,6 +114,8 @@ async def index_document(
         char_count = len(content),
         chunk_count = len(pieces),
         indexed_count = indexed,
+        embedding_model = embed_result.model,
+        embedding_tokens = embed_result.total_tokens,
     )
 
 @router.post("/delete", response_model = DocumentDeleteResponse)

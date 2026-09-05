@@ -51,9 +51,10 @@ public class AuthInterceptor implements HandlerInterceptor {
         try {
             // 解析 token，获取userId
             Long userId = jwtUtil.getUserId(token);
+            String role = jwtUtil.getRole(token);
 
-            // 存入上下文，后面在service中直接用
             LoginUserContext.setUserId(userId);
+            LoginUserContext.setRole(role);
             return true;
 
         } catch (Exception e) {

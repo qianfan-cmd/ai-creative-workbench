@@ -34,6 +34,8 @@ class DocumentIndexResponse(BaseModel):
     char_count: int = Field(..., description = "全文总字符数")
     chunk_count: int = Field(..., description = "切分后的 chunk 总数")
     indexed_count: int = Field(..., description = "写入 Chroma 的条数")
+    embedding_model: str | None = Field(None, description = "Embedding 模型 ID")
+    embedding_tokens: int | None = Field(None, description = "Embedding API 消耗的 token 数")
 
 class DocumentListItem(BaseModel):
     """左栏文档库单项：文件名 + 已索引 chunk 数"""

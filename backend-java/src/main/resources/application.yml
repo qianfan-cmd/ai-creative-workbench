@@ -34,8 +34,8 @@ app:
   public-base-url: http://localhost:8080
   frontend-base-url: http://localhost:5173
   mail:
-    provider: qq
-    from-name: AI Creative Workbench
+    provider: qq # 启动日志中显式指定邮箱服务商，可选 qq, 163, gmail
+    from-name: AI Creative Workbench # 发件人显示名称
   storage:
     provider: local
     oss:
@@ -48,5 +48,35 @@ app:
     dir: E:/ai-creative-workbench/uploads #本地存储目录
     max-size: 52428800 #50MB
     allowed-extensions: jpg,jpeg,png,gif,webp,pdf,md
-
+  ai-pricing:
+    provider-aliases:
+      deepseek: deepseek-v4-flash
+      seedream: doubao-seedream-5-0-260128
+      dashscope_wanx: wan2.7-image-pro
+    models:
+      deepseek-v4-flash:
+        input-cache-miss-per-million-min: 1.5
+        input-cache-miss-per-million-max: 3.0
+        output-per-million-min: 4.5
+        output-per-million-max: 9.0
+        source-url: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
+        formula: "prompt×输入单价/M + completion×输出单价/M（空闲～高峰区间，输入按缓存未命中）"
+      text-embedding-v2:
+        input-per-million: 0.7
+        source-url: https://help.aliyun.com/zh/model-studio/text-embedding-v2
+        formula: "total_tokens × 0.7 / 1,000,000"
+      # 键名含 '.' 必须用引号，否则 Spring 会解析成嵌套路径导致定价加载失败
+      "[wan2.7-image-pro]":
+        per-image: 0.5
+        source-url: https://help.aliyun.com/zh/model-studio/wan2-7-image-pro
+        formula: "0.5 × 成功生成张数（华北2 北京，图片生成）"
+      doubao-seedream-5-0-260128:
+        per-image: 0.22
+        source-url: https://docs.volcengine.com/docs/82379/1544106?lang=zh
+        formula: "0.22 × 成功生成张数"
+      qwen-vl-max:
+        input-per-million: 1.6
+        output-per-million: 4.0
+        source-url: https://help.aliyun.com/zh/model-studio/qwen-vl-max
+        formula: "prompt×1.6/M + completion×4.0/M（元素识别，华北2）"
 

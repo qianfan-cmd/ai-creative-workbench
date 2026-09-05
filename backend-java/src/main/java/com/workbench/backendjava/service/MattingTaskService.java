@@ -8,12 +8,10 @@ import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.dto.*;
-import com.workbench.backendjava.entity.AiCallLog;
 import com.workbench.backendjava.entity.GenerationJob;
 import com.workbench.backendjava.entity.OpsMattingTask;
 import com.workbench.backendjava.entity.OpsWorkflowSource;
 import com.workbench.backendjava.entity.PromptTemplate;
-import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.entity.OpsMattingTaskGroup;
 import com.workbench.backendjava.mapper.GenerationJobMapper;
 import com.workbench.backendjava.mapper.OpsMattingTaskGroupMapper;
@@ -58,7 +56,7 @@ public class MattingTaskService {
     private final MattingImageCropService mattingImageCropService;
     private final PromptTemplateMapper promptTemplateMapper;
     private final PythonAiClient pythonAiClient;
-    private final AiCallLogMapper aiCallLogMapper;
+    private final AiCallLogService aiCallLogService;
     private final ObjectMapper objectMapper;
     private final WorkflowSourceService workflowSourceService;
 
@@ -362,9 +360,11 @@ public class MattingTaskService {
                 String imageUrl = resolveRegionImageUrl(region, config, userId);
                 byte[] imageBytes = resolveRegionImageBytes(region, config, userId);
                 long t0 = System.currentTimeMillis();
-                Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
-                writeDetectLog(userId, "matting_detect", regionPrompt, "success",
-                        (int) (System.currentTimeMillis() - t0), region.getId());
+                PythonAiClient.PythonDetectElementsResponse detectResp =
+                        pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
+                writeDetectLog(userId, regionPrompt, "success",
+                        (int) (System.currentTimeMillis() - t0), region.getId(), detectResp);
+                Map<String, List<String>> groups = detectResp.getGroups();
 
                 for (Map.Entry<String, List<String>> entry : groups.entrySet()) {
                     for (String name : entry.getValue()) {
@@ -461,7 +461,12 @@ public class MattingTaskService {
         try {
             String imageUrl = resolveRegionImageUrl(region, config, userId);
             byte[] imageBytes = resolveRegionImageBytes(region, config, userId);
-            Map<String, List<String>> groups = pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
+            long t0 = System.currentTimeMillis();
+            PythonAiClient.PythonDetectElementsResponse detectResp =
+                    pythonAiClient.opsDetectElements(imageUrl, regionPrompt, imageBytes);
+            writeDetectLog(userId, regionPrompt, "success",
+                    (int) (System.currentTimeMillis() - t0), regionId, detectResp);
+            Map<String, List<String>> groups = detectResp.getGroups();
             int sort = config.getElements().stream()
                     .mapToInt(e -> e.getSortOrder() != null ? e.getSortOrder() : 0)
                     .max().orElse(-1) + 1;
@@ -1428,16 +1433,22 @@ public class MattingTaskService {
         }
     }
 
-    private void writeDetectLog(Long userId, String scene, String prompt, String status, int costMs, String summary) {
-        AiCallLog row = new AiCallLog();
-        row.setUserId(userId);
-        row.setScene(scene);
-        row.setPrompt(prompt != null && prompt.length() > 2000 ? prompt.substring(0, 2000) : prompt);
-        row.setStatus(status);
-        row.setCostMs(costMs);
-        row.setResponseSummary(truncate(summary, 500));
-        row.setCreatedAt(LocalDateTime.now());
-        aiCallLogMapper.insert(row);
+    private void writeDetectLog(Long userId, String prompt, String status, int costMs, String summary,
+                                PythonAiClient.PythonDetectElementsResponse detectResp) {
+        String model = detectResp.getModel() != null ? detectResp.getModel() : "qwen-vl-max";
+        aiCallLogService.logCall(
+                userId,
+                "matting_detect",
+                "dashscope",
+                model,
+                prompt,
+                status,
+                costMs,
+                summary,
+                detectResp.getPromptTokens(),
+                detectResp.getCompletionTokens(),
+                detectResp.getTotalTokens()
+        );
     }
 
     private static String truncate(String s, int max) {

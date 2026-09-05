@@ -8,10 +8,8 @@ import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.client.PythonAiClient.PythonImageCandidate;
 import com.workbench.backendjava.client.PythonAiClient.PythonImageGenerateResponse;
 import com.workbench.backendjava.common.BusinessException;
-import com.workbench.backendjava.entity.AiCallLog;
 import com.workbench.backendjava.entity.OpsMattingTask;
 import com.workbench.backendjava.entity.PromptTemplate;
-import com.workbench.backendjava.mapper.AiCallLogMapper;
 import com.workbench.backendjava.mapper.OpsMattingTaskMapper;
 import com.workbench.backendjava.mapper.PromptTemplateMapper;
 import com.workbench.backendjava.model.MattingConfig;
@@ -44,7 +42,7 @@ public class MattingExtractService {
     private final PythonAiClient pythonAiClient;
     private final AssetService assetService;
     private final MattingImageCropService mattingImageCropService;
-    private final AiCallLogMapper aiCallLogMapper;
+    private final AiCallLogService aiCallLogService;
     private final ObjectMapper objectMapper;
 
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
@@ -265,8 +263,8 @@ public class MattingExtractService {
         long t0 = System.currentTimeMillis();
         PythonImageGenerateResponse groupResp = pythonAiClient.opsExtractElement(
                 regionSourceUrl, groupPrompt, 1, regionImageBytes);
-        writeLog(userId, "matting_extract", groupResp.getProvider(), groupPrompt,
-                "success", (int) (System.currentTimeMillis() - t0), "group image");
+        writeLog(userId, "matting_extract", groupResp.getProvider(), resolveImageModel(groupResp),
+                groupPrompt, "success", (int) (System.currentTimeMillis() - t0), "group image", 1);
         return groupResp.getCandidates().get(0).getUrl();
     }
 
@@ -279,8 +277,9 @@ public class MattingExtractService {
             long t0 = System.currentTimeMillis();
             PythonImageGenerateResponse singleResp = pythonAiClient.opsExtractElement(
                     groupImageUrl, singlePrompt, 1);
-            writeLog(userId, "matting_single", singleResp.getProvider(), singlePrompt,
-                    "success", (int) (System.currentTimeMillis() - t0), element.getElementName());
+            writeLog(userId, "matting_single", singleResp.getProvider(), resolveImageModel(singleResp),
+                    singlePrompt, "success", (int) (System.currentTimeMillis() - t0),
+                    element.getElementName(), 1);
             PythonImageCandidate cand = singleResp.getCandidates().get(0);
             String safeElementId = element.getId().replaceAll("[^a-zA-Z0-9_-]", "_");
             String persisted = assetService.persistProviderImage(
@@ -483,18 +482,23 @@ public class MattingExtractService {
         }
     }
 
-    private void writeLog(Long userId, String scene, String provider, String prompt,
-                          String status, int costMs, String summary) {
-        AiCallLog row = new AiCallLog();
-        row.setUserId(userId);
-        row.setScene(scene);
-        row.setProvider(provider);
-        row.setPrompt(prompt != null && prompt.length() > 2000 ? prompt.substring(0, 2000) : prompt);
-        row.setStatus(status);
-        row.setCostMs(costMs);
-        row.setResponseSummary(truncate(summary, 500));
-        row.setCreatedAt(LocalDateTime.now());
-        aiCallLogMapper.insert(row);
+    private void writeLog(Long userId, String scene, String provider, String model, String prompt,
+                          String status, int costMs, String summary, Integer imageCount) {
+        aiCallLogService.logCall(userId, scene, provider, model, prompt, status, costMs, summary,
+                null, null, null, imageCount);
+    }
+
+    private static String resolveImageModel(PythonImageGenerateResponse resp) {
+        if (resp.getModel() != null && !resp.getModel().isBlank()) {
+            return resp.getModel();
+        }
+        if ("dashscope_wanx".equals(resp.getProvider())) {
+            return "wan2.7-image-pro";
+        }
+        if ("seedream".equals(resp.getProvider())) {
+            return "doubao-seedream-5-0-260128";
+        }
+        return resp.getProvider();
     }
 
     private static String truncate(String s, int max) {

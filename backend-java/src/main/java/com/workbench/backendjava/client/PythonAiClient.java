@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.config.AiServiceProperties;
+import com.workbench.backendjava.service.AiCallLogService;
 import com.workbench.backendjava.dto.RagHistoryItem;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
@@ -49,6 +50,7 @@ public class PythonAiClient {
     private final RestTemplate restTemplate;
     private final AiServiceProperties aiServiceProperties;
     private final ObjectMapper objectMapper;
+    private final AiCallLogService aiCallLogService;
 
     /**
      * 调用python  post ai/chat接口，返回模型文本
@@ -226,6 +228,22 @@ public class PythonAiClient {
             vo.setCharCount(response.getCharCount());
             vo.setChunkCount(response.getChunkCount());
             vo.setIndexedCount(response.getIndexedCount());
+
+            if (userId != null && response.getEmbeddingTokens() != null && response.getEmbeddingTokens() > 0) {
+                aiCallLogService.logCall(
+                        userId,
+                        "embedding",
+                        "dashscope",
+                        response.getEmbeddingModel() != null ? response.getEmbeddingModel() : "text-embedding-v2",
+                        filename,
+                        "success",
+                        0,
+                        "indexed " + response.getIndexedCount() + " chunks",
+                        null,
+                        null,
+                        response.getEmbeddingTokens()
+                );
+            }
             return vo;
         } catch (RestClientException e) {
             log.error("调用 Python 文档入库失败: {}", e.getMessage(), e);
@@ -291,6 +309,13 @@ public class PythonAiClient {
      * messages 为 DeepSeek 多轮格式 [{role, content}, ...]。
      */
     public void chatStream(List<Map<String, Object>> messages, SseEmitter emitter) {
+        chatStream(messages, emitter, null);
+    }
+
+    /**
+     * 调用 Python POST /ai/chat/stream，转发 SSE；可选在流结束后写 ai_call_log。
+     */
+    public void chatStream(List<Map<String, Object>> messages, SseEmitter emitter, Long userIdForUsageLog) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/chat/stream";
 
         CompletableFuture.runAsync(() -> {
@@ -308,7 +333,7 @@ public class PythonAiClient {
                             request.getBody().write(jsonBody.getBytes(StandardCharsets.UTF_8));
                         },
                         response -> {
-                            forwardPythonSse(response, emitter);
+                            forwardUsageSse(response, emitter, userIdForUsageLog, "chat", "deepseek");
                             return null;
                         }
                 );
@@ -357,6 +382,88 @@ public class PythonAiClient {
                 sendStreamError(emitter, e.getMessage() != null ? e.getMessage() : "RAG 流式服务不可用");
             }
         });
+    }
+
+    /** 带 usage 事件的 SSE 流：转发 message/usage/done，并在流结束后写 ai_call_log */
+    private void forwardUsageSse(ClientHttpResponse response, SseEmitter emitter,
+                                 Long userIdForUsageLog, String scene, String defaultProvider)
+            throws IOException {
+        long startMs = System.currentTimeMillis();
+        String usageModel = null;
+        Integer promptTokens = null;
+        Integer completionTokens = null;
+        Integer totalTokens = null;
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+
+            String currentEvent = "";
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.startsWith("event:")) {
+                    currentEvent = line.substring(6).trim();
+                } else if (line.startsWith("data:")) {
+                    String data = line.substring(5).trim();
+
+                    if ("done".equals(currentEvent) || "[DONE]".equals(data)) {
+                        emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+                    } else if ("error".equals(currentEvent)) {
+                        sendStreamError(emitter, data);
+                        return;
+                    } else if ("usage".equals(currentEvent)) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> usage = objectMapper.readValue(data, Map.class);
+                            usageModel = usage.get("model") != null ? usage.get("model").toString() : null;
+                            promptTokens = toInt(usage.get("prompt_tokens"));
+                            completionTokens = toInt(usage.get("completion_tokens"));
+                            totalTokens = toInt(usage.get("total_tokens"));
+                            emitter.send(SseEmitter.event().name("usage").data(data));
+                        } catch (Exception e) {
+                            log.warn("解析 usage 失败: {}", data, e);
+                        }
+                    } else {
+                        String eventName = currentEvent.isBlank() ? "message" : currentEvent;
+                        emitter.send(SseEmitter.event().name(eventName).data(data));
+                    }
+                } else if (line.isEmpty()) {
+                    currentEvent = "";
+                }
+            }
+        }
+
+        if (userIdForUsageLog != null) {
+            aiCallLogService.logCall(
+                    userIdForUsageLog,
+                    scene,
+                    defaultProvider,
+                    usageModel != null ? usageModel : "deepseek-v4-flash",
+                    null,
+                    "success",
+                    (int) (System.currentTimeMillis() - startMs),
+                    scene + " stream",
+                    promptTokens,
+                    completionTokens,
+                    totalTokens
+            );
+        }
+
+        emitter.complete();
+    }
+
+    private static Integer toInt(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 读取 Python SSE 响应并转发到前端 SseEmitter */
@@ -427,6 +534,10 @@ public class PythonAiClient {
     }
 
     public void opsCopyStream(String prompt, SseEmitter emitter) {
+        opsCopyStream(prompt, emitter, null);
+    }
+
+    public void opsCopyStream(String prompt, SseEmitter emitter, Long userIdForUsageLog) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/copy/stream";
 
         CompletableFuture.runAsync(() -> {
@@ -442,7 +553,7 @@ public class PythonAiClient {
                             request.getBody().write(jsonBody.getBytes(StandardCharsets.UTF_8));
                         },
                         response -> {
-                            forwardPythonSse(response, emitter);
+                            forwardUsageSse(response, emitter, userIdForUsageLog, "copy", "deepseek");
                             return null;
                         }
                 );
@@ -476,13 +587,12 @@ public class PythonAiClient {
     }
 
     /** 视觉元素识别 POST /ai/ops/detect-elements */
-    public Map<String, List<String>> opsDetectElements(String imageUrl, String prompt) {
+    public PythonDetectElementsResponse opsDetectElements(String imageUrl, String prompt) {
         return opsDetectElements(imageUrl, prompt, null);
     }
 
     /** 视觉元素识别 — 可选传 imageBytes 作为 L2 inline base64 兜底 */
-    @SuppressWarnings("unchecked")
-    public Map<String, List<String>> opsDetectElements(String imageUrl, String prompt, byte[] imageBytes) {
+    public PythonDetectElementsResponse opsDetectElements(String imageUrl, String prompt, byte[] imageBytes) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/detect-elements";
         Map<String, Object> body = new HashMap<>();
         if (imageUrl != null && !imageUrl.isBlank()) {
@@ -495,13 +605,13 @@ public class PythonAiClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         try {
-            ResponseEntity<Map> resp = restTemplate.postForEntity(
-                    url, new HttpEntity<>(body, headers), Map.class);
-            Map data = resp.getBody();
-            if (data == null || data.get("groups") == null) {
+            ResponseEntity<PythonDetectElementsResponse> resp = restTemplate.postForEntity(
+                    url, new HttpEntity<>(body, headers), PythonDetectElementsResponse.class);
+            PythonDetectElementsResponse data = resp.getBody();
+            if (data == null || data.getGroups() == null) {
                 throw new BusinessException(502, "元素识别未返回 groups");
             }
-            return (Map<String, List<String>>) data.get("groups");
+            return data;
         } catch (HttpStatusCodeException e) {
             String msg = e.getResponseBodyAsString();
             throw new BusinessException(502, msg != null && !msg.isBlank() ? msg : "元素识别服务调用失败");
@@ -628,6 +738,12 @@ public class PythonAiClient {
 
         @JsonProperty("indexed_count")
         private Integer indexedCount;
+
+        @JsonProperty("embedding_model")
+        private String embeddingModel;
+
+        @JsonProperty("embedding_tokens")
+        private Integer embeddingTokens;
     }
 
     @Data
@@ -655,8 +771,28 @@ public class PythonAiClient {
     }
 
     @Data
+    public static class PythonDetectElementsResponse {
+        private Map<String, List<String>> groups;
+
+        @JsonProperty("resolve_strategy")
+        private String resolveStrategy;
+
+        private String model;
+
+        @JsonProperty("prompt_tokens")
+        private Integer promptTokens;
+
+        @JsonProperty("completion_tokens")
+        private Integer completionTokens;
+
+        @JsonProperty("total_tokens")
+        private Integer totalTokens;
+    }
+
+    @Data
     public static class PythonImageGenerateResponse {
         private String provider;
+        private String model;
         private List<PythonImageCandidate> candidates;
     }
 

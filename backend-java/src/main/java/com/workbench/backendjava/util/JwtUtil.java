@@ -1,5 +1,6 @@
 package com.workbench.backendjava.util;
 
+import com.workbench.backendjava.common.UserRole;
 import com.workbench.backendjava.config.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -20,7 +21,7 @@ public class JwtUtil {
     /**
      * 生成token，把userId放进subject
      */
-    public String generateToken(Long userId, String username) {
+    public String generateToken(Long userId, String username, String role) {
         SecretKey key = Keys.hmacShaKeyFor(
                 jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8)
         );
@@ -28,41 +29,19 @@ public class JwtUtil {
         Date now = new Date();
         Date expireAt = new Date(now.getTime() + jwtProperties.getExpiration());
 
-        return Jwts.builder() // 创建jwt建造者，开始拼装通行证
+        return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("username", username)
+                .claim("role", role != null ? role : UserRole.USER)
                 .issuedAt(now)
                 .expiration(expireAt)
                 .signWith(key)
                 .compact();
+    }
 
-        /**
-         *         return Jwts.builder() // 创建jwt建造者，开始拼装通行证
-         *
-         *                 .subject(String.valueOf(userId)) // 标准注册字段，标识令牌主体
-         *                 .claim("username", username) // 自定义私有字段
-         *                 .issuedAt(now) // 标准注册字段，令牌签发时间
-         *                 .expiration(expireAt) // 标准注册字段，令牌过期时间（服务器会严格校验这个时间)
-         *                 构建完这部分，Payload 的 JSON 大概是：{"sub":"1001","username":"张三","iat":...,"exp":...}
-         *
-         *                 .signWith(key) // 隐式生成header，jwt的header包含typ和alg(类型和签名算法)，这个根据key生成
-         *                 {
-         *                    "alg": "HS256",  // 如果 key 是 HMAC 密钥，自动选 HS256/HS384/HS512
-         *                    "typ": "JWT"
-         *                 }
-         *                 .compact();
-         *                 signWith(key)告诉JJWT使用这个密钥，对Header+Payload的拼接字符串进行哈希签名，生成signature
-         *                 签名动作是在.compact()时进行的
-         *                 此时会
-         *                 1.把Header和Payload分别做Base64Url编码
-         *                 2.用.拼接他们
-         *                 3.拿拼接后的字符串+传入的key算出签名值
-         *                 4.把签名值做Base64Url编码再拼接到末尾
-         *                 运行compact()后的字符串大概长这样
-         *                 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.
-         *                 eyJzdWIiOiIxMDAxIiwidXNlcm5hbWUiOiLlvKDkuIkiLCJpYXQiOjE3MjIyMzQ1NjcsImV4cCI6MTcyMjIzODE2N30.
-         *                 2T9iXoxWn0n0n0n0n0n0n0n0n0n0n0n0n0n0n0n0
-         */
+    public String getRole(String token) {
+        Object role = parseToken(token).get("role");
+        return role != null ? role.toString() : UserRole.USER;
     }
 
     /**

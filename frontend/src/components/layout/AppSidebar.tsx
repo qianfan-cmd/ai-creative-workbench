@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import styles from '@/components/layout/AppSidebar.module.css'
+import { useAuthStore } from '@/stores/authStore'
 import {
   AppstoreOutlined,
   BookOutlined,
@@ -8,6 +9,7 @@ import {
   ScissorOutlined,
   SettingOutlined,
   TagsOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 
@@ -34,6 +36,16 @@ const NAV_ITEMS: NavItemConfig[] = [
 ]
 
 export default function AppSidebar({ collapsed }: AppSidebarProps) {
+  const user = useAuthStore((s) => s.user)
+  const isAdmin = user?.role === 'ADMIN'
+
+  const navItems: NavItemConfig[] = [
+    ...NAV_ITEMS,
+    ...(isAdmin
+      ? [{ key: 'admin-users', label: '用户管理 Users', icon: <TeamOutlined />, to: '/admin/users' }]
+      : []),
+  ]
+
   return (
     <aside
       className={[styles.sidebar, collapsed && styles.sidebarCollapsed].filter(Boolean).join(' ')}
@@ -49,7 +61,7 @@ export default function AppSidebar({ collapsed }: AppSidebarProps) {
       </div>
 
       <nav className={styles.nav}>
-        {NAV_ITEMS.map((item) =>
+        {navItems.map((item) =>
           item.to ? (
             <NavLink
               key={item.key}

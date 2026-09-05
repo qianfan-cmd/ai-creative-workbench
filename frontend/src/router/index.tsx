@@ -17,6 +17,8 @@ import KnowledgeDocumentEditorPage from '@/pages/KnowledgeDocumentEditorPage'
 import CampaignPage from '@/pages/CampaignPage'
 import MattingPage from '@/pages/MattingPage'
 import SettingsPage from '@/pages/SettingsPage'
+import AdminUsersPage from '@/pages/AdminUsersPage'
+import AdminGuard from '@/components/AdminGuard'
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +48,10 @@ export const router = createBrowserRouter([
           { path: 'ops/matting', element: <MattingPage /> },
           { path: 'ops/campaign', element: <CampaignPage /> },
           { path: 'settings', element: <SettingsPage /> },
+          {
+            element: <AdminGuard />,
+            children: [{ path: 'admin/users', element: <AdminUsersPage /> }],
+          },
         ],
       },
     ],

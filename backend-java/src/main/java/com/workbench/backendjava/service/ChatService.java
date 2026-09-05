@@ -62,7 +62,7 @@ public class ChatService {
         }
 
         SseEmitter emitter = new SseEmitter(120_000L);
-        pythonAiClient.chatStream(messages, emitter);
+        pythonAiClient.chatStream(messages, emitter, userId);
         return emitter;
     }
 }

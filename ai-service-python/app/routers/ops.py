@@ -18,7 +18,7 @@ from app.schemas.ops import (
     RenderPromptRequest,
     RenderPromptResponse,
 )
-from app.services.llm_service import stream_chat_with_messages
+from app.services.llm_service import stream_chat_events
 from app.services.ops.image_providers.dashscope_wanx import DashScopeWanxAdapter
 from app.services.ops.image_providers.seedream import SeedreamAdapter
 from app.services.ops.image_router import ImageGenerateResult, generate_images
@@ -58,9 +58,13 @@ def copy_stream(req: CopyStreamRequest) -> StreamingResponse:
     def event_generator():
         try:
             messages = [{"role": "user", "content": req.prompt}]
-            for chunk in stream_chat_with_messages(messages):
-                payload = json.dumps(chunk, ensure_ascii=False)
-                yield f"event: message\ndata: {payload}\n\n"
+            for event in stream_chat_events(messages):
+                if event.get("type") == "usage":
+                    payload = json.dumps(event, ensure_ascii=False)
+                    yield f"event: usage\ndata: {payload}\n\n"
+                else:
+                    payload = json.dumps(event.get("content", ""), ensure_ascii=False)
+                    yield f"event: message\ndata: {payload}\n\n"
             yield "event: done\ndata: [DONE]\n\n"
         except ValueError as e:
             yield f"event: error\ndata: {str(e)}\n\n"
@@ -75,6 +79,7 @@ def copy_stream(req: CopyStreamRequest) -> StreamingResponse:
 def _to_response(result) -> ImageGenerateResponse:
     return ImageGenerateResponse(
         provider=result.provider,
+        model=result.model,
         candidates=[ImageCandidateDTO(url=c.url, index=c.index) for c in result.candidates],
     )
 
@@ -132,12 +137,19 @@ def matting_handler(req: ImageGenerateRequest) -> ImageGenerateResponse:
 def detect_elements_handler(req: DetectElementsRequest) -> DetectElementsResponse:
     """视觉模型识别图片中的分组元素名称。"""
     try:
-        groups, strategy = detect_elements(
+        result = detect_elements(
             region_prompt=req.prompt,
             image_url=req.image_url,
             image_base64=req.image_base64,
         )
-        return DetectElementsResponse(groups=groups, resolve_strategy=strategy)
+        return DetectElementsResponse(
+            groups=result.groups,
+            resolve_strategy=result.resolve_strategy,
+            model=result.model,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

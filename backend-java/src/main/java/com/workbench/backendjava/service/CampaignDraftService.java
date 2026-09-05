@@ -269,7 +269,7 @@ public class CampaignDraftService {
         log.debug("Campaign copy stream draftId={} mode={} promptLength={}",
                 draftId, request.getMode(), prompt.length());
         SseEmitter emitter = new SseEmitter(120_000L);
-        pythonAiClient.opsCopyStream(prompt, emitter);
+        pythonAiClient.opsCopyStream(prompt, emitter, userId);
         return emitter;
     }
 

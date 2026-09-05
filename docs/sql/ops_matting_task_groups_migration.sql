@@ -1,0 +1,16 @@
+-- 任务分组迁移（在已有 ops_matting_task 表上执行）
+
+CREATE TABLE IF NOT EXISTS ops_matting_task_group (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    name VARCHAR(64) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted TINYINT NOT NULL DEFAULT 0,
+    INDEX idx_matting_group_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE ops_matting_task ADD COLUMN IF NOT EXISTS group_id BIGINT NULL AFTER source_asset_id;
+ALTER TABLE ops_matting_task ADD COLUMN IF NOT EXISTS pinned TINYINT NOT NULL DEFAULT 0 AFTER group_id;
+ALTER TABLE ops_matting_task ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0 AFTER pinned;

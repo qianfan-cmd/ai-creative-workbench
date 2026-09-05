@@ -13,6 +13,7 @@ from app.services.ops.image_providers.seedream import ProviderQuotaError, Seedre
 @dataclass
 class ImageGenerateResult:
     provider: str
+    model: str
     candidates: List[ImageCandidate]
 
 
@@ -56,7 +57,11 @@ def generate_images(
                 count=count,
                 size=seedream_size,
             )
-            return ImageGenerateResult(provider=primary.name, candidates=candidates)
+            return ImageGenerateResult(
+                provider=primary.name,
+                model=primary._model(),
+                candidates=candidates,
+            )
         except ProviderQuotaError:
             # 仅额度类错误才 fallback
             if not fallback.is_configured():
@@ -71,4 +76,8 @@ def generate_images(
         count=count,
         size=wan_size,
     )
-    return ImageGenerateResult(provider=fallback.name, candidates=candidates)
+    return ImageGenerateResult(
+        provider=fallback.name,
+        model=fallback._model(),
+        candidates=candidates,
+    )
