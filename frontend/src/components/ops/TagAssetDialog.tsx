@@ -2,7 +2,8 @@ import { Modal, Input, Select, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { uploadAssetApi, replaceAssetTagsApi } from '@/api/assets'
 import request from '@/api/request'
-import type { ApiResponse, TagVO } from '@/types/api'
+import type { ApiResponse } from '@/types/api'
+import type { TagVO } from '@/api/tags'
 import styles from '@/components/ops/TagAssetDialog.module.css'
 
 interface TagAssetDialogProps {

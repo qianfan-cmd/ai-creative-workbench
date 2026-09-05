@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button, Upload, Progress, message, Input, Select } from 'antd'
 import { InboxOutlined, PlusOutlined } from '@ant-design/icons'
 import { uploadAssetApi, updateAssetNameApi, replaceAssetTagsApi } from '@/api/assets'
 import styles from './AssetUploadPage.module.css'
 import validateFile from '@/utils/validateFile'
-import { ALLOWED_EXT, MAX_SIZE } from '@/utils/validateFile'
+import { ALLOWED_EXT } from '@/utils/validateFile'
 import { splitFileName, joinFileName } from '@/utils/assetName'
 import { formatFileSize } from '@/utils/format'
 import { listTagsApi } from '@/api/tags'
@@ -14,7 +13,6 @@ import TagOptionLabel from '@/components/assets/TagOptionLabel'
 import CreateTagModal from '@/components/assets/CreateTagModal'
 
 export default function AssetUploadPage() {
-  const navigate = useNavigate()
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [nameBase, setNameBase] = useState('')
   const [fileExt, setFileExt] = useState('')

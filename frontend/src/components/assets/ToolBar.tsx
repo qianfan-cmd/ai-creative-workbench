@@ -15,15 +15,6 @@ interface AssetToolBarProps {
     onCreateTagClick: () => void
 }
 
-interface BreadcrumbItem {
-    label: string
-    href?: string
-}
-
-interface ToolBarProps {
-    items: BreadcrumbItem[]
-}
-
 export default function Toolbar({
     searchInput,
     onSearchInputChange,
