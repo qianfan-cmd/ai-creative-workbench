@@ -1,9 +1,9 @@
-.virtualRoot {
+.root {
   position: relative;
   width: 100%;
 }
 
-.virtualRow {
+.row {
   position: absolute;
   top: 0;
   left: 0;
@@ -11,12 +11,12 @@
   padding-bottom: var(--space-5);
 }
 
-.fallback {
+.staticList {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
 }
 
-.fallbackItem {
+.staticItem {
   width: 100%;
 }

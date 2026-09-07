@@ -360,4 +360,4 @@ docker compose up -d ai
 | `frontend/nginx.conf` | SPA 路由与 `/api` 反向代理 |
 | `ai-service-python/.env.example` | AI 环境变量模板 |
 
-CI/CD（GitHub Actions）见后续文档或 `.github/workflows/`（待补充）。
+CI/CD（GitHub Actions）见 [`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml)（CI）与 [`project-roadmap.md`](project-roadmap.md) **§4.4**（CD 排期，序号 **3d**）。

@@ -44,7 +44,6 @@ export default function ChatMessageRow({
       <div className={styles.content}>
         <div className={`${styles.bubble} ${isUser ? styles.bubble_user : styles.bubble_assistant}`}>
           {children}
-          {streaming && <span className={styles.cursor} aria-hidden="true" />}
         </div>
 
         {showActions && !streaming && (

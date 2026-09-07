@@ -15,6 +15,7 @@ import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 import ChatMessageRow from '@/components/chat/ChatMessageRow'
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
+import VirtualChatMessageList from '@/components/chat/VirtualChatMessageList'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -43,6 +44,14 @@ function findUserPromptForAssistant(messages: ChatMessage[], assistantId: string
   return null
 }
 
+function isNearBottom(el: HTMLElement, threshold = 120) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
+}
+
+function scrollMessagesToBottom(el: HTMLElement) {
+  el.scrollTop = el.scrollHeight
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
@@ -54,6 +63,8 @@ export default function ChatPage() {
 
   const abortRef = useRef<AbortController | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const forceScrollRef = useRef(false)
+  const stickToBottomRef = useRef(true)
 
   const loadConversations = useCallback(async () => {
     try {
@@ -179,6 +190,8 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
+    forceScrollRef.current = true
+    stickToBottomRef.current = true
 
     const assistantContent = await streamAssistantReply(
       trimmed,
@@ -197,7 +210,24 @@ export default function ChatPage() {
         await loadConversations()
 
         const detail = await getConversationApi(conversationId)
-        setMessages(detail.messages.map(mapMessageFromApi))
+        forceScrollRef.current = true
+        stickToBottomRef.current = true
+        setMessages((prev) => {
+          if (prev.length !== detail.messages.length) {
+            return detail.messages.map(mapMessageFromApi)
+          }
+          return prev.map((m, i) => {
+            const server = detail.messages[i]
+            if (!server) return m
+            return {
+              ...m,
+              dbId: server.id,
+              content: server.content,
+              imageUrls: server.imageUrls,
+              streaming: false,
+            }
+          })
+        })
       } catch (error) {
         message.error(error instanceof Error ? error.message : '保存失败')
       }
@@ -228,6 +258,8 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => prev.slice(0, idx + 1))
+    forceScrollRef.current = true
+    stickToBottomRef.current = true
     const assistantContent = await streamAssistantReply(
       userPrompt.content,
       userPrompt.imageUrls,
@@ -268,6 +300,8 @@ export default function ChatPage() {
     try {
       const detail = await getConversationApi(conversationId)
       setActiveConversationId(detail.id)
+      forceScrollRef.current = true
+      stickToBottomRef.current = true
       setMessages(detail.messages.map(mapMessageFromApi))
     } catch (error) {
       message.error(error instanceof Error ? error.message : '加载对话失败')
@@ -294,6 +328,8 @@ export default function ChatPage() {
       if (nextList.length > 0) {
         const detail = await getConversationApi(nextList[0].id)
         setActiveConversationId(detail.id)
+        forceScrollRef.current = true
+        stickToBottomRef.current = true
         setMessages(detail.messages.map(mapMessageFromApi))
       } else {
         setActiveConversationId(null)
@@ -305,13 +341,29 @@ export default function ChatPage() {
 
   useMainContentLayout({ lockScroll: true, fullBleed: true })
 
+  const isEmpty = messages.length === 0
+
+  useEffect(() => {
+    const el = messagesRef.current
+    if (!el || isEmpty) return
+
+    const onScroll = () => {
+      stickToBottomRef.current = isNearBottom(el)
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [isEmpty])
+
   useEffect(() => {
     const el = messagesRef.current
     if (!el) return
-    el.scrollTop = el.scrollHeight
-  }, [messages])
 
-  const isEmpty = messages.length === 0
+    if (forceScrollRef.current || (stickToBottomRef.current && isNearBottom(el))) {
+      requestAnimationFrame(() => scrollMessagesToBottom(el))
+      forceScrollRef.current = false
+    }
+  }, [messages])
 
   const composer = (
     <AiImageComposer
@@ -349,37 +401,43 @@ export default function ChatPage() {
         ) : (
           <>
             <div className={styles.messages} ref={messagesRef}>
-              {messages.map((msg) => (
-                <ChatMessageRow
-                  key={msg.id}
-                  role={msg.role}
-                  streaming={msg.streaming}
-                  showActions={Boolean(msg.content) && !msg.streaming}
-                  copied={copiedId === msg.id}
-                  onCopy={() => void handleCopy(msg.id, msg.content)}
-                  onRegenerate={
-                    msg.role === 'assistant'
-                      ? () => void handleRegenerate(msg.id)
-                      : undefined
-                  }
-                  regenerateDisabled={streaming}
-                >
-                  {msg.role === 'assistant' ? (
-                    <AnswerRenderer answer={msg.content} streaming={msg.streaming} />
-                  ) : (
-                    <>
-                      {msg.imageUrls && msg.imageUrls.length > 0 && (
-                        <div className={styles.userImages}>
-                          {msg.imageUrls.map((url) => (
-                            <img key={url} src={url} alt="" className={styles.userImageThumb} />
-                          ))}
-                        </div>
-                      )}
-                      {msg.content}
-                    </>
-                  )}
-                </ChatMessageRow>
-              ))}
+              <VirtualChatMessageList
+                items={messages}
+                scrollRef={messagesRef}
+                disableVirtualization={streaming}
+                listResetKey={activeConversationId ?? 'new'}
+                getItemKey={(msg) => msg.id}
+                renderItem={(msg) => (
+                  <ChatMessageRow
+                    role={msg.role}
+                    streaming={msg.streaming}
+                    showActions={Boolean(msg.content) && !msg.streaming}
+                    copied={copiedId === msg.id}
+                    onCopy={() => void handleCopy(msg.id, msg.content)}
+                    onRegenerate={
+                      msg.role === 'assistant'
+                        ? () => void handleRegenerate(msg.id)
+                        : undefined
+                    }
+                    regenerateDisabled={streaming}
+                  >
+                    {msg.role === 'assistant' ? (
+                      <AnswerRenderer answer={msg.content} streaming={msg.streaming} />
+                    ) : (
+                      <>
+                        {msg.imageUrls && msg.imageUrls.length > 0 && (
+                          <div className={styles.userImages}>
+                            {msg.imageUrls.map((url) => (
+                              <img key={url} src={url} alt="" className={styles.userImageThumb} />
+                            ))}
+                          </div>
+                        )}
+                        {msg.content}
+                      </>
+                    )}
+                  </ChatMessageRow>
+                )}
+              />
             </div>
             <div className={styles.composer}>
               <div className={styles.composerBoxActive}>{composer}</div>

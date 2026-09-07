@@ -1,6 +1,6 @@
 # AI Creative Workbench — 项目迭代计划表
 
-> 更新日期：2026-09-07  
+> 更新日期：2026-09-08  
 > 目标岗位：AI 应用前端 / AI 全栈（腾讯 AI 应用工程师、字节 AIGC / 飞书 Agent 全栈等）  
 > 说明：本文仅作计划与验收清单；每项具体用 **Chat 带着做** 还是 **Agent 直接做**，实施时再定。
 
@@ -114,7 +114,7 @@
 | Swap | 2G swapfile，`/etc/fstab` 持久化 |
 | Java 堆 | `JAVA_TOOL_OPTIONS: "-Xmx512m -Xms256m"` |
 | MySQL | 可选 `command: --innodb-buffer-pool-size=128M` |
-| 构建前端镜像 | **本机** `docker build` → `docker save` → `scp` → 服务器 `docker load` |
+| 构建前端镜像 | **本机** `docker build` → `docker save` → `scp` → 服务器 `docker load`（**临时方案，见 §4.4 CD**） |
 | 仅改 nginx.conf | `docker cp` + `nginx -s reload`（临时）；正式应打入镜像 |
 | 配置分离 | 仓库 [`docker-compose.yml`](../docker-compose.yml) 用 `localhost:8088`；服务器用 `docker-compose.prod.yml` 或 `.env` 覆盖公网 IP |
 
@@ -182,6 +182,34 @@ flowchart LR
 - [ ] O3～O6 上线，素材页首屏 API 数减少
 - [ ] 2G ECS 上素材页连续刷新 10 次无 502
 - [ ] D1～D2 部署配置规范化（D3 可选）
+- [ ] **§4.4 CD 排期确认**（实施可放在 Phase 1 收尾或 Phase 2 前）
+
+### 4.4 CD 自动化部署（GitHub Actions → ECS）
+
+> **背景：** 当前公网更新依赖本机 `docker build` → `docker save` → `scp`（大文件易断）→ ECS `docker load` → `docker compose up`，步骤多、易出错。**已有 CI**（[`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml) 三 job 编译），**缺 CD**（push 后自动部署）。
+
+**目标：** `git push main`（或手动 workflow）→ 自动构建三镜像 → SSH 部署 ECS → `docker compose` 滚动更新，**不再手传 tar**。
+
+| 序号 | 任务 | 内容 | 验收 |
+|------|------|------|------|
+| **CD1** | 部署 Workflow | 新建 `.github/workflows/deploy.yml`：`workflow_dispatch` + 可选 `push` tag/`main` | Actions 页可一键 Deploy |
+| **CD2** | 远程构建镜像 | Runner 上 `docker build`（backend 用 `Dockerfile.runtime` 或带阿里云 Maven mirror 的多阶段 Dockerfile；frontend/ai 照旧） | 三镜像 build 成功 |
+| **CD3** | SSH 部署 ECS | GitHub Secrets：`ECS_HOST`、`ECS_USER`、`ECS_SSH_KEY`；SSH 执行 `git pull` + `docker compose -f docker-compose.yml -f docker-compose.prod.yml pull/up` 或 `load` 后 `up -d` | push 后 Demo 自动更新 |
+| **CD4** | 文档与回滚 | [`deploy.md`](deploy.md) 补充 CD 说明、Secrets 配置、失败回滚（保留上一版镜像 tag） | 他人可按文档复现 |
+
+**不在 CD 首版范围：**
+
+- uploads / DB 自动同步（仍手动或单独脚本）
+- 多环境（staging/prod 两套 ECS）
+- Kubernetes
+
+**依赖：** #1 Demo 稳定、D2 `docker-compose.prod.yml` 已用、3a～3b 核心功能已部署验证。
+
+**预估：** 0.5～1 天（含 Secrets 与首次联调）。
+
+**面试一句话：**
+
+> CI 保证合并前编译通过；CD 通过 GitHub Actions SSH 到轻量 ECS，构建 Docker 镜像并 compose 更新，替代手工 scp 分卷传输。
 
 ---
 
@@ -265,7 +293,7 @@ flowchart LR
 
 | 项 | 何时做 |
 |----|--------|
-| GitHub Actions CD（SSH 部署 ECS） | Demo 稳定后，约半天 |
+| GitHub Actions CD（SSH 部署 ECS） | 见本文 **§4.4、序号 3d** | Demo 稳定后，约 0.5～1 天 |
 | Redis 单场景（限流 / 热点缓存） | 投顺丰等中厂 JD 前，约 1 天 |
 | CI 升级 `setup-java@v5` 等 | 顺手 |
 
@@ -304,10 +332,11 @@ flowchart LR
 |------|------|------|------|------|
 | 1 | 公网 Demo（HTTP） | P1 | Docker 已有 | ✅ |
 | 1-F | 域名 + HTTPS（可选） | P1 | #1 | ⬜ |
-| 3a | O1～O2 素材列表 API 去 N+1 | P1.5 | #1 稳定 | ⬜ |
-| 3b | O3～O6 素材页前端懒加载 / 分页 | P1.5 | 3a（或先改 O3 再联调 O1） | ⬜ |
-| 3c | D1～D3 部署加固 | P1.5 | #1 | ⬜ |
-| 3 | Chat 虚拟列表 + lazy + 错误体验 | P1 | 可与 3a 并行 | ⬜ |
+| 3a | O1～O2 素材列表 API 去 N+1 | P1.5 | #1 稳定 | ✅ |
+| 3b | O3～O6 素材页前端懒加载 / 分页 / 批量删除 | P1.5 | 3a | ✅ |
+| 3c | D1～D3 部署加固 | P1.5 | #1 | ✅（D3 可选 ⬜） |
+| **3d** | **CD1～CD4 GitHub Actions 部署 ECS** | **P1.5→P1** | **3c、Demo 稳定** | **⬜ 已排期** |
+| 3 | Chat 虚拟列表 + lazy + 错误体验 | P1 | 可与 3a 并行 | 🔄 虚拟列表 ✅；lazy/错误 ⬜ |
 | 2 | README + portfolio + architecture | P1 | #1 有 Demo 链接 | ⬜ |
 | 4 | interview.md + rag-eval 骨架 | P1 | #2 | ⬜ |
 | 5 | PDF/DOCX 解析（Python） | P2 | P1.5 核心完成 | ⬜ |
@@ -315,11 +344,11 @@ flowchart LR
 | 7 | 联调 + Docker rebuild + 文档更新 | P2 | #6 | ⬜ |
 | 8 | AI 反馈闭环 | P3 | #7 | ⬜ |
 | 9 | Tool Calling 或 MCP（二选一） | P3 | #8 | ⬜ |
-| 10 | Redis / CD（可选） | P3 | 按需 | ⬜ |
+| 10 | Redis（可选） | P3 | 按需 | ⬜ |
 
-**建议实施顺序：** 3a → 3b → 3c → 3 → 2 → 4 → Phase 2
+**建议实施顺序：** 3（Chat lazy + 错误 UX 收尾）→ 2 → **3d（CD）** → 4 → Phase 2
 
-**说明：** #1 HTTP Demo 已完成（`http://8.148.238.164:8088`）；优先做 3a～3c 避免 2G ECS 再现刷新 502。
+**说明：** #1 HTTP Demo 已完成；3a～3c 核心已完成。**下一步优先收尾 Chat #3，随后 README；CD（3d）建议在 README 前或 Phase 2 前完成，避免再次手工 scp 镜像。**
 
 ---
 
@@ -335,7 +364,7 @@ flowchart LR
 | LangGraph | 无 | 仅 C2 实验分支（可选） |
 | 微服务 / Nacos | compose + 服务名，无注册中心 | **不做** |
 | Redis / MQ | 无 | Redis 可选；MQ 仅口述扩展 |
-| CI/CD | CI 已有 | CD 可选 |
+| CI/CD | CI 已有 | **CD 已排期 §4.4（3d）** |
 
 ---
 
@@ -345,8 +374,9 @@ flowchart LR
 2. **大 PDF**：需上限，避免 embed 超时。  
 3. **Phase 1.5 核心（3a～3b）未完成前慎加新重接口** — 2G Demo 机易再现 OOM / 502。  
 4. **Phase 1 未完成前不启动 Phase 3** — 避免「功能很多但没有可点的 Demo」。  
-5. **数据库备份 `workbench_backup.sql`** — 勿提交 Git；可加入 `.gitignore`。  
-6. **实施方式** — 每项开始前决定：Chat 分步学习 vs Agent 批量实现。
+5. **数据库备份 `workbench_backup.sql`** — 勿提交 Git；`*.tar`、`*.part_*` 等部署产物勿提交。  
+6. **手动 scp 镜像** — 仅 CD（3d）完成前的临时方案；见 §4.4。  
+7. **实施方式** — 每项开始前决定：Chat 分步学习 vs Agent 批量实现。
 
 ---
 
@@ -355,7 +385,7 @@ flowchart LR
 | 文档 | 用途 |
 |------|------|
 | [`deploy.md`](deploy.md) | Docker 部署与故障排查；生产 2G ECS 细节见本文 §4.1 |
-| 本文 §4.0～§4.3 | Demo 踩坑复盘、素材页 N+1 / 懒加载优化日程 |
+| 本文 §4.0～§4.4 | Demo 踩坑复盘、素材页优化、**CD 自动化排期** |
 | [`JD.md`](JD.md) | 目标岗位 JD 汇总 |
 | [`ai-pricing-sources.md`](ai-pricing-sources.md) | AI 用量计费出处 |
 | [`java-python-architecture.md`](java-python-architecture.md) | Java + Python 分工草稿 |
