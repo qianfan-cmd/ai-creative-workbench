@@ -108,8 +108,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: workbench
       APP_AI_SERVICE_BASE_URL: http://ai:8000
       APP_UPLOAD_DIR: /app/uploads
-      APP_PUBLIC_BASE_URL: http://localhost:8080
+      APP_PUBLIC_BASE_URL: http://localhost:8088
       APP_FRONTEND_BASE_URL: http://localhost:8088
+      JAVA_TOOL_OPTIONS: "-Xmx512m -Xms256m"
 
     # volumes: 上传目录持久化。容器重建后用户上传的图片仍在 uploads_data 卷里。
     volumes:
