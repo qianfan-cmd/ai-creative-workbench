@@ -1,0 +1,7 @@
+# 生产环境覆盖：与 docker-compose.yml 一起使用
+# 用法：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  backend:
+    environment:
+      APP_PUBLIC_BASE_URL: http://8.148.238.164:8088
+      APP_FRONTEND_BASE_URL: http://8.148.238.164:8088
