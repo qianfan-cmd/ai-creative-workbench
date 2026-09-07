@@ -10,6 +10,7 @@ import com.workbench.backendjava.config.StorageProperties;
 import com.workbench.backendjava.config.UploadProperties;
 import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
 import com.workbench.backendjava.dto.AssetUpdateRequest;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.entity.Asset;
 import com.workbench.backendjava.entity.AssetTag;
 import com.workbench.backendjava.entity.Tag;
@@ -27,18 +28,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -130,7 +130,7 @@ public class AssetService {
     /**
      * 分页查询当前用户的素材列表
      */
-    public PageResult<AssetVO> listPage(long page, long size, Long tagId, String keyword, String type, String sort) {
+    public PageResult<AssetVO> listPage(long page, long size, Long tagId, String keyword, String type, String sort, boolean includeTags) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
             throw new BusinessException(401, "未登录");
@@ -205,19 +205,33 @@ public class AssetService {
         // 分页查询（会自动拼接LiMIT: @TableLogic 会过滤 deleted = 1)
         Page<Asset> resultPage = assetMapper.selectPage(mpPage, wrapper);
 
-        // Entity -> VO
-        List<AssetVO> voList = resultPage.getRecords().stream()
-                .map(asset -> toAssetVO(asset))
+        List<Asset> records = resultPage.getRecords();
+
+        if (!includeTags) {
+            List<AssetVO> voList = records.stream()
+                    .map(this::toAssetVOWithoutTags)
+                    .collect(Collectors.toList());
+            return PageResult.of(voList, resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize());
+        }
+
+        // includeTags=true：2 次 SQL 批量 tags + 内存组装 VO
+        List<Long> assetIds = records.stream()
+                .map(Asset::getId)
+                .collect(Collectors.toList());
+        Map<Long, List<TagVO>> tagsByAssetId = loadTagsForAssets(assetIds);
+
+        List<AssetVO> voList = records.stream()
+                .map(asset -> toAssetVOWithTags(asset, tagsByAssetId))
                 .collect(Collectors.toList());
 
         return PageResult.of(voList, resultPage.getTotal(), resultPage.getCurrent(), resultPage.getSize());
     }
 
     /**
-     * Entity -> VO
+     * 素材 Entity -> VO 公共字段（id、name、url、path、size、type、createdAt）
+     * 列表 Grid / List、详情、更新等共用，避免复制粘贴。
      */
-    private AssetVO toAssetVO(Asset asset) {
-        AssetVO vo = new AssetVO();
+    private void fillAssetBaseFields(Asset asset, AssetVO vo) {
         vo.setId(asset.getId());
         vo.setName(asset.getName());
         vo.setUrl(buildPublicAssetUrl(asset));
@@ -225,10 +239,39 @@ public class AssetService {
         vo.setSize(asset.getSize());
         vo.setType(asset.getType());
         vo.setCreatedAt(asset.getCreatedAt());
+    }
+
+    /**
+     * 列表用：不带 tags（includeTags=false，Grid 模式）
+     * 不调用 loadTagsForAsset，避免 N+1。
+     */
+    private AssetVO toAssetVOWithoutTags(Asset asset) {
+        AssetVO vo = new AssetVO();
+        fillAssetBaseFields(asset, vo);
+        // 不 setTags：JSON 里 tags 为 null；前端 Grid 不展示标签，3b 再传 includeTags
+        return vo;
+    }
+
+    /**
+     * 详情 / 更新 / import 等单条场景：带 tags，仍走 loadTagsForAsset（1 条素材 2～3 次 SQL 可接受）
+     */
+    private AssetVO toAssetVO(Asset asset) {
+        AssetVO vo = new AssetVO();
+        fillAssetBaseFields(asset, vo);
         vo.setTags(loadTagsForAsset(asset.getId()));
         return vo;
     }
 
+    /**
+     * 列表 includeTags=true 时用：从批量查好的 Map 里取 tags（Sub-step 4 会调用）
+     */
+    private AssetVO toAssetVOWithTags(Asset asset, Map<Long, List<TagVO>> tagsByAssetId) {
+        AssetVO vo = new AssetVO();
+        fillAssetBaseFields(asset, vo);
+        List<TagVO> tags = tagsByAssetId.getOrDefault(asset.getId(), Collections.emptyList());
+        vo.setTags(tags);
+        return vo;
+    }
     /**
      * 查询当前用户的素材详情
      */
@@ -263,6 +306,27 @@ public class AssetService {
             throw new BusinessException(404, "素材不存在");
         }
 
+        deleteOne(userId, id);
+    }
+
+    @Transactional
+    public void deleteBatch(IdsBatchDeleteRequest request) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        for (Long id : request.getIds()) {
+            Asset asset = assetMapper.selectById(id);
+            if (asset == null || !asset.getUserId().equals(userId)) {
+                log.warn("批量删除素材跳过不存在或无权限 assetId={}, userId={}", id, userId);
+                continue;
+            }
+            deleteOne(userId, id);
+        }
+    }
+
+    private void deleteOne(Long userId, Long id) {
         assetMapper.deleteById(id);
         log.info("素材删除, userId={}, assetId={}", userId, id);
     }
@@ -366,6 +430,49 @@ public class AssetService {
         return tagMapper.selectBatchIds(tagIds).stream()
                 .map(this::toTagVO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 列表批量：一次查本页所有素材的标签关联，再一次查 tag 表（O2，消除 N+1）
+     *
+     * @param assetIds 本页素材 id 列表（来自分页结果）
+     * @return key=assetId, value=该素材的标签列表（无标签则为 emptyList）
+     */
+    private Map<Long, List<TagVO>> loadTagsForAssets(List<Long> assetIds) {
+        // 本页没有素材，直接返回空 Map，避免无意义 SQL
+        if (assetIds == null || assetIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // 第 1 次 SQL：查 asset_tag 关联表，WHERE asset_id IN (...)
+        List<AssetTag> relations = assetTagMapper.selectList(
+                new LambdaQueryWrapper<AssetTag>()
+                        .in(AssetTag::getAssetId, assetIds)
+        );
+        if (relations.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // 收集所有出现过的 tagId（去重）
+        Set<Long> tagIds = relations.stream()
+                .map(AssetTag::getTagId)
+                .collect(Collectors.toSet());
+
+        // 第 2 次 SQL：一次查出所有 Tag 实体
+        Map<Long, TagVO> tagById = tagMapper.selectBatchIds(tagIds).stream()
+                .collect(Collectors.toMap(Tag::getId, this::toTagVO));
+
+        // 内存组装：assetId -> List<TagVO>（一个素材可绑多个标签）
+        Map<Long, List<TagVO>> result = new HashMap<>();
+        for (AssetTag relation : relations) {
+            TagVO tag = tagById.get(relation.getTagId());
+            if (tag == null) {
+                // 关联指向已删 tag 时跳过，避免 NPE
+                continue;
+            }
+            result.computeIfAbsent(relation.getAssetId(), k -> new ArrayList<>()).add(tag);
+        }
+        return result;
     }
 
     private TagVO toTagVO(Tag tag) {

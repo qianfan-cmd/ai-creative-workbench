@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, message, Spin, Modal, Table } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
-import { listAssetsApi, getAssetStatsApi, deleteAssetApi } from '@/api/assets'
+import { listAssetsApi, getAssetStatsApi, deleteAssetApi, getAssetDetailApi, batchDeleteAssetsApi } from '@/api/assets'
 import type { AssetVO, AssetStatsVO } from '@/types/api'
 import styles from '@/pages/AssetListPage.module.css'
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
@@ -18,7 +18,7 @@ import { formatDate, formatFileSize } from '@/utils/format'
 import EditAssetModal from '@/components/assets/EditAssetModal'
 import TagListCell from '@/components/assets/TagListCell'
 
-const GRID_PAGE_SIZE = 40
+const GRID_PAGE_SIZE = 20
 
 const AssetListPage = () => {
     const navigate = useNavigate()
@@ -56,15 +56,20 @@ const AssetListPage = () => {
 
     const [editOpen, setEditOpen] = useState(false)
     const [editingAsset, setEditingAsset] = useState<AssetVO | null>(null)
+    const [selectedAssetIds, setSelectedAssetIds] = useState<number[]>([])
 
-    const handleEditAsset = (asset: AssetVO) => {
-        setEditingAsset(asset)
-        setEditOpen(true)
+    const handleEditAsset = async (asset: AssetVO) => {
+        try {
+            // 下拉选项：若尚未加载过全站标签列表，这里补一次
+            await ensureTagsLoaded()
+            // 单条详情：Grid 列表不带 tags，必须再查一次才能回填已绑标签
+            const detail = await getAssetDetailApi(asset.id)
+            setEditingAsset(detail)
+            setEditOpen(true)
+        } catch (err) {
+            message.error(err instanceof Error ? err.message : '加载素材详情失败')
+        }
     }
-
-    useEffect(() => {
-        listTagsApi().then(setTags)
-    }, [])
 
     useMainContentLayout({ fullBleed: true, lockScroll: viewMode === 'grid' })
 
@@ -77,6 +82,7 @@ const AssetListPage = () => {
                 tagId,
                 keyword: keyword || undefined,
                 sort,
+                includeTags: true,
             })
             setRecords(data.records)
             setTotal(data.total)
@@ -101,6 +107,7 @@ const AssetListPage = () => {
                 tagId,
                 keyword: keyword || undefined,
                 sort,
+                includeTags: false,
             })
             setGridTotal(data.total)
             setGridPage(targetPage)
@@ -150,7 +157,12 @@ const AssetListPage = () => {
 
     useEffect(() => {
         setPage(1)
+        setSelectedAssetIds([])
     }, [keyword, tagId])
+
+    useEffect(() => {
+        setSelectedAssetIds([])
+    }, [viewMode, sort])
 
     const fetchStats = useCallback(async () => {
         try {
@@ -170,10 +182,32 @@ const AssetListPage = () => {
         setTags(data)
     }, [])
 
-    useEffect(() => {
-        reloadTags()
-    }, [reloadTags])
+    const prependTag = useCallback((created: TagVO) => {
+        setTags((prev) => {
+            if (prev.some((t) => t.id === created.id)) return prev
+            return [created, ...prev]
+        })
+    }, [])
 
+    /** 首次打开标签筛选下拉时再请求标签 */
+        const ensureTagsLoaded = useCallback(async () => {
+            if (tags.length > 0) return
+            try {
+                await reloadTags()
+            } catch (err) {
+                message.error(err instanceof Error ? err.message : '获取标签列表失败')
+            }
+        }, [tags.length, reloadTags])
+    
+        const handleTagFilterOpenChange = useCallback(
+            (open: boolean) => {
+                if (open) {
+                    void ensureTagsLoaded()
+                }
+            },
+            [ensureTagsLoaded],
+        )
+    
     const handleGridScroll = useCallback(() => {
         const el = gridScrollRef.current
         if (!el || gridLoading || gridLoadingMore) return
@@ -192,6 +226,57 @@ const AssetListPage = () => {
         fetchGridPage,
     ])
 
+    const handleToggleAssetSelect = (asset: AssetVO) => {
+        setSelectedAssetIds((prev) =>
+            prev.includes(asset.id)
+                ? prev.filter((id) => id !== asset.id)
+                : [...prev, asset.id],
+        )
+    }
+
+    const clearAssetSelection = () => {
+        setSelectedAssetIds([])
+    }
+
+    const handleBatchDeleteAssets = () => {
+        if (selectedAssetIds.length === 0) return
+
+        Modal.confirm({
+            title: '确认批量删除',
+            content: `确定删除选中的 ${selectedAssetIds.length} 个素材吗？此操作不可恢复。`,
+            okText: '删除',
+            okType: 'danger',
+            cancelText: '取消',
+            onOk: async () => {
+                try {
+                    await batchDeleteAssetsApi(selectedAssetIds)
+                    message.success('批量删除成功')
+
+                    const deleted = new Set(selectedAssetIds)
+
+                    if (viewMode === 'grid') {
+                        setGridAssets((prev) => prev.filter((item) => !deleted.has(item.id)))
+                        setGridTotal((prev) => Math.max(0, prev - selectedAssetIds.length))
+                    } else {
+                        const remaining = records.filter((item) => !deleted.has(item.id))
+                        if (remaining.length === 0 && page > 1) {
+                            setPage(page - 1)
+                        } else {
+                            setRecords(remaining)
+                            setTotal((prev) => Math.max(0, prev - selectedAssetIds.length))
+                        }
+                    }
+
+                    setSelectedAssetIds([])
+                    await fetchStats()
+                } catch (err) {
+                    message.error(err instanceof Error ? err.message : '批量删除失败')
+                    throw err
+                }
+            },
+        })
+    }
+
     const handleViewAsset = (asset: AssetVO) => {
         window.open(asset.url, '_blank', 'noopener,noreferrer')
     }
@@ -207,6 +292,7 @@ const AssetListPage = () => {
                 try {
                     await deleteAssetApi(asset.id)
                     message.success('删除成功')
+                    setSelectedAssetIds((prev) => prev.filter((id) => id !== asset.id))
 
                     if (viewMode === 'grid') {
                         setGridAssets((prev) => prev.filter((item) => item.id !== asset.id))
@@ -313,14 +399,29 @@ const AssetListPage = () => {
                     setPage(1)
                 }}
                 onCreateTagClick={() => setCreateTagOpen(true)}
+                onTagFilterOpenChange={handleTagFilterOpenChange}
             />
+
+            {selectedAssetIds.length > 0 && (
+                <div className={styles.selectionBar}>
+                    <span className={styles.selectionBarText}>已选 {selectedAssetIds.length} 项</span>
+                    <div className={styles.selectionBarActions}>
+                        <Button danger onClick={handleBatchDeleteAssets}>
+                            批量删除
+                        </Button>
+                        <Button type="link" onClick={clearAssetSelection}>
+                            取消选择
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             <CreateTagModal
                 open={createTagOpen}
                 onCancel={() => setCreateTagOpen(false)}
-                onSuccess={() => {
+                onSuccess={(created) => {
                     setCreateTagOpen(false)
-                    reloadTags()
+                    prependTag(created)
                 }}
             />
 
@@ -341,7 +442,7 @@ const AssetListPage = () => {
                         await fetchList()
                     }
                 }}
-                onTagsReload={reloadTags}
+                onTagsReload={prependTag}
             />
 
             <section className={styles.section}>
@@ -388,6 +489,8 @@ const AssetListPage = () => {
                                     <VirtualAssetGrid
                                         assets={gridAssets}
                                         scrollRef={gridScrollRef}
+                                        selectedIds={selectedAssetIds}
+                                        onToggleSelect={handleToggleAssetSelect}
                                         onView={handleViewAsset}
                                         onEdit={handleEditAsset}
                                         onDelete={handleDeleteAsset}
@@ -443,6 +546,10 @@ const AssetListPage = () => {
                                         size="small"
                                         columns={columns}
                                         dataSource={records}
+                                        rowSelection={{
+                                            selectedRowKeys: selectedAssetIds,
+                                            onChange: (keys) => setSelectedAssetIds(keys as number[]),
+                                        }}
                                         pagination={{
                                             current: page,
                                             pageSize: size,

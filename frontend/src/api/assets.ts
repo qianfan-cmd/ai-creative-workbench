@@ -9,6 +9,7 @@ export interface ListAssetsParams {
     keyword?: string
     type?: string
     sort?: 'asc' | 'desc'
+    includeTags?: boolean
 }
 
 /**分页列表 */
@@ -21,6 +22,7 @@ export async function listAssetsApi(params: ListAssetsParams = {}) {
             keyword: params.keyword,
             type: params.type,
             sort: params.sort,
+            includeTags: params.includeTags,
         },
     })
     return res.data.data;
@@ -31,10 +33,21 @@ export async function deleteAssetApi(id: number) {
     await request.delete<ApiResponse<void>>(`/assets/${id}`);
 }
 
+/** 批量删除素材 */
+export async function batchDeleteAssetsApi(ids: number[]) {
+    await request.post<ApiResponse<void>>('/assets/batch-delete', { ids });
+}
+
 /** 素材统计 */
 export async function getAssetStatsApi() {
     const res = await request.get<ApiResponse<AssetStatsVO>>('/assets/stats');
     return res.data.data;
+}
+
+/** 素材详情（含 tags，编辑弹窗用） */
+export async function getAssetDetailApi(id: number) {
+    const res = await request.get<ApiResponse<AssetVO>>(`/assets/${id}`)
+    return res.data.data
 }
 
 /**修改文件名 */

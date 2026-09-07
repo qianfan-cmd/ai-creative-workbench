@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Form, Input, Modal, message } from 'antd'
-import { createTagApi } from '@/api/tags'
+import { createTagApi, type TagVO } from '@/api/tags'
 
 interface CreateTagModalProps {
   open: boolean
   onCancel: () => void
-  onSuccess: () => void
+  onSuccess: (created: TagVO) => void
 }
 
 interface CreateTagFormValues {
@@ -21,13 +21,13 @@ export default function CreateTagModal({ open, onCancel, onSuccess }: CreateTagM
     try {
       const values = await form.validateFields()
       setSubmitting(true)
-      await createTagApi({
+      const created = await createTagApi({
         name: values.name.trim(),
         color: values.color?.trim() || undefined,
       })
       message.success('标签创建成功')
       form.resetFields()
-      onSuccess()
+      onSuccess(created)
     } catch (err) {
       if (err instanceof Error) {
         message.error(err.message)

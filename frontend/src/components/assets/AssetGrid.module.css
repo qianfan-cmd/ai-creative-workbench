@@ -19,6 +19,36 @@
   transform: translateY(-2px);
 }
 
+.cardSelected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.selectBox {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.selectBox input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
+.card:has(.selectBox) .typeBadge {
+  left: calc(var(--space-2) + 24px);
+}
+
 .thumbnail {
   aspect-ratio: 4 / 3;
   position: relative;

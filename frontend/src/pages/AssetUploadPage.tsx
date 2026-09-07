@@ -29,14 +29,13 @@ export default function AssetUploadPage() {
   }, [])
 
   /**新建标签成功后回调，更新列表 */
-  const handleTagCreated = async () => {
+  const handleTagCreated = (created: TagVO) => {
     setCreateTagOpen(false)
-    const newTags = await listTagsApi();
-    setTags(newTags)
-
-    const newest = newTags[0]
-    if (!newest) return;
-    setSelectedTagIds((prev) => prev.includes(newest.id) ? prev : [...prev, newest.id])
+    setTags((prev) => {
+      if (prev.some((t) => t.id === created.id)) return prev
+      return [created, ...prev]
+    })
+    setSelectedTagIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]))
   }
 
   // 拦截上传文件

@@ -4,6 +4,8 @@ import styles from './AssetGrid.module.css'
 
 interface AssetGridCardProps {
   asset: AssetVO
+  selected?: boolean
+  onToggleSelect?: (asset: AssetVO) => void
   onView?: (asset: AssetVO) => void
   onEdit?: (asset: AssetVO) => void
   onDelete?: (asset: AssetVO) => void
@@ -13,10 +15,27 @@ function isImageAsset(type: string) {
   return type.startsWith('image/')
 }
 
-export default function AssetGridCard({ asset, onView, onEdit, onDelete }: AssetGridCardProps) {
+export default function AssetGridCard({
+  asset,
+  selected = false,
+  onToggleSelect,
+  onView,
+  onEdit,
+  onDelete,
+}: AssetGridCardProps) {
   return (
-    <article className={styles.card}>
+    <article className={`${styles.card} ${selected ? styles.cardSelected : ''}`}>
       <div className={styles.thumbnail}>
+        {onToggleSelect && (
+          <label className={styles.selectBox}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(asset)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </label>
+        )}
         {isImageAsset(asset.type) ? (
           <img
             className={styles.previewImage}

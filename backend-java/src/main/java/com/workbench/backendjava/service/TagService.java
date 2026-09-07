@@ -3,6 +3,7 @@ package com.workbench.backendjava.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.TagCreateRequest;
 import com.workbench.backendjava.dto.TagUpdateRequest;
 import com.workbench.backendjava.entity.AssetTag;
@@ -131,6 +132,27 @@ public class TagService {
             throw new BusinessException(404, "标签不存在");
         }
 
+        deleteOne(id, tag);
+    }
+
+    @Transactional
+    public void deleteBatch(IdsBatchDeleteRequest request) {
+        Long userId = LoginUserContext.getUserId();
+        if (userId == null) {
+            throw new BusinessException(401, "未登录");
+        }
+
+        for (Long id : request.getIds()) {
+            Tag tag = tagMapper.selectById(id);
+            if (tag == null) {
+                log.warn("批量删除标签跳过不存在的 tagId={}", id);
+                continue;
+            }
+            deleteOne(id, tag);
+        }
+    }
+
+    private void deleteOne(Long id, Tag tag) {
         assetTagMapper.delete(
                 new LambdaQueryWrapper<AssetTag>()
                         .eq(AssetTag::getTagId, id)

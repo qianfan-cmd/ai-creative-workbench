@@ -147,3 +147,20 @@
     padding: 0 4px;
     height: auto;
 }
+
+.pageDesc {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.tablePanelActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.searchInput {
+    width: 240px;
+}

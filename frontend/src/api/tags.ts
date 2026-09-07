@@ -8,9 +8,18 @@ export interface TagVO {
     createdAt: string
 }
 
+let tagsInflight: Promise<TagVO[]> | null = null
+
 export async function listTagsApi() {
-    const res = await request.get<ApiResponse<TagVO[]>>('/tags');
-    return res.data.data;
+    if (!tagsInflight) {
+        tagsInflight = request
+            .get<ApiResponse<TagVO[]>>('/tags')
+            .then((res) => res.data.data)
+            .finally(() => {
+                tagsInflight = null
+            })
+    }
+    return tagsInflight
 }
 
 export async function createTagApi(data: { name: string; color?: string }) {
@@ -25,4 +34,8 @@ export async function updateTagApi(id: number, data: { name: string; color?: str
 
 export async function deleteTagApi(id: number) {
     await request.delete<ApiResponse<void>>(`/tags/${id}`);
+}
+
+export async function batchDeleteTagsApi(ids: number[]) {
+    await request.post<ApiResponse<void>>('/tags/batch-delete', { ids });
 }

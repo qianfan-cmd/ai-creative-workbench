@@ -1,10 +1,11 @@
-package com.workbench.backendjava.controller;
+ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.dto.AssetImportUrlRequest;
 import com.workbench.backendjava.dto.AssetTagsUpdateRequest;
 import com.workbench.backendjava.dto.AssetUpdateRequest;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.service.AssetService;
 import com.workbench.backendjava.vo.AssetStatsVO;
 import com.workbench.backendjava.vo.AssetUploadVO;
@@ -49,9 +50,10 @@ public class AssetController {
                                             @RequestParam(required = false) Long tagId,
                                             @RequestParam(required = false) String keyword,
                                             @RequestParam(required = false) String type,
-                                            @RequestParam(defaultValue = "desc") String sort
+                                            @RequestParam(defaultValue = "desc") String sort,
+                                            @RequestParam(defaultValue = "false") boolean includeTags
     ) {
-        return Result.ok(assetService.listPage(page, size, tagId, keyword, type, sort));
+        return Result.ok(assetService.listPage(page, size, tagId, keyword, type, sort, includeTags));
     }
 
     /**
@@ -59,6 +61,12 @@ public class AssetController {
      * @param id
      * @return
      */
+    @PostMapping("/batch-delete")
+    public Result<Void> batchDelete(@Valid @RequestBody IdsBatchDeleteRequest request) {
+        assetService.deleteBatch(request);
+        return Result.ok();
+    }
+
     @GetMapping("/{id}")
     public Result<AssetVO> getDetail(@PathVariable Long id) {
         return Result.ok(assetService.getDetail(id));

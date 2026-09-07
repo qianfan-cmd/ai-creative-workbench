@@ -1,6 +1,7 @@
 package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.TagCreateRequest;
 import com.workbench.backendjava.dto.TagUpdateRequest;
 import com.workbench.backendjava.service.TagService;
@@ -26,6 +27,12 @@ public class TagController {
     @GetMapping
     public Result<List<TagVO>> list() {
         return Result.ok(tagService.list());
+    }
+
+    @PostMapping("/batch-delete")
+    public Result<Void> batchDelete(@Valid @RequestBody IdsBatchDeleteRequest request) {
+        tagService.deleteBatch(request);
+        return Result.ok(null);
     }
 
     @PutMapping("/{id}")

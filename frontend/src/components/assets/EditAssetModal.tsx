@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Form, Input, Modal, Select, Button, message } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { replaceAssetTagsApi, updateAssetNameApi } from '@/api/assets'
-import { listTagsApi } from '@/api/tags'
 import { splitFileName, joinFileName } from '@/utils/assetName'
 import type { AssetVO } from '@/types/api'
 import type { TagVO } from '@/api/tags'
@@ -15,7 +14,7 @@ interface EditAssetModalProps {
   tags: TagVO[]           // 父组件传入的初始列表
   onCancel: () => void
   onSuccess: () => void
-  onTagsReload?: () => void  // 目的：新建标签后让列表页 Toolbar 也刷新（可选）
+  onTagsReload?: (created: TagVO) => void
 }
 
 interface EditAssetFormValues {
@@ -95,20 +94,13 @@ export default function EditAssetModal({
     onCancel()
   }
 
-  // 目的：新建标签成功后刷新选项，并自动选中新建的标签
-  const handleTagCreated = async () => {
+  const handleTagCreated = (created: TagVO) => {
     setCreateTagOpen(false)
-    const newTags = await listTagsApi()
-    setAvailableTags(newTags)
-    onTagsReload?.()
-
-    // 后端 list 按 createdAt desc，最新标签在第一个
-    const newest = newTags[0]
-    if (!newest) return
+    onTagsReload?.(created)
 
     const current: number[] = form.getFieldValue('tagIds') ?? []
-    if (!current.includes(newest.id)) {
-      form.setFieldsValue({ tagIds: [...current, newest.id] })
+    if (!current.includes(created.id)) {
+      form.setFieldsValue({ tagIds: [...current, created.id] })
     }
   }
 

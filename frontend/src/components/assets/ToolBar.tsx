@@ -13,6 +13,7 @@ interface AssetToolBarProps {
     tagId?: number
     onTagIdChange: (tagId?: number) => void
     onCreateTagClick: () => void
+    onTagFilterOpenChange?: (open: boolean) => void
 }
 
 export default function Toolbar({
@@ -23,7 +24,8 @@ export default function Toolbar({
     tags,
     tagId,
     onTagIdChange,
-    onCreateTagClick
+    onCreateTagClick,
+    onTagFilterOpenChange
 }: AssetToolBarProps) {
   return (
     <div className={styles.toolbar}>
@@ -41,6 +43,7 @@ export default function Toolbar({
         placeholder="按标签筛选"
         allowClear
         value={tagId}
+        onOpenChange={(open) => onTagFilterOpenChange?.(open)}
         onChange={(value) => onTagIdChange(value)}
         options={tags.map(tag => ({ value: tag.id, label: tag.name, tag }))}
         optionRender={(option) => {

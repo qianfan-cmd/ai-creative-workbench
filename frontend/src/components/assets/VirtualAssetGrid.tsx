@@ -12,6 +12,8 @@ const CARD_BODY_HEIGHT = 64
 interface VirtualAssetGridProps {
   assets: AssetVO[]
   scrollRef: RefObject<HTMLDivElement | null>
+  selectedIds?: number[]
+  onToggleSelect?: (asset: AssetVO) => void
   onView?: (asset: AssetVO) => void
   onEdit?: (asset: AssetVO) => void
   onDelete?: (asset: AssetVO) => void
@@ -33,10 +35,13 @@ function getRowHeight(columnWidth: number) {
 export default function VirtualAssetGrid({
   assets,
   scrollRef,
+  selectedIds = [],
+  onToggleSelect,
   onView,
   onEdit,
   onDelete,
 }: VirtualAssetGridProps) {
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const [containerWidth, setContainerWidth] = useState(0)
 
   useEffect(() => {
@@ -85,6 +90,8 @@ export default function VirtualAssetGrid({
           <AssetGridCard
             key={asset.id}
             asset={asset}
+            selected={selectedSet.has(asset.id)}
+            onToggleSelect={onToggleSelect}
             onView={onView}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -120,6 +127,8 @@ export default function VirtualAssetGrid({
                 <AssetGridCard
                   key={asset.id}
                   asset={asset}
+                  selected={selectedSet.has(asset.id)}
+                  onToggleSelect={onToggleSelect}
                   onView={onView}
                   onEdit={onEdit}
                   onDelete={onDelete}
