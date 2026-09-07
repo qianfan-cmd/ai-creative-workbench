@@ -16,6 +16,7 @@ import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 import ChatMessageRow from '@/components/chat/ChatMessageRow'
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
 import VirtualChatMessageList from '@/components/chat/VirtualChatMessageList'
+import { showApiError } from '@/utils/apiError'
 
 export type ChatRole = 'user' | 'assistant'
 
@@ -71,7 +72,7 @@ export default function ChatPage() {
       const list = await listConversationsApi()
       setConversations(list)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载历史对话失败')
+      showApiError(error, '加载历史对话失败')
     }
   }, [])
 
@@ -156,7 +157,7 @@ export default function ChatPage() {
           finishAssistant()
           return finalAnswer
         }
-        message.error(err instanceof Error ? err.message : '生成失败')
+        showApiError(err, '生成失败')
         finishAssistant()
       } finally {
         setSending(false)
@@ -229,7 +230,7 @@ export default function ChatPage() {
           })
         })
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '保存失败')
+        showApiError(error, '保存失败')
       }
     }
   }
@@ -270,7 +271,7 @@ export default function ChatPage() {
       try {
         await updateChatAssistantApi(activeConversationId, assistantMsg.dbId, assistantContent)
       } catch (error) {
-        message.error(error instanceof Error ? error.message : '更新回答失败')
+        showApiError(error, '更新回答失败')
       }
     }
   }
@@ -290,7 +291,7 @@ export default function ChatPage() {
       window.setTimeout(() => setCopiedId(null), 1000)
       message.success('复制成功')
     } catch (err) {
-      message.error(`复制失败: ${err instanceof Error ? err.message : '未知错误'}`)
+      message.error(err instanceof Error ? err.message : '复制失败')
     }
   }
 
@@ -304,7 +305,7 @@ export default function ChatPage() {
       stickToBottomRef.current = true
       setMessages(detail.messages.map(mapMessageFromApi))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '加载对话失败')
+      showApiError(error, '加载对话失败')
     }
   }
 
@@ -317,7 +318,7 @@ export default function ChatPage() {
       setMessages([])
       await loadConversations()
     } catch (error) {
-      message.error(error instanceof Error ? error.message : '新建对话失败')
+      showApiError(error, '新建对话失败')
     }
   }
 

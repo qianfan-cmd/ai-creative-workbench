@@ -1,6 +1,7 @@
 import request from '@/api/request';
 import type { ApiResponse } from '@/types/api';
 import { getToken } from '@/utils/token'
+import { parseApiError, parseHttpStatus, finalizeApiRequestError } from '@/utils/apiError';
 
 export interface ChatRelyVO {
     reply: string;
@@ -109,23 +110,28 @@ export async function chatStreamApi(
 ) {
     const token = getToken();
 
-    const res = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-            message,
-            ...(options.conversationId != null ? { conversationId: options.conversationId } : {}),
-            ...(options.imageUrls?.length ? { imageUrls: options.imageUrls } : {}),
-        }),
-        signal,
-    })
+    let res: Response
+    try {
+        res = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+                message,
+                ...(options.conversationId != null ? { conversationId: options.conversationId } : {}),
+                ...(options.imageUrls?.length ? { imageUrls: options.imageUrls } : {}),
+            }),
+            signal,
+        })
+    } catch (error) {
+        throw finalizeApiRequestError(parseApiError(error))
+    }
 
     if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        throw new Error(errBody?.message || `请求失败 (${res.status})`);
+        const errBody = await res.json().catch(() => null) as { message?: string } | null
+        throw finalizeApiRequestError(parseHttpStatus(res.status, errBody?.message))
     }
 
     const reader = res.body?.getReader();

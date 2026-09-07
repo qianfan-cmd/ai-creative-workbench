@@ -17,6 +17,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { formatDate, formatFileSize } from '@/utils/format'
 import EditAssetModal from '@/components/assets/EditAssetModal'
 import TagListCell from '@/components/assets/TagListCell'
+import { showApiError } from '@/utils/apiError'
 
 const GRID_PAGE_SIZE = 20
 
@@ -67,7 +68,7 @@ const AssetListPage = () => {
             setEditingAsset(detail)
             setEditOpen(true)
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '加载素材详情失败')
+            showApiError(err, '加载素材详情失败')
         }
     }
 
@@ -87,7 +88,7 @@ const AssetListPage = () => {
             setRecords(data.records)
             setTotal(data.total)
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '获取素材列表失败')
+            showApiError(err, '获取素材列表失败')
         } finally {
             setListLoading(false)
         }
@@ -113,7 +114,7 @@ const AssetListPage = () => {
             setGridPage(targetPage)
             setGridAssets((prev) => (append ? [...prev, ...data.records] : data.records))
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '获取素材列表失败')
+            showApiError(err, '获取素材列表失败')
         } finally {
             setGridLoading(false)
             setGridLoadingMore(false)
@@ -169,7 +170,7 @@ const AssetListPage = () => {
             const data = await getAssetStatsApi()
             setStats(data)
         } catch (err) {
-            message.error(err instanceof Error ? err.message : '获取素材统计失败')
+            showApiError(err, '获取素材统计失败')
         }
     }, [])
 
@@ -195,7 +196,7 @@ const AssetListPage = () => {
             try {
                 await reloadTags()
             } catch (err) {
-                message.error(err instanceof Error ? err.message : '获取标签列表失败')
+                showApiError(err, '获取标签列表失败')
             }
         }, [tags.length, reloadTags])
     
@@ -270,7 +271,7 @@ const AssetListPage = () => {
                     setSelectedAssetIds([])
                     await fetchStats()
                 } catch (err) {
-                    message.error(err instanceof Error ? err.message : '批量删除失败')
+                    showApiError(err, '批量删除失败')
                     throw err
                 }
             },
@@ -305,7 +306,7 @@ const AssetListPage = () => {
 
                     await fetchStats()
                 } catch (err) {
-                    message.error(err instanceof Error ? err.message : '删除失败')
+                    showApiError(err, '删除失败')
                     throw err
                 }
             },
