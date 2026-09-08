@@ -172,6 +172,8 @@ docker compose ps
 | ECS 生产 JWT | 服务器上 `.env.secrets` → `JWT_SECRET`（见 `env.secrets.example`） |
 | AI API Key | `ai-service-python/.env`（gitignore） |
 
+**知识库格式（Wave B）：** 支持 `.txt` / `.md` / `.markdown` / `.pdf` / `.docx`。PDF/DOCX 仅索引与只读预览，不支持在线编辑；扫描版/加密 PDF 会返回中文错误。
+
 仓库内 `application.yml` **不含真实密码**；勿用 `*` 占位（YAML 语法错误会导致 backend 启动失败）。
 
 ### 6.2 Python：`ai-service-python/.env`
@@ -218,6 +220,14 @@ cd backend-java && docker build -t workbench-backend .
 cd ai-service-python && docker build -t workbench-ai .
 cd frontend && docker build -t workbench-frontend .
 cd .. && docker compose up -d
+```
+
+**Wave B 后 ai 镜像必 rebuild**（新增 `pypdf`、`python-docx`）。ECS 上 push 后 Run **Deploy to ECS**，或：
+
+```bash
+docker compose --env-file .env.workbench \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  pull ai && up -d ai
 ```
 
 ---
@@ -334,7 +344,42 @@ docker compose logs ai --tail 50
 
 ---
 
-### 9.8 AI 容器 Exited (1)：`python-multipart`
+### 9.9 CD 后登录 502 Bad Gateway
+
+**现象**：http://IP:8088 登录页正常，点登录返回 Nginx 502 HTML。
+
+**原因**：`workbench-backend` 未运行（`Exited`），Nginx 无法转发 `/api/*`。常见崩溃原因：
+
+1. `application.yml` 含 `password: *****` 等非法 YAML（`*` 为 YAML 特殊字符）
+2. MySQL 未 healthy（较少见，backend 依赖 healthy mysql）
+
+**诊断**：
+
+```bash
+cd ~/ai-creative-workbench
+docker compose --env-file .env.workbench \
+  -f docker-compose.yml -f docker-compose.prod.yml ps -a
+docker compose --env-file .env.workbench \
+  -f docker-compose.yml -f docker-compose.prod.yml logs backend --tail 50
+```
+
+**解决**：确保仓库 `application.yml` 无 password 行；ECS 存在 `.env.secrets`（JWT）；然后重新 Deploy 或 `compose up -d backend`。详见下文 **§12.9**。
+
+---
+
+### 9.10 GitHub Actions SSH 公钥认证失败
+
+```text
+ssh: unable to authenticate, attempted methods [none publickey]
+```
+
+**原因**：ECS 仅配置密码登录，或 `ECS_SSH_KEY` Secret 不是对应私钥。
+
+**解决**：按下文 **§12.10** 配置 deploy 专用密钥对。
+
+---
+
+### 9.11 AI 容器 Exited (1)：`python-multipart`
 
 ```text
 Form data requires "python-multipart" to be installed
@@ -475,9 +520,90 @@ MySQL 与 volume（`mysql_data`、`uploads_data`）**不会**被重建。
 
 ### 12.7 验收
 
-- [ ] Actions **Build & push** 三步 green，Packages 页可见三个镜像
-- [ ] **Deploy on ECS** SSH 成功，`docker compose ps` 四服务 Up
-- [ ] http://8.148.238.164:8088 可访问且为新版本行为
-- [ ] 回滚一次（skip_build + 旧 tag）可恢复
+- [x] Actions **Build & push** 三步 green，Packages 页可见三个镜像
+- [x] **Deploy on ECS** SSH 成功，`docker compose ps` 四服务 Up
+- [x] http://8.148.238.164:8088 可访问且 **登录成功**
+- [ ] 回滚一次（skip_build + 旧 tag）可恢复（可选）
 
 复盘见 [`dev-log/2026-09-github-actions-cd.md`](dev-log/2026-09-github-actions-cd.md)。
+
+### 12.8 完整原理（配置与请求两条线）
+
+**配置线：谁在哪儿读密钥**
+
+```
+Git 仓库 application.yml          → 结构 + 非敏感默认值（无 password、无 *）
+        │
+        ├─ 本机 IDE ──▶ application-local.yml（gitignore，MySQL 密码 + JWT）
+        │
+        └─ ECS Docker ──▶ docker-compose.yml 环境变量（SPRING_DATASOURCE_PASSWORD=workbench）
+                        + docker-compose.prod.yml env_file（.env.secrets → JWT_SECRET）
+                        + ai-service-python/.env（AI Key，仅 ECS 磁盘）
+```
+
+Spring Boot 启动顺序：**先解析 YAML** → 再合并 `application-local.yml`（若有）→ **环境变量覆盖**。  
+因此 YAML 必须合法且不能含 `*` 占位；真实密码应在 YAML 解析通过后由 env 注入。
+
+**请求线：浏览器登录为何经 Nginx**
+
+```
+浏览器 POST /api/auth/login
+    → frontend:80 (Nginx)
+    → proxy_pass http://backend:8080
+    → Spring Boot 鉴权 → mysql:3306
+
+若 backend 容器 Exited → Nginx 502 Bad Gateway（登录页静态资源仍正常）
+```
+
+### 12.9 踩坑实录（2026-09 首次 CD 上线）
+
+#### A. SSH：`unable to authenticate, attempted methods [none publickey]`
+
+| 项 | 说明 |
+|----|------|
+| 原因 | 本机习惯 `ssh root@IP` **密码登录**；Actions 的 `ECS_SSH_KEY` 只走 **公钥** |
+| 解决 | 生成 deploy 专用密钥对；公钥写入 ECS `~/.ssh/authorized_keys`；私钥存入 GitHub Secret |
+| 验证 | 本机 `ssh -i ~/.ssh/workbench_deploy root@8.148.238.164` 免密登录 |
+
+#### B. 登录 502：`workbench-backend Exited (1)`
+
+| 项 | 说明 |
+|----|------|
+| 现象 | 页面能开，点登录返回 Nginx 502 HTML |
+| 诊断 | `docker compose ps -a` → backend **Exited**；`logs backend` → SnakeYAML `password: *` |
+| 原因 | 仓库用 `*` 掩码密码；YAML 在启动阶段解析失败，**等不到** compose 注入的 `SPRING_DATASOURCE_PASSWORD` |
+| 解决 | `application.yml` 删除 password；MySQL 靠 compose env；JWT 靠 ECS `.env.secrets` |
+
+#### C. 「服务器从 Git 拉代码，密码放哪？」
+
+- **代码**（含 compose 结构、镜像地址）→ Git，`git pull` 更新。
+- **密钥**（JWT、AI Key）→ ECS 本地文件，**首次创建后 CD 不覆盖**。
+- **Demo MySQL 密码** → 已在 `docker-compose.yml` 写 `workbench`（与容器内 MySQL 一致），可进 Git。
+
+**日常发版不需要改任何密码**；只有换 JWT / 换 AI Key 时才改 ECS 上对应文件。
+
+### 12.10 SSH 密钥一次性配置步骤
+
+```bash
+# 本机：生成密钥（无 passphrase）
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/workbench_deploy
+
+# ECS（密码登录上去一次）：写入公钥
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "<workbench_deploy.pub 整行>" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+# GitHub：Settings → Secrets → ECS_SSH_KEY = 私钥全文
+
+# 本机验证
+ssh -i ~/.ssh/workbench_deploy root@8.148.238.164
+```
+
+### 12.11 ECS 密钥文件一次性配置
+
+```bash
+cd /root/ai-creative-workbench
+cp env.secrets.example .env.secrets
+nano .env.secrets   # JWT_SECRET=至少32位随机字符串
+# ai-service-python/.env 同理，填 MODEL_API_KEY 等
+```

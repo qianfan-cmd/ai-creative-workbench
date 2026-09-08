@@ -1,6 +1,7 @@
 package com.workbench.backendjava.client;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.config.AiServiceProperties;
@@ -245,9 +246,82 @@ public class PythonAiClient {
                 );
             }
             return vo;
+        } catch (HttpStatusCodeException e) {
+            throw mapPythonClientError(e, "知识库入库服务不可用，请确认 ai-service-python 已启动");
         } catch (RestClientException e) {
             log.error("调用 Python 文档入库失败: {}", e.getMessage(), e);
             throw new BusinessException(502, "知识库入库服务不可用，请确认 ai-service-python 已启动");
+        }
+    }
+
+    /**
+     * 调用 Python POST /ai/documents/parse，提取文档纯文本（PDF/DOCX 预览与入库前解析）。
+     */
+    public PythonParseResult parseDocument(byte[] bytes, String filename) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/parse";
+
+        try {
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            ByteArrayResource resource = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return filename;
+                }
+            };
+            body.add("file", resource);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            HttpEntity<MultiValueMap<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            PythonParseResponse response = restTemplate.postForObject(
+                    url,
+                    entity,
+                    PythonParseResponse.class
+            );
+
+            if (response == null || response.getContent() == null || response.getContent().isBlank()) {
+                throw new BusinessException(502, "文档解析返回为空");
+            }
+
+            PythonParseResult result = new PythonParseResult();
+            result.setFilename(response.getFilename() != null ? response.getFilename() : filename);
+            result.setContent(response.getContent());
+            result.setCharCount(response.getCharCount() != null ? response.getCharCount() : response.getContent().length());
+            return result;
+        } catch (HttpStatusCodeException e) {
+            throw mapPythonClientError(e, "文档解析服务不可用，请确认 ai-service-python 已启动");
+        } catch (RestClientException e) {
+            log.error("调用 Python 文档解析失败: {}", e.getMessage(), e);
+            throw new BusinessException(502, "文档解析服务不可用，请确认 ai-service-python 已启动");
+        }
+    }
+
+    private BusinessException mapPythonClientError(HttpStatusCodeException e, String fallback) {
+        String detail = extractFastApiDetail(e);
+        if (e.getStatusCode().is4xxClientError()) {
+            return new BusinessException(400, detail != null && !detail.isBlank() ? detail : fallback);
+        }
+        return new BusinessException(502, detail != null && !detail.isBlank() ? detail : fallback);
+    }
+
+    private String extractFastApiDetail(HttpStatusCodeException e) {
+        try {
+            String body = e.getResponseBodyAsString();
+            if (body == null || body.isBlank()) {
+                return null;
+            }
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode detail = root.get("detail");
+            if (detail == null) {
+                return body;
+            }
+            if (detail.isTextual()) {
+                return detail.asText();
+            }
+            return detail.toString();
+        } catch (Exception ex) {
+            return e.getResponseBodyAsString();
         }
     }
 
@@ -724,6 +798,22 @@ public class PythonAiClient {
         private String content;
         private String source;
         private Integer index;
+    }
+
+    @Data
+    static class PythonParseResponse {
+        private String filename;
+        private String content;
+
+        @JsonProperty("char_count")
+        private Integer charCount;
+    }
+
+    @Data
+    public static class PythonParseResult {
+        private String filename;
+        private String content;
+        private Integer charCount;
     }
 
     @Data

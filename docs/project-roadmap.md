@@ -237,7 +237,7 @@ flowchart LR
   → 按后缀分支解析
       .txt / .md / .markdown  → UTF-8（现有）
       .pdf                    → pypdf 或 pymupdf 提取纯文本
-      .docx                   → python-docx 提取段落文本
+      .docx                   → docx2txt 提取文本（段落/页眉/页脚/文本框）
   → split_text → embed → Chroma（不变）
 ```
 
@@ -245,7 +245,7 @@ flowchart LR
 
 - 不支持扫描版 PDF（无 OCR）。
 - 不支持加密 PDF。
-- DOCX 仅提取段落文本，复杂表格/图片忽略。
+- DOCX 用 docx2txt；支持文本框/页眉页脚；纯图片扫描件仍无 OCR。
 - 超大文件设字符/页数上限，与 upload max-size 对齐。
 
 ### 5.3 预计改动文件（实施时用，现在不动代码）
@@ -254,7 +254,7 @@ flowchart LR
 |--------|------|
 | P0 | `ai-service-python/app/services/document_parser.py` |
 | P0 | 新建 `ai-service-python/app/services/binary_document_extractor.py` |
-| P0 | `ai-service-python/requirements.txt`（`pypdf`、`python-docx` 等） |
+| P0 | `ai-service-python/requirements.txt`（`pypdf`、`docx2txt` 等） |
 | P0 | `backend-java/.../KnowledgeDocumentService.java` |
 | P0 | `frontend/.../KnowledgePage.tsx`、`KnowledgeDocumentListPage.tsx` |
 | P1 | `KnowledgeDocumentEditorPage` — PDF/DOCX 仅索引，编辑器只读或不可编辑 |
@@ -262,11 +262,11 @@ flowchart LR
 
 ### 5.4 验收标准
 
-- [ ] 上传 `.pdf`、`.docx` 成功，`chunk_count > 0`
-- [ ] 知识库问答能引用 PDF/DOCX 内容（references 含文件名）
-- [ ] 原有 md/txt 仍正常
-- [ ] 空 PDF / 加密 PDF / 扫描版有明确错误提示
-- [ ] Docker 环境 rebuild 后可用
+- [x] 上传 `.pdf`、`.docx` 成功，`chunk_count > 0`（代码已交付，待公网 CD 验收）
+- [x] 知识库问答能引用 PDF/DOCX 内容（references 含文件名）
+- [x] 原有 md/txt 仍正常
+- [x] 空 PDF / 加密 PDF / 扫描版有明确错误提示
+- [x] Docker 环境 rebuild 后可用（见 deploy.md）
 
 ### 5.5 面试一句话
 
@@ -370,12 +370,12 @@ flowchart LR
 | 3b | O3～O6 素材页前端懒加载 / 分页 / 批量删除 | P1.5 | 3a | ✅ |
 | 3c | D1～D3 部署加固 | P1.5 | #1 | ✅（D3 可选 ⬜） |
 | 3 | Chat 虚拟列表 + lazy + 错误体验 | P1 | — | ✅ |
-| **3d** | **CD1～CD4 GitHub Actions 部署 ECS** | **Wave A** | 3c、Demo 稳定 | **✅ 已交付（待 push + 首次 Run 验收）** |
+| **3d** | **CD1～CD4 GitHub Actions 部署 ECS** | **Wave A** | 3c、Demo 稳定 | **✅ 已验收（公网可登录）** |
 | **1-F** | **域名 + HTTPS** | **Wave A** | 3d、有域名 | **⬜** |
 | D3 | 静态 404 不 JSON（可选） | Wave A | 3c | ⬜ |
-| **5** | PDF/DOCX 解析（Python） | **Wave B** | Wave A 核心 | ⬜ |
-| **6** | Java + 前端格式对齐 | **Wave B** | #5 | ⬜ |
-| **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | ⬜ |
+| **5** | PDF/DOCX 解析（Python） | **Wave B** | Wave A 核心 | **✅** |
+| **6** | Java + 前端格式对齐 | **Wave B** | #5 | **✅** |
+| **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | **✅（待 CD 公网验收）** |
 | **2** | README + portfolio + architecture | **Wave C** | Wave B | ⬜ |
 | **4** | interview.md + rag-eval | **Wave C** | #2 | ⬜ |
 | 8 | AI 反馈闭环 | P3 | Wave C | ⬜ |
@@ -384,7 +384,7 @@ flowchart LR
 
 **建议实施顺序：** **3d → 1-F → D3（可选）→ 5 → 6 → 7 → 2 → 4 → Phase 3**
 
-**说明：** 功能亮点（Chat、素材、lazy、错误 UX）已完成并记入 dev-log。**下一步 Wave A：CD（3d）**；CD 完成后上 HTTPS（1-F），再 Phase 2 RAG；**Wave C 作品化放在 RAG 之后**，便于 README/portfolio 一次写全亮点。
+**说明：** Wave B **#5～#7 PDF/DOCX RAG** 已交付，见 [`dev-log/2026-09-rag-pdf-docx.md`](dev-log/2026-09-rag-pdf-docx.md)。**下一步：Wave C**（README/portfolio）或 **1-F HTTPS**（备案通过后）。
 
 ---
 

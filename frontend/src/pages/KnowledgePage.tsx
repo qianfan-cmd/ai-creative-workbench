@@ -56,11 +56,12 @@ import {
 
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
 import menuStyles from '@/components/common/SessionRowMenu.module.css'
-
-
+import {
+  KNOWLEDGE_ACCEPT_ATTR,
+  validateKnowledgeFile,
+} from '@/constants/knowledgeFormats'
 
 interface IndexedDoc {
-
     id: string
 
     filename: string
@@ -96,26 +97,6 @@ interface RagTurn {
     streaming?: boolean
 
     phase?: RagPhase
-
-}
-
-
-
-const ALLOWED_EXT = ['.txt', '.md', '.markdown']
-
-
-
-function validateKnowledgeFile(file: File): string | null {
-
-    const name = file.name.toLowerCase()
-
-    if (!ALLOWED_EXT.some((ext) => name.endsWith(ext))) {
-
-        return '仅支持 .txt / .md 文件'
-
-    }
-
-    return null
 
 }
 
@@ -1016,7 +997,7 @@ export default function KnowledgePage() {
 
                             type="file"
 
-                            accept=".txt,.md,.markdown"
+                            accept={KNOWLEDGE_ACCEPT_ATTR}
 
                             className={styles.hiddenInput}
 

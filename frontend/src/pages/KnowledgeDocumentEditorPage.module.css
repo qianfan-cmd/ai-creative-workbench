@@ -123,6 +123,9 @@
   color: var(--color-text-primary);
   background: var(--color-bg-surface);
   box-sizing: border-box;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 .previewBody {
@@ -136,6 +139,17 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-10);
+}
+
+.readOnlyAlert {
+  flex-shrink: 0;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.readOnlyAlert :global(.ant-alert-message) {
+  margin-bottom: 0;
 }
 
 @media (max-width: 900px) {

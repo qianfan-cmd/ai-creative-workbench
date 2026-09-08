@@ -15,6 +15,10 @@ import useDebouncedValue from '@/hooks/useDebouncedValue'
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import { formatDate, formatFileSize } from '@/utils/format'
 import styles from '@/pages/KnowledgeDocumentListPage.module.css'
+import {
+  KNOWLEDGE_ACCEPT_ATTR,
+  KNOWLEDGE_UPLOAD_HINT,
+} from '@/constants/knowledgeFormats'
 
 export default function KnowledgeDocumentListPage() {
   const navigate = useNavigate()
@@ -209,7 +213,7 @@ export default function KnowledgeDocumentListPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".txt,.md,.markdown"
+          accept={KNOWLEDGE_ACCEPT_ATTR} 
           className={styles.hiddenInput}
           onChange={(e) => void handleFileChange(e)}
         />
@@ -246,7 +250,7 @@ export default function KnowledgeDocumentListPage() {
         <Spin spinning={listLoading} className={styles.sectionSpin}>
           {showEmpty ? (
             <div className={styles.emptyState}>
-              <p className={styles.emptyText}>暂无文档，上传 .txt / .md 文件开始构建知识库</p>
+              <p className={styles.emptyText}>暂无文档，{KNOWLEDGE_UPLOAD_HINT}</p>
               <Button type="primary" onClick={handlePickFile}>
                 上传文档
               </Button>

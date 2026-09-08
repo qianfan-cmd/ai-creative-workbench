@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeftOutlined } from '@ant-design/icons'
-import { Button, Modal, Spin, message } from 'antd'
+import { Alert, Button, Modal, Spin, message } from 'antd'
 import {
   getKnowledgeDocumentContentApi,
   saveKnowledgeDocumentContentApi,
@@ -12,6 +12,7 @@ import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import styles from '@/pages/KnowledgeDocumentEditorPage.module.css'
 import MarkdownSourceEditor from '@/components/knowledge/MarkdownSourceEditor'
 import { useScrollSync } from '@/hooks/useScrollSync'
+import { isBinaryKnowledgeFile } from '@/constants/knowledgeFormats'
 
 function isPlainText(fileType?: string, filename?: string) {
   if (fileType === 'text/plain') return true
@@ -25,23 +26,26 @@ export default function KnowledgeDocumentEditorPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [readOnlyHintOpen, setReadOnlyHintOpen] = useState(true)
   const [meta, setMeta] = useState<KnowledgeDocumentContentVO | null>(null)
   const [saved, setSaved] = useState('')
   const [draft, setDraft] = useState('')
 
-  // 左栏：CodeMirror mount 后通过 callback 写入
   const [sourceScrollEl, setSourceScrollEl] = useState<HTMLElement | null>(null)
-  // 右栏：previewBody div 的 DOM
   const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null)
 
-  // 两侧 DOM 都有值时，Hook 内部会绑 scroll 监听
   useScrollSync(sourceScrollEl, previewScrollEl)
 
-  const dirty = draft !== saved
   const plainText = useMemo(
     () => isPlainText(meta?.fileType, meta?.filename),
     [meta?.fileType, meta?.filename],
   )
+  const readOnly = useMemo(
+    () => isBinaryKnowledgeFile(meta?.filename, meta?.fileType),
+    [meta?.filename, meta?.fileType],
+  )
+
+  const dirty = !readOnly && draft !== saved
 
   useMainContentLayout({ fullBleed: true, lockScroll: true })
 
@@ -67,6 +71,7 @@ export default function KnowledgeDocumentEditorPage() {
 
   useEffect(() => {
     void loadContent()
+    setReadOnlyHintOpen(true)
   }, [loadContent])
 
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function KnowledgeDocumentEditorPage() {
   }
 
   const handleSave = useCallback(async () => {
-    if (!Number.isFinite(docId) || docId <= 0) return
+    if (readOnly || !Number.isFinite(docId) || docId <= 0) return
     setSaving(true)
     try {
       await saveKnowledgeDocumentContentApi(docId, draft)
@@ -105,7 +110,7 @@ export default function KnowledgeDocumentEditorPage() {
     } finally {
       setSaving(false)
     }
-  }, [docId, draft])
+  }, [docId, draft, readOnly])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -142,27 +147,60 @@ export default function KnowledgeDocumentEditorPage() {
             <h1 className={styles.title} title={meta?.filename}>
               {meta?.filename ?? '文档'}
             </h1>
-            <p className={styles.subtitle}>左栏编辑源码，右栏实时预览 · 保存后自动更新 RAG 索引</p>
+            <p className={styles.subtitle}>
+              {readOnly
+                ? 'PDF/DOCX 已索引 · 下方为提取文本预览（只读，请重新上传以更新）'
+                : '左栏编辑源码，右栏实时预览 · 保存后自动更新 RAG 索引'}
+            </p>
           </div>
         </div>
         <div className={styles.toolbarRight}>
           {dirty && <span className={styles.dirtyBadge}>未保存</span>}
-          <Button type="primary" loading={saving} disabled={!dirty} onClick={() => { void handleSave() }}>
-            {saving ? '保存并索引中…' : '保存'}
-          </Button>
+          {!readOnly && (
+            <Button
+              type="primary"
+              loading={saving}
+              disabled={!dirty}
+              onClick={() => {
+                void handleSave()
+              }}
+            >
+              {saving ? '保存并索引中…' : '保存'}
+            </Button>
+          )}
         </div>
       </header>
 
+      {readOnly && readOnlyHintOpen && (
+        <Alert
+          type="info"
+          showIcon
+          closable
+          onClose={() => setReadOnlyHintOpen(false)}
+          message="PDF/DOCX 已索引，仅预览提取文本；更新请删除后重新上传"
+          className={styles.readOnlyAlert}
+        />
+      )}
+
       <div className={styles.split}>
         <section className={styles.pane}>
-          <div className={styles.paneHeader}>源码</div>
+          <div className={styles.paneHeader}>{readOnly ? '提取文本' : '源码'}</div>
           <div className={`${styles.paneBody} ${styles.sourcePaneBody}`}>
-            <MarkdownSourceEditor
-              value={draft}
-              onChange={setDraft}
-              plainText={plainText}
-              onScrollContainerReady={setSourceScrollEl}
-            />
+            {readOnly ? (
+              <pre
+                ref={(el) => setSourceScrollEl(el)}
+                className={styles.sourceInput}
+              >
+                {draft}
+              </pre>
+            ) : (
+              <MarkdownSourceEditor
+                value={draft}
+                onChange={setDraft}
+                plainText={plainText}
+                onScrollContainerReady={setSourceScrollEl}
+              />
+            )}
           </div>
         </section>
         <section className={styles.pane}>
@@ -171,7 +209,7 @@ export default function KnowledgeDocumentEditorPage() {
             ref={setPreviewScrollEl}
             className={`${styles.paneBody} ${styles.previewBody}`}
           >
-            <MarkdownDocViewer content={draft} plainText={plainText} />
+            <MarkdownDocViewer content={draft} plainText={plainText || readOnly} />
           </div>
         </section>
       </div>

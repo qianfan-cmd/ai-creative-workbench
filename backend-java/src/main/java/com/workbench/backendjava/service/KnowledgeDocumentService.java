@@ -36,7 +36,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KnowledgeDocumentService {
 
-    private static final Set<String> ALLOWED_EXT = Set.of(".txt", ".md", ".markdown");
+    private static final Set<String> ALLOWED_EXT = Set.of(".txt", ".md", ".markdown", ".pdf", ".docx");
+    private static final Set<String> BINARY_EXT = Set.of(".pdf", ".docx");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final KnowledgeDocumentMapper documentMapper;
@@ -152,6 +153,10 @@ public class KnowledgeDocumentService {
         Long userId = requireUserId();
         KnowledgeDocument doc = getOwnedDocument(id, userId);
 
+        if (isBinaryExtension(extensionOf(doc.getFilename()))) {
+            throw new BusinessException(400, "PDF/DOCX 不支持在线编辑，请重新上传");
+        }
+
         if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
             throw new BusinessException(400, "该文档无原文件，请重新上传后再编辑");
         }
@@ -223,7 +228,12 @@ public class KnowledgeDocumentService {
         vo.setId(doc.getId());
         vo.setFilename(doc.getFilename());
         vo.setFileType(doc.getFileType());
-        vo.setContent(new String(bytes, StandardCharsets.UTF_8));
+        if (isBinaryExtension(extensionOf(doc.getFilename()))) {
+            PythonAiClient.PythonParseResult parsed = pythonAiClient.parseDocument(bytes, doc.getFilename());
+            vo.setContent(parsed.getContent());
+        } else {
+            vo.setContent(new String(bytes, StandardCharsets.UTF_8));
+        }
         return vo;
     }
 
@@ -306,8 +316,12 @@ public class KnowledgeDocumentService {
     private void validateFilename(String filename) {
         String ext = extensionOf(filename);
         if (!ALLOWED_EXT.contains(ext)) {
-            throw new BusinessException(400, "不支持的文件类型，仅支持 .txt / .md / .markdown");
+            throw new BusinessException(400, "不支持的文件类型，支持 .txt / .md / .markdown / .pdf / .docx");
         }
+    }
+
+    private boolean isBinaryExtension(String ext) {
+        return BINARY_EXT.contains(ext);
     }
 
     private String extensionOf(String filename) {
@@ -320,6 +334,8 @@ public class KnowledgeDocumentService {
         return switch (ext) {
             case ".md", ".markdown" -> "text/markdown";
             case ".txt" -> "text/plain";
+            case ".pdf" -> "application/pdf";
+            case ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             default -> "application/octet-stream";
         };
     }
