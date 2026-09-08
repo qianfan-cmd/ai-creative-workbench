@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Modal, Form, Input, message } from 'antd'
 import { updateTagApi } from '@/api/tags'
 import type { TagVO } from '@/api/tags'
+import TagColorPicker from '@/components/assets/TagColorPicker'
 
 interface EditTagModalProps {
     open: boolean
@@ -80,8 +81,8 @@ export default function EditTagModal({
                     <Input placeholder="例如 Marketing" maxLength={32} />
                 </Form.Item>
 
-                <Form.Item label="颜色（可选）" name="color">
-                    <Input placeholder="#0D9488，留空使用默认色" />
+                <Form.Item label="标签颜色（可选）" name="color">
+                    <TagColorPicker />
                 </Form.Item>
             </Form>
         </Modal>

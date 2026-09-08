@@ -6,8 +6,9 @@ export function formatFileSize(bytes: number): string {
 }
 
 /** 2026-08-10 */
-export function formatDate(iso: string): string {
-    return iso.slice(0, 10); // 截取前10位，得到2026-08-10
+export function formatDate(iso: string | null | undefined): string {
+    if (!iso) return '—';
+    return iso.slice(0, 10);
 }
 
 /** image/png → PNG；image/svg+xml → SVG+XML */
