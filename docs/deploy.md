@@ -354,10 +354,109 @@ docker compose up -d ai
 | 文件 | 说明 |
 |------|------|
 | `docker-compose.yml` | 四服务编排与端口 |
-| `backend-java/Dockerfile` | Java 多阶段构建 |
+| `docker-compose.prod.yml` | 生产 GHCR 镜像 + 公网 URL |
+| `backend-java/Dockerfile` | Java 多阶段构建（本机） |
+| `backend-java/Dockerfile.runtime` | Java 运行镜像（CI/CD） |
+| `.github/workflows/deploy.yml` | CD：GHCR push + SSH 部署 |
 | `ai-service-python/Dockerfile` | Python AI 镜像 |
 | `frontend/Dockerfile` | 前端 build + Nginx |
 | `frontend/nginx.conf` | SPA 路由与 `/api` 反向代理 |
 | `ai-service-python/.env.example` | AI 环境变量模板 |
 
-CI/CD（GitHub Actions）见 [`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml)（CI）与 [`project-roadmap.md`](project-roadmap.md) **§4.4**（CD 排期，序号 **3d**）。
+CI 见 [`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml)；CD 见 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 与下文 **§12**。
+
+---
+
+## 12. GitHub Actions CD（GHCR → ECS）
+
+> 更新日期：2026-09-08 · Roadmap **3d**
+
+### 12.1 流程概览
+
+```
+GitHub Actions (workflow_dispatch)
+  ├─ mvn package + docker build → push GHCR (backend / frontend / ai)
+  └─ SSH ECS → git pull → compose pull/up（仅三业务容器，MySQL 不动）
+```
+
+| 镜像 | GHCR 地址 |
+|------|-----------|
+| Backend | `ghcr.io/qianfan-cmd/ai-creative-workbench/backend:<tag>` |
+| Frontend | `ghcr.io/qianfan-cmd/ai-creative-workbench/frontend:<tag>` |
+| AI | `ghcr.io/qianfan-cmd/ai-creative-workbench/ai:<tag>` |
+
+每次部署打两个 tag：**`<commit-sha>`** 与 **`latest`**。ECS 上通过 `.env.workbench` 指定 `WORKBENCH_IMAGE_TAG`（默认用本次 commit SHA）。
+
+### 12.2 首次启用前（一次性）
+
+1. **把本仓库 CD 相关改动 push 到 `main`**（含 `docker-compose.prod.yml` 的 GHCR `image:`、`deploy.yml`）。
+2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加：
+
+| Secret | 示例值 | 说明 |
+|--------|--------|------|
+| `ECS_HOST` | `8.148.238.164` | ECS 公网 IP |
+| `ECS_USER` | `root` | SSH 用户 |
+| `ECS_SSH_KEY` | （私钥全文） | 对应 ECS 上已授权的 key |
+| `ECS_DEPLOY_PATH` | `/root/ai-creative-workbench` | 项目目录 |
+| `GHCR_PAT` | （可选） | 若 GHCR 包为 **private**，需 `read:packages` PAT；公开仓库包通常可省略 |
+
+3. ECS 上确认已有 `ai-service-python/.env`（API Key 等），**不会被 CD 覆盖**。
+4. 首次手动在 ECS 验证 compose 能读到 prod 覆盖：
+
+```bash
+cd /root/ai-creative-workbench
+echo "WORKBENCH_IMAGE_TAG=latest" > .env.workbench
+docker compose --env-file .env.workbench -f docker-compose.yml -f docker-compose.prod.yml config | grep image
+```
+
+### 12.3 触发部署
+
+1. 打开 GitHub → **Actions** → **Deploy to ECS** → **Run workflow**。
+2. 默认：构建当前 commit 三镜像 → push GHCR → SSH 部署。
+3. 可选输入：
+   - **image_tag**：指定要拉取的 tag（回滚时用旧 commit SHA）。
+   - **skip_build**：勾选后跳过构建，仅 ECS 上 `pull` + `up -d`（配合 **image_tag** 回滚）。
+
+### 12.4 ECS 上 CD 实际执行的命令
+
+与 Workflow 中等价：
+
+```bash
+cd /root/ai-creative-workbench
+git pull origin main
+echo "WORKBENCH_IMAGE_TAG=<sha>" > .env.workbench
+# 若 GHCR 包 private：echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
+docker compose --env-file .env.workbench \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  pull backend frontend ai
+docker compose --env-file .env.workbench \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d backend frontend ai
+```
+
+MySQL 与 volume（`mysql_data`、`uploads_data`）**不会**被重建。
+
+### 12.5 回滚
+
+1. Actions → Deploy to ECS → Run workflow。
+2. **image_tag** 填上一版成功的 commit SHA（或 `latest` 若确认仍指向好版本）。
+3. 勾选 **skip_build** → Run。
+4. 或 SSH 手动改 `.env.workbench` 后执行 §12.4 的 `pull` / `up -d`。
+
+### 12.6 本地 vs CD
+
+| 场景 | 镜像来源 |
+|------|----------|
+| 本机开发 / 手工部署 | `docker build -t workbench-*:latest`（见 §3） |
+| ECS 生产（CD 后） | GHCR + `docker-compose.prod.yml` |
+
+本机仍用 `docker-compose.yml` 默认的 `workbench-*:latest`；**不要**在本机混用 prod 覆盖，除非已 login GHCR 并设置了 `WORKBENCH_IMAGE_TAG`。
+
+### 12.7 验收
+
+- [ ] Actions **Build & push** 三步 green，Packages 页可见三个镜像
+- [ ] **Deploy on ECS** SSH 成功，`docker compose ps` 四服务 Up
+- [ ] http://8.148.238.164:8088 可访问且为新版本行为
+- [ ] 回滚一次（skip_build + 旧 tag）可恢复
+
+复盘见 [`dev-log/2026-09-github-actions-cd.md`](dev-log/2026-09-github-actions-cd.md)。

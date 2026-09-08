@@ -1,7 +1,17 @@
 # 生产环境覆盖：与 docker-compose.yml 一起使用
 # 用法：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# CD 部署时通过 .env.workbench 注入 WORKBENCH_IMAGE_TAG（GitHub Actions 写入 commit SHA）
+# 示例：echo "WORKBENCH_IMAGE_TAG=abc1234" > .env.workbench
 services:
   backend:
+    image: ghcr.io/qianfan-cmd/ai-creative-workbench/backend:${WORKBENCH_IMAGE_TAG:-latest}
     environment:
       APP_PUBLIC_BASE_URL: http://8.148.238.164:8088
       APP_FRONTEND_BASE_URL: http://8.148.238.164:8088
+
+  ai:
+    image: ghcr.io/qianfan-cmd/ai-creative-workbench/ai:${WORKBENCH_IMAGE_TAG:-latest}
+
+  frontend:
+    image: ghcr.io/qianfan-cmd/ai-creative-workbench/frontend:${WORKBENCH_IMAGE_TAG:-latest}

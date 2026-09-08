@@ -1,6 +1,6 @@
 # AI Creative Workbench — 项目迭代计划表
 
-> 更新日期：2026-09-08  
+> 更新日期：2026-09-08（Wave A/B/C 重排）  
 > 目标岗位：AI 应用前端 / AI 全栈（腾讯 AI 应用工程师、字节 AIGC / 飞书 Agent 全栈等）  
 > 说明：本文仅作计划与验收清单；每项具体用 **Chat 带着做** 还是 **Agent 直接做**，实施时再定。
 
@@ -10,14 +10,16 @@
 
 | 阶段 | 主题 | 预估 | 核心产出 |
 |------|------|------|----------|
-| **Phase 1** | 亮点 + 作品化 | 5～7 天 | 公网 Demo、README、前端工程亮点、面试材料 |
-| **Phase 1.5** | 性能 + 部署加固 | 2～3 天 | 素材 N+1 消除、懒加载、2G ECS 稳定 |
-| **Phase 2** | RAG 扩展 PDF/DOCX | 2～3 天 | 知识库支持 pdf/docx 上传与问答 |
+| **Phase 1** | 亮点 + 作品化 | 5～7 天 | 公网 Demo、前端工程亮点、**Wave C** README/面试材料 |
+| **Phase 1.5** | 性能 + 部署加固 | 2～3 天 | 素材 N+1、懒加载、2G ECS 稳定、**Wave A** CD/HTTPS |
+| **Phase 2** | RAG 扩展 PDF/DOCX | 2～3 天 | **Wave B** 知识库 pdf/docx 上传与问答 |
 | **Phase 3** | JD 对齐增强 | 5～7 天 | AI 反馈闭环、Tool/MCP 实践、可选 Redis/CD |
 
 **原则**
 
 - 先能 **演示、能讲清**，再追 Agent / MCP 等关键词。
+- **当前迭代顺序（2026-09 起）：Wave A（CD/HTTPS）→ Wave B（PDF/DOCX RAG）→ Wave C（README/portfolio/interview）**，再 Phase 3。
+- **Dev-log 门禁：** 每个里程碑验收通过后，必须在 [`docs/dev-log/`](dev-log/) 写复盘（见 [`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md)），再进入下一序号。
 - 不堆 Nacos、Spring Cloud Gateway、Spring AI、Kafka 全链路。
 - 手写 RAG 主线保留；LangChain/LangGraph 仅作实验分支，不整体替换。
 
@@ -34,10 +36,14 @@
 | 核心业务 | Chat SSE、RAG（md/txt）、美术机台、Campaign、AI 用量预估、管理后台 |
 | Java + Python 架构 | BFF + AI 能力层，RestTemplate / FastAPI |
 | **公网 Demo（HTTP）** | 阿里云轻量 `8.148.238.164:8088`；四容器 compose；uploads 同步；Swap + `JAVA_TOOL_OPTIONS`；nginx `/assets` 路由修复 |
+| **Phase 1.5 核心** | O1～O6 素材 N+1/懒加载；D1/D2 部署分离；Grid/List 批量删除 |
+| **Chat Week 13** | 虚拟列表 + 流式 UX；lazy load；统一错误体验（`apiError.ts`） |
 
 ---
 
-## 三、Phase 1：亮点 + 作品化（优先全部完成）
+## 三、Phase 1：亮点 + 作品化
+
+> **§3.1～3.3 功能亮点大部分已完成**；§3.2 portfolio 与 §3.4 interview 材料延后至 **Wave C**（Wave B 之后）。
 
 ### 3.1 公网 Demo
 
@@ -85,10 +91,10 @@
 ### Phase 1 完成标准
 
 - [x] 公网 Demo 可访问（HTTP）
-- [ ] 素材页刷新稳定、Grid 模式 API 无 N+1（Phase 1.5）
-- [ ] README + portfolio 完成
-- [ ] Chat 虚拟列表 + lazy 上线
-- [ ] `interview.md` 可背诵级
+- [x] 素材页刷新稳定、Grid 模式 API 无 N+1（Phase 1.5）
+- [x] Chat 虚拟列表 + lazy + 错误体验上线
+- [ ] README + portfolio 完成（**Wave C**）
+- [ ] `interview.md` 可背诵级（**Wave C**）
 
 ---
 
@@ -168,21 +174,21 @@ flowchart LR
 
 | 序号 | 任务 | 主要文件 | 验收 |
 |------|------|----------|------|
-| F1 | Chat 消息虚拟列表 | `frontend/src/pages/ChatPage.tsx` | 长会话滚动流畅 |
-| F2 | 路由 lazy load | `frontend/src/router/index.tsx` | 首屏 bundle 减小 |
+| F1 | Chat 消息虚拟列表 | `frontend/src/pages/ChatPage.tsx` | ✅ |
+| F2 | 路由 lazy load | `frontend/src/router/lazyPages.ts` | ✅ |
 | F3 | 缩略图 URL 归一化 | `AssetGridCard` + `normalizeMediaUrl` | 生产环境图片正常 |
-| F4 | 统一 502 / 超时提示 | `frontend/src/api/request.ts` | 错误信息可理解 |
+| F4 | 统一 502 / 超时提示 | `frontend/src/utils/apiError.ts` | ✅ |
 | D1 | nginx `/assets` 打入镜像 | `frontend/nginx.conf` + 本机构建 | 重建容器后刷新仍 200 |
 | D2 | compose 本地/生产分离 | `docker-compose.prod.yml` 或 `.env` | 仓库不含公网 IP |
 | D3 | 静态资源 404 不返回 JSON | `GlobalExceptionHandler.java` | `curl` 缺图返回 404 非 JSON |
 
 ### Phase 1.5 完成标准
 
-- [ ] O1～O2 上线，Grid 模式后端 SQL ≤1 次分页 + 统计
-- [ ] O3～O6 上线，素材页首屏 API 数减少
-- [ ] 2G ECS 上素材页连续刷新 10 次无 502
-- [ ] D1～D2 部署配置规范化（D3 可选）
-- [ ] **§4.4 CD 排期确认**（实施可放在 Phase 1 收尾或 Phase 2 前）
+- [x] O1～O2 上线，Grid 模式后端 SQL ≤1 次分页 + 统计
+- [x] O3～O6 上线，素材页首屏 API 数减少
+- [x] 2G ECS 上素材页连续刷新 10 次无 502（已验证）
+- [x] D1～D2 部署配置规范化（D3 可选 ⬜）
+- [ ] **§4.4 CD + HTTPS（Wave A）**
 
 ### 4.4 CD 自动化部署（GitHub Actions → ECS）
 
@@ -268,7 +274,7 @@ flowchart LR
 
 ---
 
-## 六、Phase 3：JD 对齐增强（Phase 1～2 后再做）
+## 六、Phase 3：JD 对齐增强（Wave C + Phase 2 之后）
 
 依据 [`JD.md`](JD.md) 与岗位投递方向。
 
@@ -311,14 +317,14 @@ flowchart LR
 
 | 完成阶段 | 适合投递 | 叙事重点 |
 |----------|----------|----------|
-| Phase 1 结束 | 腾讯 **AI 应用工程师**；字节 **AIGC 全栈 / AI 前端** | 全栈 Demo + SSE + RAG + 工作流 + Docker/CI |
-| Phase 2 结束 | 同上 | 增加「多格式文档 RAG」 |
+| **Wave B 结束** | 技术面试练手、内推预热 | 全栈 Demo + SSE + **PDF/DOCX RAG** + **CD/HTTPS** + 前端工程亮点 |
+| **Wave C 结束** | 腾讯 **AI 应用工程师**；字节 **AIGC 全栈 / AI 前端** | 上述 + **portfolio/README** + STAR 可背 |
 | Phase 3（C1 或 C3）后 | 字节 **飞书 Agent 全栈**、平台 AI 岗 | 增加 Tool/MCP + 反馈闭环 |
 | Agent 专岗 | stretch | 需 LangGraph 深度 + Agent 专向作品 |
 
-**主简历叙事**
+**主简历叙事（Wave C 定稿时写入 README）**
 
-> AI 创意工作台：React + Spring Boot + FastAPI；RAG 知识问答、SSE 对话、美术机台与运营文案 AIGC 流水线；Docker + GitHub Actions CI；[公网 Demo 链接]
+> AI 创意工作台：React + Spring Boot + FastAPI；RAG 知识问答（**含 PDF/DOCX**）、SSE 对话、美术机台与运营文案 AIGC 流水线；Docker + GitHub Actions **CI/CD**；[**HTTPS Demo 链接**]
 
 **副叙事（Phase 3 后追加）**
 
@@ -326,66 +332,100 @@ flowchart LR
 
 ---
 
-## 八、执行顺序（一张表）
+---
 
-| 序号 | 任务 | 阶段 | 依赖 | 状态 |
-|------|------|------|------|------|
-| 1 | 公网 Demo（HTTP） | P1 | Docker 已有 | ✅ |
-| 1-F | 域名 + HTTPS（可选） | P1 | #1 | ⬜ |
-| 3a | O1～O2 素材列表 API 去 N+1 | P1.5 | #1 稳定 | ✅ |
-| 3b | O3～O6 素材页前端懒加载 / 分页 / 批量删除 | P1.5 | 3a | ✅ |
-| 3c | D1～D3 部署加固 | P1.5 | #1 | ✅（D3 可选 ⬜） |
-| **3d** | **CD1～CD4 GitHub Actions 部署 ECS** | **P1.5→P1** | **3c、Demo 稳定** | **⬜ 已排期** |
-| 3 | Chat 虚拟列表 + lazy + 错误体验 | P1 | 可与 3a 并行 | 🔄 虚拟列表 ✅；lazy/错误 ⬜ |
-| 2 | README + portfolio + architecture | P1 | #1 有 Demo 链接 | ⬜ |
-| 4 | interview.md + rag-eval 骨架 | P1 | #2 | ⬜ |
-| 5 | PDF/DOCX 解析（Python） | P2 | P1.5 核心完成 | ⬜ |
-| 6 | Java + 前端格式对齐 | P2 | #5 | ⬜ |
-| 7 | 联调 + Docker rebuild + 文档更新 | P2 | #6 | ⬜ |
-| 8 | AI 反馈闭环 | P3 | #7 | ⬜ |
-| 9 | Tool Calling 或 MCP（二选一） | P3 | #8 | ⬜ |
-| 10 | Redis（可选） | P3 | 按需 | ⬜ |
+## 八、迭代波次与 Dev-log 门禁
 
-**建议实施顺序：** 3（Chat lazy + 错误 UX 收尾）→ 2 → **3d（CD）** → 4 → Phase 2
+> **2026-09 起执行顺序：** 先 **Wave A/B**（硬核亮点），再 **Wave C**（作品化投递包）。
 
-**说明：** #1 HTTP Demo 已完成；3a～3c 核心已完成。**下一步优先收尾 Chat #3，随后 README；CD（3d）建议在 README 前或 Phase 2 前完成，避免再次手工 scp 镜像。**
+### 8.1 三波次一览
+
+| 波次 | 序号 | 内容 | 预估 | dev-log |
+|------|------|------|------|---------|
+| **Wave A** | 3d | CD1～CD4 GitHub Actions → ECS | 0.5～1 天 | `docs/dev-log/2026-09-github-actions-cd.md` |
+| **Wave A** | 1-F | 域名 + HTTPS（Let's Encrypt） | 0.5～1 天 | `docs/dev-log/2026-09-demo-https.md` |
+| **Wave A** | D3 | 静态 404 不返回 JSON（可选） | ~2h | 可合并进 CD dev-log |
+| **Wave B** | 5～7 | Phase 2 PDF/DOCX RAG 全链路 | 2～3 天 | `docs/dev-log/2026-09-rag-pdf-docx.md` |
+| **Wave C** | 2 | README + portfolio + architecture | ~1 天 | 内容进 portfolio；STAR 进 interview |
+| **Wave C** | 4 | interview.md + rag-eval 完善 | ~1 天 | 从 dev-log 提炼 |
+
+**门禁：** 验收通过 → 写 dev-log（六块：背景、选型、实现、踩坑、验收、STAR）→ 更新 §8.2 状态 → 下一项。
+
+### 8.2 已完成 Dev-log 索引
+
+| 主题 | 文件 | 状态 |
+|------|------|------|
+| Chat 流式 + 虚拟列表 | [`dev-log/2026-09-chat-streaming-virtual-list.md`](dev-log/2026-09-chat-streaming-virtual-list.md) | ✅ |
+| Lazy load + 错误体验 | [`dev-log/2026-09-lazy-load-api-error.md`](dev-log/2026-09-lazy-load-api-error.md) | ✅ |
+| Campaign 配图 / 多模态 Chat | [`dev-log/2026-03-campaign-image-picker-ai-composer.md`](dev-log/2026-03-campaign-image-picker-ai-composer.md) | ✅ |
 
 ---
 
-## 九、架构与 JD 关键词对照（备忘）
+## 九、执行顺序（一张表）
+
+| 序号 | 任务 | 波次 | 依赖 | 状态 |
+|------|------|------|------|------|
+| 1 | 公网 Demo（HTTP） | — | Docker 已有 | ✅ |
+| 3a | O1～O2 素材列表 API 去 N+1 | P1.5 | #1 稳定 | ✅ |
+| 3b | O3～O6 素材页前端懒加载 / 分页 / 批量删除 | P1.5 | 3a | ✅ |
+| 3c | D1～D3 部署加固 | P1.5 | #1 | ✅（D3 可选 ⬜） |
+| 3 | Chat 虚拟列表 + lazy + 错误体验 | P1 | — | ✅ |
+| **3d** | **CD1～CD4 GitHub Actions 部署 ECS** | **Wave A** | 3c、Demo 稳定 | **✅ 已交付（待 push + 首次 Run 验收）** |
+| **1-F** | **域名 + HTTPS** | **Wave A** | 3d、有域名 | **⬜** |
+| D3 | 静态 404 不 JSON（可选） | Wave A | 3c | ⬜ |
+| **5** | PDF/DOCX 解析（Python） | **Wave B** | Wave A 核心 | ⬜ |
+| **6** | Java + 前端格式对齐 | **Wave B** | #5 | ⬜ |
+| **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | ⬜ |
+| **2** | README + portfolio + architecture | **Wave C** | Wave B | ⬜ |
+| **4** | interview.md + rag-eval | **Wave C** | #2 | ⬜ |
+| 8 | AI 反馈闭环 | P3 | Wave C | ⬜ |
+| 9 | Tool Calling 或 MCP（二选一） | P3 | #8 | ⬜ |
+| 10 | Redis（可选） | P3 | 按需 | ⬜ |
+
+**建议实施顺序：** **3d → 1-F → D3（可选）→ 5 → 6 → 7 → 2 → 4 → Phase 3**
+
+**说明：** 功能亮点（Chat、素材、lazy、错误 UX）已完成并记入 dev-log。**下一步 Wave A：CD（3d）**；CD 完成后上 HTTPS（1-F），再 Phase 2 RAG；**Wave C 作品化放在 RAG 之后**，便于 README/portfolio 一次写全亮点。
+
+---
+
+## 十、架构与 JD 关键词对照（备忘）
 
 | JD 常写 | 本项目 | 计划后 |
 |---------|--------|--------|
-| RAG | 手写 embed + Chroma + prompt | + PDF/DOCX |
+| RAG | 手写 embed + Chroma + prompt | Wave B：+ PDF/DOCX |
 | SSE / 流式 | Chat 已有 | 保持 |
-| 全栈交付 | 三端 + Docker | + 公网 Demo |
+| 全栈交付 | 三端 + Docker + Demo | Wave A：+ CD/HTTPS |
+| 前端工程 | 虚拟列表、lazy、apiError | ✅ dev-log 已记录 |
 | Agent / Tool Use | 弱（工作流像流水线） | Phase 3 C1/C3 |
 | MCP / Skills | 无 | Phase 3 C3 或 Cursor Rules 文档化 |
 | LangGraph | 无 | 仅 C2 实验分支（可选） |
 | 微服务 / Nacos | compose + 服务名，无注册中心 | **不做** |
 | Redis / MQ | 无 | Redis 可选；MQ 仅口述扩展 |
-| CI/CD | CI 已有 | **CD 已排期 §4.4（3d）** |
+| CI/CD | CI 已有 | **Wave A：CD + HTTPS** |
 
 ---
 
-## 十、风险与范围控制
+## 十一、风险与范围控制
 
 1. **PDF 扫描件**：无 OCR 会提取失败 — UI 必须提示。  
 2. **大 PDF**：需上限，避免 embed 超时。  
 3. **Phase 1.5 核心（3a～3b）未完成前慎加新重接口** — 2G Demo 机易再现 OOM / 502。  
-4. **Phase 1 未完成前不启动 Phase 3** — 避免「功能很多但没有可点的 Demo」。  
+4. **Wave C 完成前**：可技术面试练手；**正式投递**建议等 README/portfolio 齐（Wave C）。  
 5. **数据库备份 `workbench_backup.sql`** — 勿提交 Git；`*.tar`、`*.part_*` 等部署产物勿提交。  
-6. **手动 scp 镜像** — 仅 CD（3d）完成前的临时方案；见 §4.4。  
-7. **实施方式** — 每项开始前决定：Chat 分步学习 vs Agent 批量实现。
+6. **手动 scp 镜像** — Wave A（3d）完成前的临时方案；见 §4.4。  
+7. **Dev-log** — 每里程碑必写，见 §8.1；skill：[`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md)。  
+8. **实施方式** — 每项开始前决定：分步学习 vs Agent 批量实现。
 
 ---
 
-## 十一、相关文档索引
+## 十二、相关文档索引
 
 | 文档 | 用途 |
 |------|------|
 | [`deploy.md`](deploy.md) | Docker 部署与故障排查；生产 2G ECS 细节见本文 §4.1 |
-| 本文 §4.0～§4.4 | Demo 踩坑复盘、素材页优化、**CD 自动化排期** |
+| 本文 §4.0～§4.4、§8 | Demo 复盘、**Wave A/B/C 排期**、dev-log 门禁 |
+| [`docs/dev-log/`](dev-log/) | 面试向开发复盘（每里程碑一篇） |
+| [`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md) | dev-log 写作规范 |
 | [`JD.md`](JD.md) | 目标岗位 JD 汇总 |
 | [`ai-pricing-sources.md`](ai-pricing-sources.md) | AI 用量计费出处 |
 | [`java-python-architecture.md`](java-python-architecture.md) | Java + Python 分工草稿 |
@@ -393,4 +433,4 @@ flowchart LR
 
 ---
 
-*实施建议从 **序号 3a**（素材 API 去 N+1）或 **序号 3**（Chat 虚拟列表）开始；需要动手时说明序号即可。*
+*下一步：**push main → Actions 首次 Deploy 验收** → **「开始 1-F」**（HTTPS）或 **「开始 Wave B #5」**（PDF/DOCX RAG）。Wave C（README/portfolio）在 Wave B 完成后进行。*
