@@ -79,8 +79,15 @@
 
 - [x] Python：`tests/test_document_parser.py`（md/docx/扩展名校验）
 - [x] Java compile、前端 tsc 通过
-- [ ] 本地/E2E：上传 pdf/docx → chunk_count > 0 → RAG references
-- [ ] ECS：CD rebuild ai 镜像后公网验证
+- [x] 本地/E2E：上传 pdf/docx → chunk_count > 0 → RAG references
+- [x] ECS：CD rebuild ai 镜像后公网验证
+
+---
+
+## 迭代 2026-09-09 · docx2txt 补丁
+
+**现象：** 排版型 DOCX（文本框简历）python-docx 段落全空 → 400「未能提取段落文本」。  
+**解法：** 改用 **docx2txt**（页眉/页脚/文本框）；`requirements.txt` + ECS rebuild 验收通过。
 
 ---
 

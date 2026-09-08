@@ -93,8 +93,8 @@
 - [x] 公网 Demo 可访问（HTTP）
 - [x] 素材页刷新稳定、Grid 模式 API 无 N+1（Phase 1.5）
 - [x] Chat 虚拟列表 + lazy + 错误体验上线
-- [ ] README + portfolio 完成（**Wave C**）
-- [ ] `interview.md` 可背诵级（**Wave C**）
+- [x] README + portfolio 完成（**Wave C**）
+- [x] `interview.md` 可背诵级（**Wave C**）
 
 ---
 
@@ -375,16 +375,16 @@ flowchart LR
 | D3 | 静态 404 不 JSON（可选） | Wave A | 3c | ⬜ |
 | **5** | PDF/DOCX 解析（Python） | **Wave B** | Wave A 核心 | **✅** |
 | **6** | Java + 前端格式对齐 | **Wave B** | #5 | **✅** |
-| **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | **✅（待 CD 公网验收）** |
-| **2** | README + portfolio + architecture | **Wave C** | Wave B | ⬜ |
-| **4** | interview.md + rag-eval | **Wave C** | #2 | ⬜ |
+| **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | **✅（ECS 公网已验收）** |
+| **2** | README + portfolio + architecture | **Wave C** | Wave B | **✅** |
+| **4** | interview.md + rag-eval | **Wave C** | #2 | **✅** |
 | 8 | AI 反馈闭环 | P3 | Wave C | ⬜ |
 | 9 | Tool Calling 或 MCP（二选一） | P3 | #8 | ⬜ |
 | 10 | Redis（可选） | P3 | 按需 | ⬜ |
 
 **建议实施顺序：** **3d → 1-F → D3（可选）→ 5 → 6 → 7 → 2 → 4 → Phase 3**
 
-**说明：** Wave B **#5～#7 PDF/DOCX RAG** 已交付，见 [`dev-log/2026-09-rag-pdf-docx.md`](dev-log/2026-09-rag-pdf-docx.md)。**下一步：Wave C**（README/portfolio）或 **1-F HTTPS**（备案通过后）。
+**说明：** Wave B **#5～#7 PDF/DOCX RAG** 已交付并 ECS 验收，见 [`dev-log/2026-09-rag-pdf-docx.md`](dev-log/2026-09-rag-pdf-docx.md)。**Wave C #2/#4 已完成**（README、portfolio、architecture、interview、rag-eval）。**下一步：1-F HTTPS**（备案通过后）或 **Phase 3**。
 
 ---
 
