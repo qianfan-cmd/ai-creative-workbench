@@ -163,7 +163,18 @@ docker compose ps
 
 ## 6. 环境变量说明
 
-### 6.1 Python：`ai-service-python/.env`
+### 6.1 密钥分层（勿把密码写进 Git）
+
+| 场景 | 配置来源 |
+|------|----------|
+| 本机 IDE 跑 Spring Boot | `application-local.yml`（gitignore，从 `application-local.yml.example` 复制） |
+| Docker / ECS MySQL 密码 | `docker-compose.yml` → `SPRING_DATASOURCE_PASSWORD` |
+| ECS 生产 JWT | 服务器上 `.env.secrets` → `JWT_SECRET`（见 `env.secrets.example`） |
+| AI API Key | `ai-service-python/.env`（gitignore） |
+
+仓库内 `application.yml` **不含真实密码**；勿用 `*` 占位（YAML 语法错误会导致 backend 启动失败）。
+
+### 6.2 Python：`ai-service-python/.env`
 
 由 compose 的 `env_file` 注入容器，至少配置：
 
@@ -175,7 +186,7 @@ DASHSCOPE_API_KEY=...    # 万相 / Embedding 等
 SEEDREAM_API_KEY=...     # 可选
 ```
 
-### 6.2 Java：compose 内 `environment`
+### 6.3 Java：compose 内 `environment`
 
 | 变量 | 作用 |
 |------|------|
@@ -361,7 +372,7 @@ docker compose up -d ai
 | `ai-service-python/Dockerfile` | Python AI 镜像 |
 | `frontend/Dockerfile` | 前端 build + Nginx |
 | `frontend/nginx.conf` | SPA 路由与 `/api` 反向代理 |
-| `ai-service-python/.env.example` | AI 环境变量模板 |
+| `env.secrets.example` | ECS `.env.secrets` 模板（JWT 等，勿提交） |
 
 CI 见 [`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml)；CD 见 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 与下文 **§12**。
 
@@ -401,7 +412,17 @@ GitHub Actions (workflow_dispatch)
 | `GHCR_PAT` | （可选） | 若 GHCR 包为 **private**，需 `read:packages` PAT；公开仓库包通常可省略 |
 
 3. ECS 上确认已有 `ai-service-python/.env`（API Key 等），**不会被 CD 覆盖**。
-4. 首次手动在 ECS 验证 compose 能读到 prod 覆盖：
+4. **ECS 上创建 backend 密钥文件**（只需一次，CD 不会覆盖）：
+
+```bash
+cd /root/ai-creative-workbench
+cp env.secrets.example .env.secrets
+nano .env.secrets   # 将 JWT_SECRET 改为随机字符串（至少 32 位）
+```
+
+MySQL 密码由 `docker-compose.yml` 的 `SPRING_DATASOURCE_PASSWORD: workbench` 注入，**不要**写进 `.env.secrets`。
+
+5. 首次手动在 ECS 验证 compose 能读到 prod 覆盖：
 
 ```bash
 cd /root/ai-creative-workbench

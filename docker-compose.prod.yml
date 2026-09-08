@@ -6,6 +6,8 @@
 services:
   backend:
     image: ghcr.io/qianfan-cmd/ai-creative-workbench/backend:${WORKBENCH_IMAGE_TAG:-latest}
+    env_file:
+      - .env.secrets
     environment:
       APP_PUBLIC_BASE_URL: http://8.148.238.164:8088
       APP_FRONTEND_BASE_URL: http://8.148.238.164:8088
