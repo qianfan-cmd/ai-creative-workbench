@@ -10,8 +10,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.services.rag_service import rag_query_stream
-from app.schemas.rag import RAGQueryRequest, RAGQueryResponse, RagReference
+from app.schemas.rag import RAGQueryRequest, RAGQueryResponse, RagFeedbackFixRequest, RagReference
 from app.services.rag_service import rag_query
+from app.services.feedback_auto_fix import run_feedback_fix
+from app.services.retrieval.config import FEEDBACK_AUTO_FIX
 
 router = APIRouter(prefix = "/ai/rag", tags = ["rag"])
 
@@ -51,10 +53,15 @@ def rag_query_stream_api(req: RAGQueryRequest):
                 top_k=req.top_k,
                 history=[h.model_dump() for h in req.history],
             ):
-                if item["type"] == "references":
-                    # references 一次性推 JSON 数组，ensure_ascii=False 中文不转成ascii
+                if item["type"] == "status":
                     payload = json.dumps(item["data"], ensure_ascii=False)
-                    yield f"event: references\ndata: {payload}\n\n" 
+                    yield f"event: status\ndata: {payload}\n\n"
+                elif item["type"] == "trace":
+                    payload = json.dumps(item["data"], ensure_ascii=False)
+                    yield f"event: trace\ndata: {payload}\n\n"
+                elif item["type"] == "references":
+                    payload = json.dumps(item["data"], ensure_ascii=False)
+                    yield f"event: references\ndata: {payload}\n\n"
                 else:
                     # message 逐个推字符串；JSON 编码可安全携带换行，避免 SSE 行协议打断
                     chunk = item["data"]
@@ -75,3 +82,12 @@ def rag_query_stream_api(req: RAGQueryRequest):
         event_generator(),
         media_type = "text/event-stream",
     )
+
+
+@router.post("/feedback-fix")
+def rag_feedback_fix_api(req: RagFeedbackFixRequest):
+    """点踩后 LLM 分诊 + 返回建议动作（Java 异步调用并落库/执行）。"""
+    if not FEEDBACK_AUTO_FIX:
+        return {"actions": [], "disabled": True}
+    actions = run_feedback_fix(req.model_dump())
+    return {"actions": actions}

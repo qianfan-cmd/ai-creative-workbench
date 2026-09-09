@@ -20,6 +20,7 @@ export interface MessageVO {
     role: 'user' | 'assistant'
     content: string
     imageUrls?: string[]
+    userFeedbackRating?: 'up' | 'down'
 }
 
 export interface ConversationDetailVO {

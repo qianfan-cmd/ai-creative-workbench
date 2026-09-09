@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +39,7 @@ public class KnowledgeSessionService {
 
     private final KnowledgeSessionMapper sessionMapper;
     private final KnowledgeTurnMapper turnMapper;
+    private final AiFeedbackService aiFeedbackService;
     private final ObjectMapper objectMapper;
 
     public List<KnowledgeSessionVO> listSessions() {
@@ -74,10 +76,13 @@ public class KnowledgeSessionService {
                         .orderByAsc(KnowledgeTurn::getCreatedAt)
         );
 
+        List<Long> turnIds = turns.stream().map(KnowledgeTurn::getId).collect(Collectors.toList());
+        Map<Long, String> ratingMap = aiFeedbackService.getRatingMapForRefs(userId, "knowledge_turn", turnIds);
+
         KnowledgeSessionDetailVO vo = new KnowledgeSessionDetailVO();
         vo.setId(session.getId());
         vo.setTitle(session.getTitle());
-        vo.setTurns(turns.stream().map(this::toTurnVO).collect(Collectors.toList()));
+        vo.setTurns(turns.stream().map(t -> toTurnVO(t, ratingMap.get(t.getId()))).collect(Collectors.toList()));
         return vo;
     }
 
@@ -102,7 +107,7 @@ public class KnowledgeSessionService {
         sessionMapper.updateById(session);
 
         log.info("知识库 turn 入库, userId={}, sessionId={}, turnId={}", userId, sessionId, turn.getId());
-        return toTurnVO(turn);
+        return toTurnVO(turn, null);
     }
 
     @Transactional
@@ -126,7 +131,10 @@ public class KnowledgeSessionService {
             sessionMapper.updateById(session);
         }
 
-        return toTurnVO(turn);
+        Long userId = requireUserId();
+        String rating = aiFeedbackService.getRatingMapForRefs(userId, "knowledge_turn", List.of(turnId))
+                .get(turnId);
+        return toTurnVO(turn, rating);
     }
 
     @Transactional
@@ -208,12 +216,13 @@ public class KnowledgeSessionService {
         return vo;
     }
 
-    private KnowledgeTurnVO toTurnVO(KnowledgeTurn turn) {
+    private KnowledgeTurnVO toTurnVO(KnowledgeTurn turn, String userFeedbackRating) {
         KnowledgeTurnVO vo = new KnowledgeTurnVO();
         vo.setId(turn.getId());
         vo.setQuestion(turn.getQuestion());
         vo.setAnswer(turn.getAnswer());
         vo.setReferences(readReferencesJson(turn.getReferencesJson()));
+        vo.setUserFeedbackRating(userFeedbackRating);
         return vo;
     }
 

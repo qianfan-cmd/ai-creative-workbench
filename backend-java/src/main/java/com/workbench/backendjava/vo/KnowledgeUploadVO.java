@@ -11,4 +11,5 @@ public class KnowledgeUploadVO {
     private Integer charCount;
     private Integer chunkCount;
     private Integer indexedCount;
+    private java.util.List<String> suggestedTags = new java.util.ArrayList<>();
 }

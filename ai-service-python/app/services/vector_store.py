@@ -15,6 +15,12 @@ from typing import Any
 import chromadb
 from chromadb.config import Settings
 
+
+def _invalidate_bm25_cache() -> None:
+    from app.services.retrieval.bm25_index import invalidate_bm25_cache
+
+    invalidate_bm25_cache()
+
 # collection 名称：相当于表名
 COLLECTION_NAME = "knowledge_chunks"
 
@@ -71,6 +77,7 @@ def add_chunks(
         embeddings = embeddings,
         metadatas = metadatas,
     )
+    _invalidate_bm25_cache()
     return n
 
 def search_similar(query_embedding: list[float], top_k: int = 3) -> list[dict[str, Any]]:
@@ -104,19 +111,87 @@ def search_similar(query_embedding: list[float], top_k: int = 3) -> list[dict[st
   'embeddings': None,
    }
     """
+    ids = (result.get("ids") or [[]])[0]
     docs = (result.get("documents") or [[]])[0]
     metas = (result.get("metadatas") or [[]])[0]
     dists = (result.get("distances") or [[]])[0]
 
     items: list[dict[str, Any]] = []
-    for doc, meta, dist in zip(docs, metas, dists):
+    for chunk_id, doc, meta, dist in zip(ids, docs, metas, dists):
         items.append({
+            "id": chunk_id,
             "content": doc,
             "source": meta.get("source"),
             "index": meta.get("index"),
+            "section": meta.get("section"),
+            "heading": meta.get("heading"),
+            "tags": meta.get("tags"),
+            "chunk_summary": meta.get("chunk_summary"),
             "distance": dist, # 越小越相似
         })
     return items
+
+
+def list_all_chunks() -> list[dict[str, Any]]:
+    """返回 Chroma 中全部 chunk，供 BM25 索引重建。"""
+    collection = _get_collection()
+    result = collection.get(include=["documents", "metadatas"])
+    ids = result.get("ids") or []
+    docs = result.get("documents") or []
+    metas = result.get("metadatas") or []
+
+    items: list[dict[str, Any]] = []
+    for chunk_id, doc, meta in zip(ids, docs, metas):
+        if not doc:
+            continue
+        items.append({
+            "id": chunk_id,
+            "content": doc,
+            "source": (meta or {}).get("source"),
+            "index": (meta or {}).get("index"),
+            "section": (meta or {}).get("section"),
+            "heading": (meta or {}).get("heading"),
+            "tags": (meta or {}).get("tags"),
+            "chunk_summary": (meta or {}).get("chunk_summary"),
+        })
+    return items
+
+
+def list_all_tags() -> list[str]:
+    """从 Chroma metadata 聚合全部标签词表。"""
+    collection = _get_collection()
+    result = collection.get(include=["metadatas"])
+    metas = result.get("metadatas") or []
+    tag_set: set[str] = set()
+    for meta in metas:
+        if not meta:
+            continue
+        raw = meta.get("tags") or ""
+        for part in str(raw).split(","):
+            t = part.strip()
+            if t:
+                tag_set.add(t)
+    return sorted(tag_set)
+
+
+def search_by_tags(tags: list[str], top_k: int = 20) -> list[dict[str, Any]]:
+    """标签定向召回 — 在内存中过滤含任一 tag 的 chunk（Chroma 无原生多 tag OR）。"""
+    if not tags:
+        return []
+    tag_set = {t.strip() for t in tags if t and t.strip()}
+    if not tag_set:
+        return []
+
+    all_chunks = list_all_chunks()
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for hit in all_chunks:
+        raw = hit.get("tags") or ""
+        chunk_tags = {p.strip() for p in str(raw).split(",") if p.strip()}
+        overlap = len(tag_set & chunk_tags)
+        if overlap > 0:
+            scored.append((overlap, hit))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [hit for _, hit in scored[:top_k]]
 
 def list_documents() -> list[dict[str, Any]]:
     """
@@ -158,6 +233,7 @@ def delete_by_source(source: str) -> int:
     if not ids:
         return 0
     collection.delete(ids=ids)
+    _invalidate_bm25_cache()
     return len(ids)
 
 
@@ -171,6 +247,7 @@ def delete_by_document_id(document_id: int) -> int:
     if not ids:
         return 0
     collection.delete(ids=ids)
+    _invalidate_bm25_cache()
     return len(ids)
 
 
@@ -195,4 +272,5 @@ def delete_document_vectors(*, source: str | None = None, document_id: int | Non
     if not id_set:
         return 0
     collection.delete(ids=list(id_set))
+    _invalidate_bm25_cache()
     return len(id_set)

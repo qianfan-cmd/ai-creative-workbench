@@ -1,25 +1,48 @@
 """
-文本切分服务 — 把长文档切成 RAG 用的 chunk 列表。
-为什么需要切分？
-  - Embedding / 向量检索按「段」工作，不是整篇文档
-  - 每段太长会稀释语义，太短会丢失上下文
-切分策略（本步简单版）：
-  - 按固定字符数滑动窗口
-  - chunk_size：每段最大字符数
-  - overlap：相邻两段重叠字符数，避免句子在边界被截断
-{
-  "filename": "Agent入门.md",
-  "char_count": 6922,
-  "chunk_count": 18,
-  "chunks": [
-    { "index": 0, "source": "Agent入门.md", "content": "..." },
-    { "index": 1, "source": "Agent入门.md", "content": "..." }
-  ]
+文本切分服务 — 固定窗口 + Wave D1.5b 结构化切分。
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+SECTION_HEADING_RE = re.compile(
+    r"^(#{1,3}\s+.+|"
+    r".*(?:工作经历|实习经历|项目经历|教育经历|教育背景|个人信息|专业技能|自我评价|"
+    r"离职证明|实习单位|工作单位|任职单位|工作经[历验]).*)$",
+    re.MULTILINE,
+)
+
+SECTION_TYPE_MAP = {
+    "实习": "internship",
+    "工作经历": "experience",
+    "工作经": "experience",
+    "离职证明": "certificate",
+    "实习单位": "employment",
+    "工作单位": "employment",
+    "任职单位": "employment",
+    "项目": "project",
+    "教育": "education",
+    "个人信息": "profile",
+    "技能": "skills",
 }
 
-*, 关键字参数：chunk_size 和 overlap 是关键字参数，必须用关键字参数传入
-例如：split_text("abcdefgh", chunk_size=400, overlap=50)，不可以直接写 split_text("abcdefgh", 400, 50)
-"""
+
+@dataclass
+class StructuredChunk:
+    content: str
+    section: str = "body"
+    heading: str = ""
+
+
+def _detect_section_type(heading_line: str) -> str:
+    for key, value in SECTION_TYPE_MAP.items():
+        if key in heading_line:
+            return value
+    if heading_line.strip().startswith("#"):
+        return "heading"
+    return "body"
+
 
 def split_text(
     text: str,
@@ -27,45 +50,68 @@ def split_text(
     chunk_size: int = 400,
     overlap: int = 50,
 ) -> list[str]:
-    """
-    把长文本切成固定大小的 chunk 列表。
-    参数:
-        text: 要切分的文本
-        chunk_size: 每段最大字符数，默认 400
-        overlap: 相邻两段重叠字符数，默认 50
-    返回:
-        chunk 列表
-    示例:
-        text = "abcdefgh" * 100
-        split_text(text, chunk_size=400, overlap=50)
-        → ["前400字...", "重叠50字+新内容...", ...]
-    """
-    text = text.strip() # 去掉文本两端的空格或换行符或指定字符
+    text = text.strip()
     if not text:
         return []
-
-    # 文本比 chunk_size 短，整段返回
     if len(text) <= chunk_size:
         return [text]
-    
+
     chunks: list[str] = []
-    start = 0 # 起始位置
-
+    start = 0
     while start < len(text):
-        # 当前窗口结束位置
         end = start + chunk_size
-        piece = text[start:end] # 当前窗口内容
-        chunks.append(piece) # 添加到结果列表
-        start = end - overlap # 更新起始位置，留出 overlap 字符作为重叠
-
-        # 防止最后一段重复无限循环（start 不再前进时退出）
+        chunks.append(text[start:end])
+        start = end - overlap
         if start >= len(text):
             break
         if end >= len(text):
             break
-
     return chunks
 
 
+def split_text_structured(
+    text: str,
+    *,
+    chunk_size: int = 400,
+    overlap: int = 50,
+) -> list[StructuredChunk]:
+    """
+    优先按空行 / 标题切段，超长块再 fallback 固定窗口。
+    """
+    text = text.strip()
+    if not text:
+        return []
 
-    
+    blocks = re.split(r"\n\s*\n+", text)
+    current_section = "body"
+    current_heading = ""
+    out: list[StructuredChunk] = []
+
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        first_line = block.split("\n", 1)[0].strip()
+        if SECTION_HEADING_RE.match(first_line):
+            current_heading = first_line[:120]
+            current_section = _detect_section_type(first_line)
+
+        if len(block) <= chunk_size:
+            out.append(
+                StructuredChunk(
+                    content=block,
+                    section=current_section,
+                    heading=current_heading,
+                )
+            )
+        else:
+            for piece in split_text(block, chunk_size=chunk_size, overlap=overlap):
+                out.append(
+                    StructuredChunk(
+                        content=piece,
+                        section=current_section,
+                        heading=current_heading,
+                    )
+                )
+    return out

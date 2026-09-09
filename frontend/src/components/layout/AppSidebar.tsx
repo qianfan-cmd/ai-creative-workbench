@@ -10,6 +10,7 @@ import {
   SettingOutlined,
   TagsOutlined,
   TeamOutlined,
+  LikeOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 
@@ -42,7 +43,10 @@ export default function AppSidebar({ collapsed }: AppSidebarProps) {
   const navItems: NavItemConfig[] = [
     ...NAV_ITEMS,
     ...(isAdmin
-      ? [{ key: 'admin-users', label: '用户管理 Users', icon: <TeamOutlined />, to: '/admin/users' }]
+      ? [
+          { key: 'admin-users', label: '用户管理 Users', icon: <TeamOutlined />, to: '/admin/users' },
+          { key: 'admin-feedback', label: 'AI 反馈 Feedback', icon: <LikeOutlined />, to: '/admin/feedback' },
+        ]
       : []),
   ]
 

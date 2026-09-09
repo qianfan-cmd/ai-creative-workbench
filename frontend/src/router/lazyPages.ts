@@ -7,3 +7,4 @@ export const KnowledgeDocumentEditorPage = lazy(() => import('@/pages/KnowledgeD
 export const MattingPage = lazy(() => import('@/pages/MattingPage'))
 export const CampaignPage = lazy(() => import('@/pages/CampaignPage'))
 export const AdminUsersPage = lazy(() => import('@/pages/AdminUsersPage'))
+export const AdminFeedbackPage = lazy(() => import('@/pages/AdminFeedbackPage'))

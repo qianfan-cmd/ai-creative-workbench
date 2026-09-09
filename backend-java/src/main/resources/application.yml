@@ -1,5 +1,8 @@
 server:
   port: 8080
+  tomcat:
+    # Tomcat 10.1+ 默认 multipart part 数上限为 10；知识库批量上传最多 20 个文件
+    max-part-count: 30
 
 spring:
   application:
@@ -15,7 +18,8 @@ spring:
   servlet:
     multipart: # 上传文件限制
       max-file-size: 50MB
-      max-request-size: 50MB
+      # 批量上传：20 × 50MB 理论上限；实际建议单次总量控制在 500MB 内
+      max-request-size: 500MB
 
 mybatis-plus:
   configuration:

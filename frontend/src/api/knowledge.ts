@@ -1,4 +1,6 @@
 import request from "@/api/request";
+import { API_TIMEOUT_BATCH, API_TIMEOUT_HEAVY } from '@/api/timeouts'
+import type { TagVO } from '@/api/tags'
 import type { ApiResponse, PageResult } from "@/types/api";
 import { getToken } from "@/utils/token"
 
@@ -9,6 +11,32 @@ export interface KnowledgeIndexUploadVO {
     chunkCount: number
     indexedCount: number
 }
+
+export interface KnowledgeUploadFailureVO {
+    filename: string
+    reason: string
+}
+
+export interface KnowledgeBatchUploadVO {
+    total: number
+    succeeded: KnowledgeIndexUploadVO[]
+    failed: KnowledgeUploadFailureVO[]
+}
+
+export interface KnowledgeDeleteFailureVO {
+    id: number
+    reason: string
+}
+
+export interface KnowledgeBatchDeleteVO {
+    total: number
+    deletedIds: number[]
+    failures: KnowledgeDeleteFailureVO[]
+}
+
+export const KNOWLEDGE_MAX_BATCH_UPLOAD = 20
+/** 前端分片：每批请求最多文件数，避免单次 HTTP 等待整批入库超时 */
+export const KNOWLEDGE_UPLOAD_CHUNK_SIZE = 5
 
 /** 引用片段 */
 export interface RagReferenceVO {
@@ -33,6 +61,7 @@ export interface KnowledgeDocumentVO {
     chunkCount: number
     createdAt?: string
     hasOriginalFile?: boolean
+    tags?: TagVO[]
 }
 
 export interface ListKnowledgeDocumentsParams {
@@ -63,6 +92,7 @@ export interface KnowledgeTurnVO {
     question: string
     answer: string
     references: RagReferenceVO[]
+    userFeedbackRating?: 'up' | 'down'
 }
 
 export interface KnowledgeSessionDetailVO {
@@ -100,12 +130,25 @@ export async function patchKnowledgeDocumentApi(id: number, payload: { filename:
     const res = await request.patch<ApiResponse<KnowledgeDocumentVO>>(
         `/knowledge/documents/${id}`,
         payload,
+        { timeout: API_TIMEOUT_HEAVY },
     )
     return res.data.data
 }
 
 export async function deleteKnowledgeDocumentApi(id: number) {
-    await request.delete<ApiResponse<null>>(`/knowledge/documents/${id}`)
+    await request.delete<ApiResponse<null>>(`/knowledge/documents/${id}`, {
+        timeout: API_TIMEOUT_BATCH,
+    })
+}
+
+export async function getKnowledgeDocumentTagsApi(id: number) {
+    const res = await request.get<ApiResponse<TagVO[]>>(`/knowledge/documents/${id}/tags`)
+    return res.data.data
+}
+
+export async function updateKnowledgeDocumentTagsApi(id: number, tagIds: number[]) {
+    const res = await request.put<ApiResponse<TagVO[]>>(`/knowledge/documents/${id}/tags`, { tagIds })
+    return res.data.data
 }
 
 export async function getKnowledgeDocumentContentApi(id: number) {
@@ -119,7 +162,7 @@ export async function saveKnowledgeDocumentContentApi(id: number, content: strin
     const res = await request.put<ApiResponse<KnowledgeDocumentVO>>(
         `/knowledge/documents/${id}/content`,
         { content },
-        { timeout: 180000 },
+        { timeout: API_TIMEOUT_HEAVY },
     )
     return res.data.data
 }
@@ -181,22 +224,40 @@ export async function updateKnowledgeTurnApi(
 }
 
 /**
- * 上传文件到知识库
- * @param file
+ * 上传文件到知识库（单文件，兼容旧调用）
+ * @deprecated 新代码请用 uploadKnowledgeDocumentsApi
  */
 export async function uploadKnowledgeApi(file: File) {
-    const formData = new FormData()
-    formData.append('file', file)
+    const batch = await uploadKnowledgeDocumentsApi([file])
+    if (batch.succeeded.length === 0) {
+        throw new Error(batch.failed[0]?.reason ?? '上传失败')
+    }
+    return batch.succeeded[0]
+}
 
-    const res = await request.post<ApiResponse<KnowledgeIndexUploadVO>>(
-        '/knowledge/upload', 
+/** 批量上传（单/多文件同一接口） */
+export async function uploadKnowledgeDocumentsApi(files: File[]) {
+    const formData = new FormData()
+    files.forEach((file) => formData.append('files', file))
+
+    const res = await request.post<ApiResponse<KnowledgeBatchUploadVO>>(
+        '/knowledge/documents/upload',
         formData,
         {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            timeout: 120000,
-        }
+            // 勿手动设 Content-Type，让浏览器自动带 multipart boundary
+            timeout: API_TIMEOUT_HEAVY,
+        },
     )
-    return res.data.data;
+    return res.data.data
+}
+
+export async function batchDeleteKnowledgeDocumentsApi(ids: number[]) {
+    const res = await request.post<ApiResponse<KnowledgeBatchDeleteVO>>(
+        '/knowledge/documents/batch-delete',
+        { ids },
+        { timeout: API_TIMEOUT_BATCH },
+    )
+    return res.data.data
 }
 
 /**
@@ -204,7 +265,7 @@ export async function uploadKnowledgeApi(file: File) {
  * @param question 用户问题
  * @param topK 检索条数，默认 3
  */
-export async function ragQueryApi(question: string, topK: number = 3) {
+export async function ragQueryApi(question: string, topK: number = 6) {
     const res = await request.post<ApiResponse<RagQueryVO>>(
         '/rag/query',
         { question, topK },
@@ -234,7 +295,7 @@ export async function ragStreamApi(
     handlers: RagStreamHandlers,
     options: RagStreamOptions = {},
   ) {
-    const { topK = 3, sessionId, excludeTurnId, signal } = options
+    const { topK = 6, sessionId, excludeTurnId, signal } = options
     const token = getToken()
 
     const body: Record<string, unknown> = { question, topK }

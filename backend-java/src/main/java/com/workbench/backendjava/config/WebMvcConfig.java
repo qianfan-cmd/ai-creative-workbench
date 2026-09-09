@@ -30,7 +30,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/api/auth/forgot-password",
                         "/api/auth/reset-password",
                         "/api/health",
-                        "/api/ai/health"
+                        "/api/ai/health",
+                        "/api/internal/**"
                 );
     }
 

@@ -17,13 +17,18 @@ class RagHistoryItem(BaseModel):
 
 class RAGQueryRequest(BaseModel):
     question: str = Field(..., min_length = 1, description = "用户问题")
-    top_k: int = Field(default = 3, ge = 1, le = 10, description = "返回几条，默认 3")
+    top_k: int = Field(default = 6, ge = 1, le = 10, description = "返回几条，默认 6（Wave D1.5）")
     history: list[RagHistoryItem] = Field(default_factory=list, description="同会话 prior turns")
 
 class RagReference(BaseModel):
     content: str = Field(..., description = "片段内容")
     source: str | None = Field(default = None, description = "来源文件名")
     index: int | None = Field(default = None, description = "片段在文件中的索引")
+    distance: float | None = Field(default = None, description = "向量距离，越小越相似（debug）")
+    retrieval_source: str | None = Field(
+        default = None,
+        description = "dense | bm25 | hybrid（Wave D1 混合检索）",
+    )
 
 class RAGQueryResponse(BaseModel):
     answer: str = Field(..., description = "回答文字")
@@ -31,3 +36,16 @@ class RAGQueryResponse(BaseModel):
         default_factory = list,
         description = "相关片段引用列表",
     )
+
+
+class RagFeedbackFixRequest(BaseModel):
+    feedback_id: int | None = Field(default=None, alias="feedbackId")
+    turn_id: int | None = Field(default=None, alias="turnId")
+    user_id: int | None = Field(default=None, alias="userId")
+    question: str = Field(default="")
+    answer: str = Field(default="")
+    reason: str | None = Field(default=None)
+    reason_detail: str | None = Field(default=None, alias="reasonDetail", description="点踩补充说明")
+    references: list[dict] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}

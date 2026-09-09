@@ -7,14 +7,22 @@ import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.config.UploadProperties;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
 import com.workbench.backendjava.entity.KnowledgeDocument;
 import com.workbench.backendjava.mapper.KnowledgeDocumentMapper;
+import com.workbench.backendjava.vo.KnowledgeBatchDeleteVO;
+import com.workbench.backendjava.vo.KnowledgeBatchUploadVO;
+import com.workbench.backendjava.vo.KnowledgeDeleteFailureVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
+import com.workbench.backendjava.vo.KnowledgeUploadFailureVO;
+import com.workbench.backendjava.vo.KnowledgeReindexAllVO;
+import com.workbench.backendjava.vo.KnowledgeReindexFailureVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,9 +34,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -38,11 +51,87 @@ public class KnowledgeDocumentService {
 
     private static final Set<String> ALLOWED_EXT = Set.of(".txt", ".md", ".markdown", ".pdf", ".docx");
     private static final Set<String> BINARY_EXT = Set.of(".pdf", ".docx");
+    private static final int MAX_BATCH_UPLOAD = 20;
+    private static final int MAX_BATCH_DELETE = 100;
+    private static final int BATCH_UPLOAD_CONCURRENCY = 2;
+    private static final ExecutorService BATCH_UPLOAD_EXECUTOR =
+            Executors.newFixedThreadPool(BATCH_UPLOAD_CONCURRENCY);
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final KnowledgeDocumentMapper documentMapper;
     private final PythonAiClient pythonAiClient;
     private final UploadProperties uploadProperties;
+    private final ObjectProvider<KnowledgeDocumentService> selfProvider;
+    private final KnowledgeDocumentTagService documentTagService;
+
+    public KnowledgeBatchUploadVO uploadDocumentsBatch(MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            throw new BusinessException(400, "请选择至少一个文件");
+        }
+        if (files.length > MAX_BATCH_UPLOAD) {
+            throw new BusinessException(400, "单次最多上传 " + MAX_BATCH_UPLOAD + " 个文件");
+        }
+
+        Long userId = requireUserId();
+        List<KnowledgeUploadVO> succeeded = Collections.synchronizedList(new ArrayList<>());
+        List<KnowledgeUploadFailureVO> failed = Collections.synchronizedList(new ArrayList<>());
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>(files.length);
+        for (MultipartFile file : files) {
+            futures.add(CompletableFuture.runAsync(() -> {
+                LoginUserContext.setUserId(userId);
+                String filename = resolveFilename(file);
+                try {
+                    succeeded.add(selfProvider.getObject().uploadDocument(file));
+                } catch (BusinessException e) {
+                    failed.add(failureOf(filename, e.getMessage()));
+                } catch (RuntimeException e) {
+                    log.error("批量上传失败 filename={}", filename, e);
+                    failed.add(failureOf(filename, e.getMessage() != null ? e.getMessage() : "上传失败"));
+                } finally {
+                    LoginUserContext.clear();
+                }
+            }, BATCH_UPLOAD_EXECUTOR));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        KnowledgeBatchUploadVO result = new KnowledgeBatchUploadVO();
+        result.setTotal(files.length);
+        result.getSucceeded().addAll(succeeded);
+        result.getFailed().addAll(failed);
+
+        log.info("知识库批量上传 total={} succeeded={} failed={}",
+                result.getTotal(), result.getSucceeded().size(), result.getFailed().size());
+        return result;
+    }
+
+    public KnowledgeBatchDeleteVO deleteDocumentsBatch(IdsBatchDeleteRequest request) {
+        if (request.getIds() == null || request.getIds().isEmpty()) {
+            throw new BusinessException(400, "请选择至少一条记录");
+        }
+        if (request.getIds().size() > MAX_BATCH_DELETE) {
+            throw new BusinessException(400, "单次最多删除 " + MAX_BATCH_DELETE + " 条记录");
+        }
+
+        KnowledgeBatchDeleteVO result = new KnowledgeBatchDeleteVO();
+        result.setTotal(request.getIds().size());
+
+        for (Long id : request.getIds()) {
+            try {
+                deleteDocument(id);
+                result.getDeletedIds().add(id);
+            } catch (BusinessException e) {
+                result.getFailures().add(deleteFailureOf(id, e.getMessage()));
+            } catch (RuntimeException e) {
+                log.error("批量删除失败 id={}", id, e);
+                result.getFailures().add(deleteFailureOf(id, e.getMessage() != null ? e.getMessage() : "删除失败"));
+            }
+        }
+
+        log.info("知识库批量删除 total={} deleted={} failed={}",
+                result.getTotal(), result.getDeletedIds().size(), result.getFailures().size());
+        return result;
+    }
 
     @Transactional
     public KnowledgeUploadVO uploadDocument(MultipartFile file) {
@@ -76,6 +165,9 @@ public class KnowledgeDocumentService {
             doc.setChunkCount(indexed.getChunkCount());
             doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
+            if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
+                documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+            }
             return indexed;
         } catch (RuntimeException e) {
             documentMapper.deleteById(doc.getId());
@@ -106,6 +198,7 @@ public class KnowledgeDocumentService {
         List<KnowledgeDocumentVO> records = result.getRecords().stream()
                 .map(this::toVO)
                 .collect(Collectors.toList());
+        attachTags(records);
         return PageResult.of(records, result.getTotal(), result.getCurrent(), result.getSize());
     }
 
@@ -120,9 +213,66 @@ public class KnowledgeDocumentService {
                 .orderByDesc(KnowledgeDocument::getCreatedAt)
                 .last("LIMIT " + limit);
 
-        return documentMapper.selectList(wrapper).stream()
+        List<KnowledgeDocumentVO> list = documentMapper.selectList(wrapper).stream()
                 .map(this::toVO)
                 .collect(Collectors.toList());
+        attachTags(list);
+        return list;
+    }
+
+    @Transactional
+    public void reindexDocumentById(Long id) {
+        reindexDocumentById(id, requireUserId());
+    }
+
+    @Transactional
+    public void reindexDocumentById(Long id, Long userId) {
+        KnowledgeDocument doc = getOwnedDocument(id, userId);
+        reindexDocumentInternal(doc);
+    }
+
+    private void reindexDocumentInternal(KnowledgeDocument doc) {
+        if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
+            throw new BusinessException(400, "该文档无原文件，无法 re-index");
+        }
+        byte[] bytes = readStoredBytes(doc.getStoredPath());
+        Long userId = doc.getUserId();
+        KnowledgeUploadVO indexed = pythonAiClient.indexDocument(
+                bytes, doc.getFilename(), doc.getId(), userId
+        );
+        doc.setCharCount(indexed.getCharCount());
+        doc.setChunkCount(indexed.getChunkCount());
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
+            documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+        }
+    }
+
+    /** Admin：全库重建向量（embedding 策略升级后执行一次） */
+    public KnowledgeReindexAllVO reindexAllDocumentsAdmin() {
+        LoginUserContext.requireAdmin();
+        List<KnowledgeDocument> docs = documentMapper.selectList(new LambdaQueryWrapper<>());
+        KnowledgeReindexAllVO result = new KnowledgeReindexAllVO();
+        result.setTotal(docs.size());
+
+        for (KnowledgeDocument doc : docs) {
+            try {
+                if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
+                    throw new BusinessException(400, "无原文件");
+                }
+                reindexDocumentInternal(doc);
+                result.setSucceeded(result.getSucceeded() + 1);
+            } catch (Exception e) {
+                KnowledgeReindexFailureVO failure = new KnowledgeReindexFailureVO();
+                failure.setId(doc.getId());
+                failure.setFilename(doc.getFilename());
+                failure.setReason(e.getMessage() != null ? e.getMessage() : "reindex failed");
+                result.getFailed().add(failure);
+                log.warn("admin reindex-all failed docId={} filename={}: {}", doc.getId(), doc.getFilename(), e.getMessage());
+            }
+        }
+        return result;
     }
 
     @Transactional
@@ -284,6 +434,17 @@ public class KnowledgeDocumentService {
         return doc;
     }
 
+    private void attachTags(List<KnowledgeDocumentVO> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<Long> ids = records.stream().map(KnowledgeDocumentVO::getId).collect(Collectors.toList());
+        var tagMap = documentTagService.listTagsForDocuments(ids);
+        for (KnowledgeDocumentVO vo : records) {
+            vo.setTags(tagMap.getOrDefault(vo.getId(), List.of()));
+        }
+    }
+
     private KnowledgeDocumentVO toVO(KnowledgeDocument doc) {
         KnowledgeDocumentVO vo = new KnowledgeDocumentVO();
         vo.setId(doc.getId());
@@ -296,6 +457,27 @@ public class KnowledgeDocumentService {
         if (doc.getCreatedAt() != null) {
             vo.setCreatedAt(doc.getCreatedAt().format(ISO));
         }
+        return vo;
+    }
+
+    private static String resolveFilename(MultipartFile file) {
+        if (file == null || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
+            return "unknown";
+        }
+        return file.getOriginalFilename().trim();
+    }
+
+    private static KnowledgeUploadFailureVO failureOf(String filename, String reason) {
+        KnowledgeUploadFailureVO vo = new KnowledgeUploadFailureVO();
+        vo.setFilename(filename);
+        vo.setReason(reason);
+        return vo;
+    }
+
+    private static KnowledgeDeleteFailureVO deleteFailureOf(Long id, String reason) {
+        KnowledgeDeleteFailureVO vo = new KnowledgeDeleteFailureVO();
+        vo.setId(id);
+        vo.setReason(reason);
         return vo;
     }
 

@@ -16,7 +16,7 @@ public class RagQueryRequest {
      */
     @Min(1)
     @Max(10)
-    private Integer topK = 3;
+    private Integer topK = 6;
 
     /** 知识库会话 id — 有值时 Java 从 knowledge_turn 加载 prior Q/A */
     private Long sessionId;

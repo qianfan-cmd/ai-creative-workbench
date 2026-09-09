@@ -38,7 +38,7 @@ public class RagService {
             throw new BusinessException(400, "问题不能为空");
         }
 
-        int topK = request.getTopK() != null ? request.getTopK() : 3;
+        int topK = request.getTopK() != null ? request.getTopK() : 6;
         List<RagHistoryItem> history = resolveHistory(request);
 
         log.info("RAG 查询, userId={}, topK={}, historySize={}, question={}",
@@ -56,7 +56,7 @@ public class RagService {
         if (question.isEmpty()) {
             throw new BusinessException(400, "问题不能为空");
         }
-        int topK = request.getTopK() != null ? request.getTopK() : 3;
+        int topK = request.getTopK() != null ? request.getTopK() : 6;
         List<RagHistoryItem> history = resolveHistory(request);
 
         log.info("RAG 流式查询, userId={}, topK={}, historySize={}, question={}",

@@ -117,7 +117,20 @@
 
 ## 简历 Bullet 参考
 
-- 独立交付 React + Spring Boot + FastAPI 三端 AI 工作台，公网 Docker Demo + GitHub Actions CD 部署阿里云 ECS。  
-- 实现手写 RAG（Chroma + Embedding + 流式问答），扩展 PDF/DOCX 插件化解析，references 可溯源。  
-- Chat SSE 流式 + 虚拟列表双模式，解决流式布局重叠与长会话性能矛盾。  
-- 2G ECS 素材页 N+1 与懒加载优化，nginx 路由与密钥分层保障公网稳定。
+> 完整 bullet 库、STAR 30s/60s、JD 映射 → [`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)  
+> 完成状态以 [`project-roadmap.md`](project-roadmap.md) §9 为准。
+
+### Wave C 版（4 条 · 当前投递默认 · 已验收）
+
+- 独立设计并实现 React + Spring Boot + FastAPI 三端架构，Docker Compose **4 服务** + GitHub Actions **CI/CD**（GHCR → 阿里云 ECS），镜像 **commit SHA** 版本化，公网 Demo 可重复部署。  
+- 实现 RAG「解析 → chunk → embed → Chroma → 流式问答 + references」流水线，插件化扩展 **PDF/DOCX**（**4** 种格式，DOCX ~**7000** 字可问答），references 可溯源。  
+- Chat SSE 流式 + 虚拟列表双模式（**1000+** 条流畅），**7** 页路由 lazy load + 统一 **401/502/断网** 中文错误体验。  
+- 2G ECS 素材页定位标签 **N+1**（~**80+** SQL/页）→ 批量 **2** 次查询 + 懒加载，修复 nginx `/assets` 冲突，保障 Demo 刷新稳定。
+
+### Wave D 加强版（D1.5 验收全绿后追加 · 已交付待验收）
+
+- LangChain **检索链**（BM25 + 向量 + RRF），**30** 候选 → BGE rerank → **top 6** 进 Prompt；Query 改写、结构化 chunk、**RAG_TRACE** 与 Golden Set 闭环。（**非** LangChain 全家桶；生成/Prompt/SSE 仍手写）
+
+### 技术规划（D2–D6 · 规划中 · 正式简历默认不写）
+
+- Tool 规则路由 + Tavily 联网兜底；RAG/Chat 用户反馈；Chat/生图上下文清理。详见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。

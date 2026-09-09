@@ -40,6 +40,7 @@ public class ConversationService {
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
+    private final AiFeedbackService aiFeedbackService;
 
     public List<ConversationVO> listConversations() {
         Long userId = requireUserId();
@@ -75,10 +76,18 @@ public class ConversationService {
                         .orderByAsc(Message::getCreatedAt)
         );
 
+        List<Long> assistantIds = messages.stream()
+                .filter(m -> "assistant".equals(m.getRole()))
+                .map(Message::getId)
+                .collect(Collectors.toList());
+        Map<Long, String> ratingMap = aiFeedbackService.getRatingMapForRefs(userId, "message", assistantIds);
+
         ConversationDetailVO vo = new ConversationDetailVO();
         vo.setId(conversation.getId());
         vo.setTitle(conversation.getTitle());
-        vo.setMessages(messages.stream().map(this::toMessageVO).collect(Collectors.toList()));
+        vo.setMessages(messages.stream()
+                .map(m -> toMessageVO(m, ratingMap.get(m.getId())))
+                .collect(Collectors.toList()));
         return vo;
     }
 
@@ -234,11 +243,12 @@ public class ConversationService {
         return vo;
     }
 
-    private MessageVO toMessageVO(Message message) {
+    private MessageVO toMessageVO(Message message, String userFeedbackRating) {
         MessageVO vo = new MessageVO();
         vo.setId(message.getId());
         vo.setRole(message.getRole());
         ChatMultimodalUtil.applyParsedContent(vo, message.getContent());
+        vo.setUserFeedbackRating(userFeedbackRating);
         return vo;
     }
 }

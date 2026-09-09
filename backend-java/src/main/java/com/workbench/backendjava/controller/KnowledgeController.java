@@ -2,12 +2,18 @@ package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentContentUpdateRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
+import com.workbench.backendjava.dto.KnowledgeDocumentTagsUpdateRequest;
 import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
+import com.workbench.backendjava.service.KnowledgeDocumentTagService;
 import com.workbench.backendjava.service.KnowledgeService;
 import com.workbench.backendjava.service.KnowledgeSessionService;
+import com.workbench.backendjava.vo.TagVO;
+import com.workbench.backendjava.vo.KnowledgeBatchDeleteVO;
+import com.workbench.backendjava.vo.KnowledgeBatchUploadVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeSessionDetailVO;
@@ -37,10 +43,17 @@ public class KnowledgeController {
 
     private final KnowledgeService knowledgeService;
     private final KnowledgeSessionService knowledgeSessionService;
+    private final KnowledgeDocumentTagService knowledgeDocumentTagService;
 
     @PostMapping("/upload")
     public Result<KnowledgeUploadVO> upload(@RequestParam("file") MultipartFile file) {
         return Result.ok(knowledgeService.upload(file));
+    }
+
+    /** 批量上传（单/多文件同一接口） */
+    @PostMapping("/documents/upload")
+    public Result<KnowledgeBatchUploadVO> uploadDocuments(@RequestParam("files") MultipartFile[] files) {
+        return Result.ok(knowledgeService.uploadDocumentsBatch(files));
     }
 
     @GetMapping("/documents")
@@ -71,9 +84,27 @@ public class KnowledgeController {
         return Result.ok(null);
     }
 
+    @PostMapping("/documents/batch-delete")
+    public Result<KnowledgeBatchDeleteVO> batchDeleteDocuments(@Valid @RequestBody IdsBatchDeleteRequest request) {
+        return Result.ok(knowledgeService.deleteDocumentsBatch(request));
+    }
+
     @GetMapping("/documents/{id}/content")
     public Result<KnowledgeDocumentContentVO> getDocumentContent(@PathVariable Long id) {
         return Result.ok(knowledgeService.getDocumentContent(id));
+    }
+
+    @GetMapping("/documents/{id}/tags")
+    public Result<List<TagVO>> getDocumentTags(@PathVariable Long id) {
+        return Result.ok(knowledgeDocumentTagService.listTagsForDocument(id));
+    }
+
+    @PutMapping("/documents/{id}/tags")
+    public Result<List<TagVO>> updateDocumentTags(
+            @PathVariable Long id,
+            @Valid @RequestBody KnowledgeDocumentTagsUpdateRequest request
+    ) {
+        return Result.ok(knowledgeDocumentTagService.replaceUserTags(id, request.getTagIds()));
     }
 
     @PutMapping("/documents/{id}/content")

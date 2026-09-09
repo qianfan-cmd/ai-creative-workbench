@@ -12,8 +12,8 @@ import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import com.workbench.backendjava.vo.RagQueryVO;
 import com.workbench.backendjava.vo.RagReferenceVO;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpResponse;
@@ -45,13 +45,30 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PythonAiClient {
 
     private final RestTemplate restTemplate;
+    private final RestTemplate ragStreamRestTemplate;
+    private final RestTemplate documentIndexRestTemplate;
     private final AiServiceProperties aiServiceProperties;
     private final ObjectMapper objectMapper;
     private final AiCallLogService aiCallLogService;
+
+    public PythonAiClient(
+            RestTemplate restTemplate,
+            @Qualifier("ragStreamRestTemplate") RestTemplate ragStreamRestTemplate,
+            @Qualifier("documentIndexRestTemplate") RestTemplate documentIndexRestTemplate,
+            AiServiceProperties aiServiceProperties,
+            ObjectMapper objectMapper,
+            AiCallLogService aiCallLogService
+    ) {
+        this.restTemplate = restTemplate;
+        this.ragStreamRestTemplate = ragStreamRestTemplate;
+        this.documentIndexRestTemplate = documentIndexRestTemplate;
+        this.aiServiceProperties = aiServiceProperties;
+        this.objectMapper = objectMapper;
+        this.aiCallLogService = aiCallLogService;
+    }
 
     /**
      * 调用python  post ai/chat接口，返回模型文本
@@ -214,7 +231,7 @@ public class PythonAiClient {
             log.info("调用 Python 文档入库: url={}, filename={}, size={}, documentId={}",
                     url, filename, bytes.length, documentId);
 
-            PythonIndexResponse response = restTemplate.postForObject(
+            PythonIndexResponse response = documentIndexRestTemplate.postForObject(
                     url,
                     entity,
                     PythonIndexResponse.class
@@ -229,6 +246,9 @@ public class PythonAiClient {
             vo.setCharCount(response.getCharCount());
             vo.setChunkCount(response.getChunkCount());
             vo.setIndexedCount(response.getIndexedCount());
+            if (response.getSuggestedTags() != null) {
+                vo.setSuggestedTags(response.getSuggestedTags());
+            }
 
             if (userId != null && response.getEmbeddingTokens() != null && response.getEmbeddingTokens() > 0) {
                 aiCallLogService.logCall(
@@ -436,8 +456,8 @@ public class PythonAiClient {
                 String jsonBody = objectMapper.writeValueAsString(body);
                 log.info("转发 Python RAG stream, url={}, jsonBody={}", url, jsonBody);
 
-                // 与非流式 ragQuery 相同，用 RestTemplate 发 JSON，避免 HttpClient body 丢失
-                restTemplate.execute(
+                // RAG 流式用更长 readTimeout；status heartbeat 保活至 references 到达
+                ragStreamRestTemplate.execute(
                         url,
                         HttpMethod.POST,
                         request -> {
@@ -834,6 +854,37 @@ public class PythonAiClient {
 
         @JsonProperty("embedding_tokens")
         private Integer embeddingTokens;
+
+        @JsonProperty("suggested_tags")
+        private List<String> suggestedTags;
+    }
+
+    /**
+     * 点踩后 RAG 自愈分诊 — POST /ai/rag/feedback-fix
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> ragFeedbackFix(com.workbench.backendjava.dto.RagFeedbackFixRequest request) {
+        String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/feedback-fix";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<com.workbench.backendjava.dto.RagFeedbackFixRequest> entity = new HttpEntity<>(request, headers);
+        try {
+            Map<String, Object> body = restTemplate.postForObject(url, entity, Map.class);
+            if (body == null) {
+                return List.of();
+            }
+            Object actions = body.get("actions");
+            if (actions instanceof List<?> list) {
+                return list.stream()
+                        .filter(Map.class::isInstance)
+                        .map(item -> (Map<String, Object>) item)
+                        .collect(Collectors.toList());
+            }
+            return List.of();
+        } catch (RestClientException e) {
+            log.error("RAG feedback-fix call failed: {}", e.getMessage(), e);
+            return List.of();
+        }
     }
 
     @Data

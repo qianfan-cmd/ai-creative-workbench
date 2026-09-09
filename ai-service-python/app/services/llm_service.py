@@ -15,12 +15,13 @@ import httpx
 import json
 
 
-def chat_with_llm(message: str) -> str:
+def chat_with_llm(message: str, *, max_tokens: int | None = None) -> str:
     """
     调用 DeepSeek Chat Completions API，返回 assistant 的文本内容。
 
     参数:
         message: 用户输入的问题（纯文本）
+        max_tokens: 可选，限制 completion 最大 token 数
 
     返回:
         str: 模型回复的正文（choices[0].message.content）
@@ -52,6 +53,8 @@ def chat_with_llm(message: str) -> str:
         # DeepSeek V4 默认开启「思考模式」；disabled 时响应更快、更省 token
         "thinking": {"type": "disabled"},
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
 
     headers = {
         # Bearer Token：行业通用的 API Key 鉴权方式
@@ -71,7 +74,7 @@ def chat_with_llm(message: str) -> str:
     # DeepSeek 响应结构：data["choices"][0]["message"]["content"] 是最终回答
     # 思考模式下还有 reasoning_content（思维链），本接口只取 content 给用户看
     content = data["choices"][0]["message"]["content"]
-    if not content:
+    if not content or not str(content).strip():
         raise ValueError("模型返回内容为空")
 
     return content

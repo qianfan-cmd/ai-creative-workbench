@@ -5,6 +5,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MultipartException;
 
 /**
  * 全局统一异常拦截器
@@ -30,6 +31,16 @@ public class GlobalExceptionHandler {
     public Result<String> handleException(Exception e) {
         log.error("系统发生未捕获的未知异常：", e);
         return Result.fail(500, "服务器错误");
+    }
+
+    /** multipart 解析失败（如超过 Tomcat part 数 / 请求体过大） */
+    @ExceptionHandler(MultipartException.class)
+    public Result<String> handleMultipartException(MultipartException e) {
+        log.warn("multipart 解析失败: {}", e.getMessage());
+        String msg = e.getMessage() != null && e.getMessage().contains("FileCountLimit")
+                ? "单次上传文件过多，请不超过 20 个或分批上传"
+                : "上传请求无效或体积过大，请减少文件数量或缩小单文件体积";
+        return Result.fail(400, msg);
     }
 
     /**

@@ -36,6 +36,7 @@ class DocumentIndexResponse(BaseModel):
     indexed_count: int = Field(..., description = "写入 Chroma 的条数")
     embedding_model: str | None = Field(None, description = "Embedding 模型 ID")
     embedding_tokens: int | None = Field(None, description = "Embedding API 消耗的 token 数")
+    suggested_tags: list[str] = Field(default_factory=list, description = "AI 建议的文档级标签")
 
 class DocumentListItem(BaseModel):
     """左栏文档库单项：文件名 + 已索引 chunk 数"""

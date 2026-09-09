@@ -1,4 +1,5 @@
 import request from '@/api/request'
+import { API_TIMEOUT_BATCH } from '@/api/timeouts'
 import type { ApiResponse } from '@/types/api'
 
 export interface TagVO {
@@ -37,5 +38,7 @@ export async function deleteTagApi(id: number) {
 }
 
 export async function batchDeleteTagsApi(ids: number[]) {
-    await request.post<ApiResponse<void>>('/tags/batch-delete', { ids });
+    await request.post<ApiResponse<void>>('/tags/batch-delete', { ids }, {
+        timeout: API_TIMEOUT_BATCH,
+    });
 }

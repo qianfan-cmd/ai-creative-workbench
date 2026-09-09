@@ -12,9 +12,9 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Form
 
 from app.schemas.document import DocumentParseResponse, DocumentChunkResponse, DocumentChunkItem, DocumentIndexResponse, DocumentListResponse, DocumentDeleteRequest, DocumentDeleteResponse
 from app.services.document_parser import parse_upload_file
+from app.services.indexing_pipeline import run_index_pipeline
 from app.services.text_splitter import split_text
-from app.services.vector_store import add_chunks, list_documents, delete_by_source, delete_document_vectors
-from app.services.embedding_service import embed_texts
+from app.services.vector_store import list_documents, delete_document_vectors
 
 # prefix会把所有路由前缀都加上/ai/documents
 router = APIRouter(prefix = "/ai/documents", tags = ["documents"])
@@ -77,45 +77,25 @@ async def index_document(
     文档入库：parse → chunk → embed → Chroma
     """
     filename, content = parse_upload_file(file)
-    pieces = split_text(content, chunk_size = 400, overlap = 50)
 
-    if not pieces:
-        raise HTTPException(status_code = 400, detail = "切分结果为空")
-
-    # 同文件名重复入库前先删旧 chunk，避免 ID 冲突
-    delete_by_source(filename)
-
-    # 批量 Embedding
-    embed_result = embed_texts(pieces)
-
-    ids: list[str] = []
-    metadatas: list[dict] = []
-    for i, text in enumerate(pieces):
-        ids.append(f"{filename}-{i}")
-        meta = {
-            "source": filename,
-            "index": i,
-        }
-        if document_id is not None:
-            meta["document_id"] = document_id
-        if user_id is not None:
-            meta["user_id"] = user_id
-        metadatas.append(meta)
-    
-    indexed = add_chunks(
-        ids = ids,
-        documents = pieces,
-        embeddings = embed_result.embeddings,
-        metadatas = metadatas,
-    )
+    try:
+        result = run_index_pipeline(
+            filename=filename,
+            content=content,
+            document_id=document_id,
+            user_id=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return DocumentIndexResponse(
-        filename = filename,
-        char_count = len(content),
-        chunk_count = len(pieces),
-        indexed_count = indexed,
-        embedding_model = embed_result.model,
-        embedding_tokens = embed_result.total_tokens,
+        filename=result.filename,
+        char_count=result.char_count,
+        chunk_count=result.chunk_count,
+        indexed_count=result.indexed_count,
+        embedding_model=result.embedding_model,
+        embedding_tokens=result.embedding_tokens,
+        suggested_tags=result.suggested_tags,
     )
 
 @router.post("/delete", response_model = DocumentDeleteResponse)

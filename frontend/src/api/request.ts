@@ -1,11 +1,12 @@
 import axios from 'axios';
 import type { ApiResponse} from '@/types/api';
+import { API_TIMEOUT_DEFAULT } from '@/api/timeouts';
 import { getToken } from '@/utils/token';
 import { parseApiError, ApiRequestError, finalizeApiRequestError } from '@/utils/apiError';
 
 const request = axios.create({
     baseURL: '/api',
-    timeout: 15000,
+    timeout: API_TIMEOUT_DEFAULT,
 });
 
 // 请求拦截器：自动带Authorization请求头

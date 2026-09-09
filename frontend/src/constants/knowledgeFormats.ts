@@ -14,7 +14,7 @@ export const KNOWLEDGE_UPLOAD_HINT =
   '支持 .txt / .md / .pdf / .docx（PDF/DOCX 仅索引，不可在线编辑）'
 
 export function validateKnowledgeFile(file: File): string | null {
-  const name = file.name.toLowerCase()
+  const name = file.name.trim().toLowerCase()
   if (!KNOWLEDGE_ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
     return `仅支持 ${KNOWLEDGE_ALLOWED_EXTENSIONS.join(' / ')} 文件`
   }

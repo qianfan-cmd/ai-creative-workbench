@@ -11,4 +11,6 @@ public class KnowledgeTurnVO {
     private String question;
     private String answer;
     private List<RagReferenceVO> references;
+    /** 当前用户对该 turn 的反馈：up | down */
+    private String userFeedbackRating;
 }

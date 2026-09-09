@@ -13,20 +13,24 @@ FastAPI AI 服务，负责调用大模型（DeepSeek）等能力。Java 后端�
 
 ## 启动
 
+文档入库/删除会写入 `./data/chroma`，开发时 **必须** exclude 该目录，否则 `--reload` 会反复重启并重新下载 reranker。
+
 **Git Bash：**
 
 ```bash
 cd ai-service-python
 source .venv/Scripts/activate
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --reload-exclude 'data/*' --reload-exclude '*.sqlite3'
 ```
 
 **PowerShell：**
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000 --reload-exclude 'data/*' --reload-exclude '*.sqlite3'
 ```
+
+Reranker 模型缓存默认在 `~/.cache/huggingface`（Windows: `C:\Users\<用户名>\.cache\huggingface`）。首次下载后重启应走本地缓存；若 hf-mirror 超时，可临时在 `.env` 设 `RERANK_ENABLED=0`。
 
 ## 接口
 

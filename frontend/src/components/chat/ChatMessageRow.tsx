@@ -18,6 +18,7 @@ interface ChatMessageRowProps {
   onRegenerate?: () => void
   regenerateDisabled?: boolean
   userInitial?: string
+  feedback?: ReactNode
 }
 
 export default function ChatMessageRow({
@@ -30,6 +31,7 @@ export default function ChatMessageRow({
   onRegenerate,
   regenerateDisabled = false,
   userInitial = '你',
+  feedback,
 }: ChatMessageRowProps) {
   const isUser = role === 'user'
 
@@ -67,6 +69,7 @@ export default function ChatMessageRow({
                 <ReloadOutlined />
               </button>
             )}
+            {!isUser && feedback}
           </div>
         )}
       </div>

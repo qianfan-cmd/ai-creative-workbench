@@ -1,4 +1,5 @@
 import request from '@/api/request'
+import { API_TIMEOUT_BATCH } from '@/api/timeouts'
 import type { ApiResponse, AssetVO, PageResult,AssetStatsVO,AssetUploadVO } from '@/types/api'
 
 /**列表查询参数 */
@@ -35,7 +36,9 @@ export async function deleteAssetApi(id: number) {
 
 /** 批量删除素材 */
 export async function batchDeleteAssetsApi(ids: number[]) {
-    await request.post<ApiResponse<void>>('/assets/batch-delete', { ids });
+    await request.post<ApiResponse<void>>('/assets/batch-delete', { ids }, {
+        timeout: API_TIMEOUT_BATCH,
+    });
 }
 
 /** 素材统计 */

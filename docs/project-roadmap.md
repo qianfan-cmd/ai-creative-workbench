@@ -1,6 +1,6 @@
 # AI Creative Workbench — 项目迭代计划表
 
-> 更新日期：2026-09-08（Wave A/B/C 重排）  
+> 更新日期：2026-09-09（Wave D 方案入档）  
 > 目标岗位：AI 应用前端 / AI 全栈（腾讯 AI 应用工程师、字节 AIGC / 飞书 Agent 全栈等）  
 > 说明：本文仅作计划与验收清单；每项具体用 **Chat 带着做** 还是 **Agent 直接做**，实施时再定。
 
@@ -13,15 +13,15 @@
 | **Phase 1** | 亮点 + 作品化 | 5～7 天 | 公网 Demo、前端工程亮点、**Wave C** README/面试材料 |
 | **Phase 1.5** | 性能 + 部署加固 | 2～3 天 | 素材 N+1、懒加载、2G ECS 稳定、**Wave A** CD/HTTPS |
 | **Phase 2** | RAG 扩展 PDF/DOCX | 2～3 天 | **Wave B** 知识库 pdf/docx 上传与问答 |
-| **Phase 3** | JD 对齐增强 | 5～7 天 | AI 反馈闭环、Tool/MCP 实践、可选 Redis/CD |
+| **Phase 3（Wave D）** | JD 对齐增强 | 6～9 天 | LangChain 混合检索、Tool+Tavily、反馈闭环、上下文管理、可选 Redis |
 
 **原则**
 
 - 先能 **演示、能讲清**，再追 Agent / MCP 等关键词。
-- **当前迭代顺序（2026-09 起）：Wave A（CD/HTTPS）→ Wave B（PDF/DOCX RAG）→ Wave C（README/portfolio/interview）**，再 Phase 3。
+- **当前迭代顺序（2026-09 起）：Wave A → Wave B → Wave C → Wave D（Phase 3）**；Wave D 细则见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。
 - **Dev-log 门禁：** 每个里程碑验收通过后，必须在 [`docs/dev-log/`](dev-log/) 写复盘（见 [`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md)），再进入下一序号。
 - 不堆 Nacos、Spring Cloud Gateway、Spring AI、Kafka 全链路。
-- 手写 RAG 主线保留；LangChain/LangGraph 仅作实验分支，不整体替换。
+- 生成/Prompt/SSE **手写保留**；**LangChain 仅用于 Wave D1 检索链**；不整体替换、不默认上 LangGraph 主线。
 
 ---
 
@@ -274,42 +274,56 @@ flowchart LR
 
 ---
 
-## 六、Phase 3：JD 对齐增强（Wave C + Phase 2 之后）
+## 六、Phase 3：Wave D — JD 对齐增强
 
-依据 [`JD.md`](JD.md) 与岗位投递方向。
+> **详细需求（逐步开发用）：** [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)  
+> **开发方式：** Agent 模式说「**开始 Wave D1**」…「**开始 Wave D6**」；每 Wave 验收 → dev-log → 更新 §9 状态。  
+> **方案定稿日：** 2026-09-09（业务代码尚未改动）
 
-### 6.1 AI 反馈闭环
+依据 [`JD.md`](JD.md)；对齐腾讯 **AI 应用工程师**、字节 **飞书 Agent 全栈**。
 
-| 项 | 内容 |
+### 6.0 已定选型
+
+| 项 | 决定 |
 |----|------|
-| **范围** | Chat / RAG / 生图：点赞点踩，或「重新生成原因」 |
-| **参考** | study-plan Week12 周日（尚未实现） |
-| **数据** | 扩展 `ai_call_log` 或新建轻量 `ai_feedback` 表 |
-| **验收** | 能统计反馈分布，面试能讲「效果闭环」 |
+| 检索框架 | **LangChain 仅检索链**（BM25 + Chroma + RRF + 阈值） |
+| 生成/Prompt | **继续手写**（citation、SSE、history 截断） |
+| Tool Use | **规则 Router**：`search_knowledge` → 弱/无命中 → **Tavily `web_search`** |
+| 联网 API | **Tavily**（`TAVILY_API_KEY`） |
+| MCP / LangGraph | **不在 Wave D 主线**；MCP 留 C3 后续；LangGraph 仅实验分支 |
 
-### 6.2 Agent 关键词 — 三选一
+### 6.1 Wave D 一览
 
-| 选项 | 预估 | 简历标签 | 说明 |
-|------|------|----------|------|
-| **C1 Tool Calling（推荐）** | 3 天 | Tool Use | Python 工具注册表：`search_knowledge`、`generate_image` 等 |
-| **C3 MCP 最小 Server** | 3 天 | MCP / Skills | 暴露「查知识库」等工具，对齐字节 JD |
-| C2 LangGraph 实验分支 | 5 天 | LangGraph | 独立 git 分支，Campaign 单 Agent 图，**不合并主线** |
+| Wave | 主题 | 预估 | 核心产出 | 状态 |
+|------|------|------|----------|------|
+| **D1** | LangChain 混合检索 + 调优 v1 | 2～3d | BM25+向量+RRF、threshold | ✅ |
+| **D1.5** | RAG 质量 + 9 步闭环 | 4～5d | 改写/rerank/chunk/trace/G-Resume | ✅ 待 re-index 验收 |
+| **D2** | Tool Router + Tavily | 2d | 知识库优先、联网兜底 | ⬜ |
+| **D3** | AI 反馈闭环 | 1～2d | `ai_feedback` 表、RAG/Chat 👍👎、Admin stats | ✅ |
+| **D4** | 上下文管理 | 1d | Chat 清空上下文、生图清空附件、无隐式 reference | ⬜ |
+| **D6** | 评测与面试材料 | 0.5～1d | rag-eval Golden Set、interview STAR、portfolio 更新 | ⬜ |
+| **D5** | Redis（可选） | 1d | 限流或 embedding 缓存 | ⬜ |
 
-### 6.3 可选增强
+**建议顺序：** D1 → **D1.5** → D3 → D2 → D4 → D6 → D5（可选）；**1-F HTTPS** 可并行。
 
-| 项 | 何时做 |
-|----|--------|
-| GitHub Actions CD（SSH 部署 ECS） | 见本文 **§4.4、序号 3d** | Demo 稳定后，约 0.5～1 天 |
-| Redis 单场景（限流 / 热点缓存） | 投顺丰等中厂 JD 前，约 1 天 |
-| CI 升级 `setup-java@v5` 等 | 顺手 |
+### 6.2 简历叙事（Wave D 完成后）
 
-### 6.4 明确不做（除非改投 Java 微服务岗）
+> 知识问答：LangChain 混合检索 + 相似度阈值；本地无命中 Tool 路由 Tavily；RAG/Chat 用户反馈闭环；Chat/生图上下文可控。
 
-- Nacos / Spring Cloud Gateway
-- Spring AI（与 Python AI 层重复）
-- Kafka 消息队列全链路
-- 用 LangChain **整体替换** 现有手写 RAG
-- 完整多 Agent 协作平台
+### 6.3 可选 / 后续（Wave D 之后）
+
+| 项 | 说明 |
+|----|------|
+| **C3 MCP 最小 Server** | 字节 JD；暴露「查知识库」工具 |
+| C2 LangGraph 实验分支 | 独立分支，不合并主线 |
+| GitHub Actions CD | 见 §4.4 **3d**（✅ 已验收） |
+| **1-F HTTPS** | Wave A 遗留，备案后做 |
+
+### 6.4 明确不做
+
+- Nacos / Spring Cloud Gateway / Spring AI / Kafka 全链路
+- LangChain **整体替换** RAG/SSE
+- 完整多 Agent 平台、RAG 自动化 CI benchmark、OCR
 
 ---
 
@@ -319,16 +333,17 @@ flowchart LR
 |----------|----------|----------|
 | **Wave B 结束** | 技术面试练手、内推预热 | 全栈 Demo + SSE + **PDF/DOCX RAG** + **CD/HTTPS** + 前端工程亮点 |
 | **Wave C 结束** | 腾讯 **AI 应用工程师**；字节 **AIGC 全栈 / AI 前端** | 上述 + **portfolio/README** + STAR 可背 |
-| Phase 3（C1 或 C3）后 | 字节 **飞书 Agent 全栈**、平台 AI 岗 | 增加 Tool/MCP + 反馈闭环 |
+| **Wave D 结束** | 腾讯 AI 应用 **加强版**；字节 **飞书 Agent 全栈** | LangChain 检索 + Tool/Tavily + 反馈闭环 |
+| Wave D + C3 MCP 后 | 字节 Agent 专向 | + MCP Server |
 | Agent 专岗 | stretch | 需 LangGraph 深度 + Agent 专向作品 |
 
 **主简历叙事（Wave C 定稿时写入 README）**
 
 > AI 创意工作台：React + Spring Boot + FastAPI；RAG 知识问答（**含 PDF/DOCX**）、SSE 对话、美术机台与运营文案 AIGC 流水线；Docker + GitHub Actions **CI/CD**；[**HTTPS Demo 链接**]
 
-**副叙事（Phase 3 后追加）**
+**副叙事（Wave D 后追加）**
 
-> Tool Calling / MCP 实践；AI 反馈与 RAG 评测说明。
+> LangChain 混合检索；Tool 路由 + Tavily 联网；AI 反馈与 RAG Golden Set 评测。
 
 ---
 
@@ -348,8 +363,15 @@ flowchart LR
 | **Wave B** | 5～7 | Phase 2 PDF/DOCX RAG 全链路 | 2～3 天 | `docs/dev-log/2026-09-rag-pdf-docx.md` |
 | **Wave C** | 2 | README + portfolio + architecture | ~1 天 | 内容进 portfolio；STAR 进 interview |
 | **Wave C** | 4 | interview.md + rag-eval 完善 | ~1 天 | 从 dev-log 提炼 |
+| **Wave D** | D1 | LangChain 混合检索 | 2～3 天 | `dev-log/2026-09-rag-hybrid-retrieval.md` |
+| **Wave D** | D1.5 | RAG 质量闭环 | 4～5 天 | `dev-log/2026-09-rag-quality-d1_5.md` |
+| **Wave D** | D2 | Tool Router + Tavily | 2 天 | 合并或 `dev-log/2026-09-rag-tool-router.md` |
+| **Wave D** | D3 | AI 反馈闭环 | 1～2 天 | `dev-log/2026-09-rag-tool-feedback.md` |
+| **Wave D** | D4 | 上下文管理 | 1 天 | 可合并进 D3 dev-log |
+| **Wave D** | D6 | Golden Set + interview | 0.5～1 天 | 更新 rag-eval / interview |
+| **Wave D** | D5 | Redis（可选） | 1 天 | architecture 小节 |
 
-**门禁：** 验收通过 → 写 dev-log（六块：背景、选型、实现、踩坑、验收、STAR）→ 更新 §8.2 状态 → 下一项。
+**门禁：** 验收通过 → 写 dev-log（六块：背景、选型、实现、踩坑、验收、STAR）→ 更新 §8.2 / §9 状态 → 下一项。Wave D 细则见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。
 
 ### 8.2 已完成 Dev-log 索引
 
@@ -378,13 +400,18 @@ flowchart LR
 | **7** | 联调 + Docker rebuild + deploy 更新 | **Wave B** | #6 | **✅（ECS 公网已验收）** |
 | **2** | README + portfolio + architecture | **Wave C** | Wave B | **✅** |
 | **4** | interview.md + rag-eval | **Wave C** | #2 | **✅** |
-| 8 | AI 反馈闭环 | P3 | Wave C | ⬜ |
-| 9 | Tool Calling 或 MCP（二选一） | P3 | #8 | ⬜ |
-| 10 | Redis（可选） | P3 | 按需 | ⬜ |
+| **D1** | LangChain 混合检索 + 调优 v1 | **Wave D** | Wave C | ✅ |
+| **D1.5** | RAG 质量 + 闭环 | **Wave D** | D1 | ✅ 待手测 |
+| **D2** | Tool Router + Tavily 联网 | **Wave D** | D1.5 | ⬜ |
+| **D3** | AI 反馈闭环 | **Wave D** | D2（可部分并行） | ✅ |
+| **D4** | Chat/生图/RAG 上下文管理 | **Wave D** | D3 或并行 | ⬜ |
+| **D6** | Golden Set + interview 更新 | **Wave D** | D1～D4 | ⬜ |
+| **D5** | Redis 限流/缓存（可选） | **Wave D** | 按需 | ⬜ |
+| 8～10 | （旧 P3 序号，已并入 D1～D5） | — | — | — |
 
-**建议实施顺序：** **3d → 1-F → D3（可选）→ 5 → 6 → 7 → 2 → 4 → Phase 3**
+**建议实施顺序：** **3d ✅ → 5～7 ✅ → 2/4 ✅ → D1 → D2 → D3 → D4 → D6 → D5（可选）**；**1-F HTTPS** 与 Wave D 并行。
 
-**说明：** Wave B **#5～#7 PDF/DOCX RAG** 已交付并 ECS 验收，见 [`dev-log/2026-09-rag-pdf-docx.md`](dev-log/2026-09-rag-pdf-docx.md)。**Wave C #2/#4 已完成**（README、portfolio、architecture、interview、rag-eval）。**下一步：1-F HTTPS**（备案通过后）或 **Phase 3**。
+**说明：** Wave B/C 已验收。**Wave D 方案已写入 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)，代码未动。** 开发时说「**开始 Wave D1**」。
 
 ---
 
@@ -392,16 +419,17 @@ flowchart LR
 
 | JD 常写 | 本项目 | 计划后 |
 |---------|--------|--------|
-| RAG | 手写 embed + Chroma + prompt | Wave B：+ PDF/DOCX |
+| RAG | 手写 embed + Chroma + prompt | Wave B ✅；**Wave D1：LangChain 混合检索** |
 | SSE / 流式 | Chat 已有 | 保持 |
-| 全栈交付 | 三端 + Docker + Demo | Wave A：+ CD/HTTPS |
+| 全栈交付 | 三端 + Docker + Demo | Wave A：CD ✅；HTTPS ⬜ |
 | 前端工程 | 虚拟列表、lazy、apiError | ✅ dev-log 已记录 |
-| Agent / Tool Use | 弱（工作流像流水线） | Phase 3 C1/C3 |
-| MCP / Skills | 无 | Phase 3 C3 或 Cursor Rules 文档化 |
-| LangGraph | 无 | 仅 C2 实验分支（可选） |
-| 微服务 / Nacos | compose + 服务名，无注册中心 | **不做** |
-| Redis / MQ | 无 | Redis 可选；MQ 仅口述扩展 |
-| CI/CD | CI 已有 | **Wave A：CD + HTTPS** |
+| Agent / Tool Use | 弱 | **Wave D2：Router + Tavily** |
+| LangChain | 无 | **Wave D1：仅检索链** |
+| MCP / Skills | 无 | Wave D 后 C3（可选） |
+| LangGraph | 无 | C2 实验分支（可选） |
+| 效果闭环 | 仅 ai_call_log | **Wave D3：ai_feedback** |
+| Redis / MQ | 无 | **Wave D5 可选** |
+| CI/CD | CI + CD | CD ✅ |
 
 ---
 
@@ -427,10 +455,11 @@ flowchart LR
 | [`docs/dev-log/`](dev-log/) | 面试向开发复盘（每里程碑一篇） |
 | [`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md) | dev-log 写作规范 |
 | [`JD.md`](JD.md) | 目标岗位 JD 汇总 |
+| [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md) | **Wave D 逐步开发需求**（说「开始 Wave D1」用） |
 | [`ai-pricing-sources.md`](ai-pricing-sources.md) | AI 用量计费出处 |
 | [`java-python-architecture.md`](java-python-architecture.md) | Java + Python 分工草稿 |
 | [`study-plan.md`](study-plan.md) | 原始周计划（Week 13～14） |
 
 ---
 
-*下一步：**push main → Actions 首次 Deploy 验收** → **「开始 1-F」**（HTTPS）或 **「开始 Wave B #5」**（PDF/DOCX RAG）。Wave C（README/portfolio）在 Wave B 完成后进行。*
+*下一步：Agent 模式 **「开始 Wave D1」**（LangChain 混合检索）；或并行 **「开始 1-F」**（HTTPS）。Wave D 细则见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。*

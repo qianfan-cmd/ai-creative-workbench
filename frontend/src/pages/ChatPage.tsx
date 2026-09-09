@@ -14,6 +14,7 @@ import AiImageComposer, { type AiComposerPayload } from '@/components/ai/AiImage
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 import ChatMessageRow from '@/components/chat/ChatMessageRow'
+import FeedbackButtons from '@/components/ai/FeedbackButtons'
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
 import VirtualChatMessageList from '@/components/chat/VirtualChatMessageList'
 import { showApiError } from '@/utils/apiError'
@@ -29,6 +30,7 @@ export interface ChatMessage {
   streaming?: boolean
   /** Phase C：服务端 message.id，持久化后填入 */
   dbId?: number
+  feedbackRating?: 'up' | 'down'
 }
 
 function findUserPromptForAssistant(messages: ChatMessage[], assistantId: string) {
@@ -94,6 +96,7 @@ export default function ChatPage() {
     role: string
     content: string
     imageUrls?: string[]
+    userFeedbackRating?: 'up' | 'down'
   }): ChatMessage {
     return {
       id: String(m.id),
@@ -101,6 +104,7 @@ export default function ChatPage() {
       content: m.content,
       imageUrls: m.imageUrls,
       dbId: m.id,
+      feedbackRating: m.userFeedbackRating,
     }
   }
 
@@ -421,6 +425,16 @@ export default function ChatPage() {
                         : undefined
                     }
                     regenerateDisabled={streaming}
+                    feedback={
+                      msg.role === 'assistant' ? (
+                        <FeedbackButtons
+                          scene="chat"
+                          refType="message"
+                          refId={msg.dbId}
+                          initialRating={msg.feedbackRating ?? null}
+                        />
+                      ) : undefined
+                    }
                   >
                     {msg.role === 'assistant' ? (
                       <AnswerRenderer answer={msg.content} streaming={msg.streaming} />

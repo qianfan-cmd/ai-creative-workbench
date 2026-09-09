@@ -27,6 +27,8 @@
 | **Python** | FastAPI；手写 RAG（split → embed → Chroma → LLM）；PDF/DOCX 解析；Chat 流式与 usage 事件 |
 | **工程化** | Docker 四服务 compose；GitHub Actions CI + CD（GHCR → 阿里云 ECS）；2G 轻量机性能与部署踩坑复盘 |
 
+简历 bullet / STAR / JD 对齐材料见 [`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)。
+
 ---
 
 ## ③ AI 方案

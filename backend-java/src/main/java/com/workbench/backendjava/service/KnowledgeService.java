@@ -1,7 +1,11 @@
 package com.workbench.backendjava.service;
 
+import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.PageResult;
+import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
+import com.workbench.backendjava.vo.KnowledgeBatchDeleteVO;
+import com.workbench.backendjava.vo.KnowledgeBatchUploadVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
 import com.workbench.backendjava.vo.KnowledgeDocumentVO;
 import com.workbench.backendjava.vo.KnowledgeUploadVO;
@@ -21,7 +25,18 @@ public class KnowledgeService {
     private final KnowledgeDocumentService knowledgeDocumentService;
 
     public KnowledgeUploadVO upload(MultipartFile file) {
-        return knowledgeDocumentService.uploadDocument(file);
+        KnowledgeBatchUploadVO batch = knowledgeDocumentService.uploadDocumentsBatch(new MultipartFile[]{file});
+        if (batch.getSucceeded().isEmpty()) {
+            String reason = batch.getFailed().isEmpty()
+                    ? "上传失败"
+                    : batch.getFailed().get(0).getReason();
+            throw new BusinessException(400, reason);
+        }
+        return batch.getSucceeded().get(0);
+    }
+
+    public KnowledgeBatchUploadVO uploadDocumentsBatch(MultipartFile[] files) {
+        return knowledgeDocumentService.uploadDocumentsBatch(files);
     }
 
     public PageResult<KnowledgeDocumentVO> listDocumentsPage(long page, long size, String keyword, String sort) {
@@ -38,6 +53,10 @@ public class KnowledgeService {
 
     public void deleteDocument(Long id) {
         knowledgeDocumentService.deleteDocument(id);
+    }
+
+    public KnowledgeBatchDeleteVO deleteDocumentsBatch(IdsBatchDeleteRequest request) {
+        return knowledgeDocumentService.deleteDocumentsBatch(request);
     }
 
     public KnowledgeDocumentContentVO getDocumentContent(Long id) {

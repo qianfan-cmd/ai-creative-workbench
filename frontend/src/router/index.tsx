@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import { ChatPage, KnowledgePage, KnowledgeDocumentListPage, KnowledgeDocumentEditorPage, CampaignPage, MattingPage, AdminUsersPage } from '@/router/lazyPages'
+import { ChatPage, KnowledgePage, KnowledgeDocumentListPage, KnowledgeDocumentEditorPage, CampaignPage, MattingPage, AdminUsersPage, AdminFeedbackPage } from '@/router/lazyPages'
 import MainLayout from '@/layouts/MainLayout'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
@@ -44,7 +44,10 @@ export const router = createBrowserRouter([
           { path: 'settings', element: <SettingsPage /> },
           {
             element: <AdminGuard />,
-            children: [{ path: 'admin/users', element: <AdminUsersPage /> }],
+            children: [
+              { path: 'admin/users', element: <AdminUsersPage /> },
+              { path: 'admin/feedback', element: <AdminFeedbackPage /> },
+            ],
           },
         ],
       },

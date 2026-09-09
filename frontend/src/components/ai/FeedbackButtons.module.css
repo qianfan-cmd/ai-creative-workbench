@@ -1,0 +1,38 @@
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-secondary, #71717a);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+  color: var(--color-text, #18181b);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btnActiveUp {
+  color: #0d9488;
+}
+
+.btnActiveDown {
+  color: #dc2626;
+}

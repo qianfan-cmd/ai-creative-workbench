@@ -23,6 +23,7 @@ import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd'
 import type { MenuProps } from 'antd'
 
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
+import { useStickToBottomScroll } from '@/hooks/useStickToBottomScroll'
 
 import styles from '@/pages/KnowledgePage.module.css'
 
@@ -46,8 +47,6 @@ import {
 
     updateKnowledgeTurnApi,
 
-    uploadKnowledgeApi,
-
     type KnowledgeSessionVO,
 
     type RagReferenceVO,
@@ -55,11 +54,10 @@ import {
 } from '@/api/knowledge'
 
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
+import FeedbackButtons from '@/components/ai/FeedbackButtons'
 import menuStyles from '@/components/common/SessionRowMenu.module.css'
-import {
-  KNOWLEDGE_ACCEPT_ATTR,
-  validateKnowledgeFile,
-} from '@/constants/knowledgeFormats'
+import { KNOWLEDGE_ACCEPT_ATTR } from '@/constants/knowledgeFormats'
+import { useKnowledgeDocumentUpload } from '@/hooks/useKnowledgeDocumentUpload'
 
 interface IndexedDoc {
     id: string
@@ -98,6 +96,8 @@ interface RagTurn {
 
     phase?: RagPhase
 
+    feedbackRating?: 'up' | 'down'
+
 }
 
 
@@ -113,6 +113,8 @@ function mapTurnFromApi(turn: {
     answer: string
 
     references: RagReferenceVO[]
+
+    userFeedbackRating?: 'up' | 'down'
 
 }): RagTurn {
 
@@ -131,6 +133,8 @@ function mapTurnFromApi(turn: {
         phase: 'done',
 
         streaming: false,
+
+        feedbackRating: turn.userFeedbackRating,
 
     }
 
@@ -288,6 +292,13 @@ function TurnBlock({ turn, copiedId, querying, onCopy, onRetry }: TurnBlockProps
 
                             </button>
 
+                            <FeedbackButtons
+                                scene="rag"
+                                refType="knowledge_turn"
+                                refId={turn.dbId}
+                                initialRating={turn.feedbackRating ?? null}
+                            />
+
                         </div>
 
                     )}
@@ -352,12 +363,6 @@ export default function KnowledgePage() {
 
     const [docs, setDocs] = useState<IndexedDoc[]>([])
 
-    const [uploading, setUploading] = useState(false)
-
-    const fileInputRef = useRef<HTMLInputElement>(null)
-
-
-
     const [sessions, setSessions] = useState<KnowledgeSessionVO[]>([])
 
     const [activeSessionId, setActiveSessionId] = useState<number | null>(null)
@@ -371,6 +376,10 @@ export default function KnowledgePage() {
     const [copiedId, setCopiedId] = useState<string | null>(null)
 
     const abortRef = useRef<AbortController | null>(null)
+    const { scrollRef: threadRef, forceScrollToBottom, notifyContentChanged } = useStickToBottomScroll([
+        turns,
+        querying,
+    ])
 
 
 
@@ -406,7 +415,9 @@ export default function KnowledgePage() {
 
     }, [])
 
-
+    const { uploading, fileInputRef, openFilePicker, handleFileChange } = useKnowledgeDocumentUpload({
+        onSuccess: loadDocuments,
+    })
 
     /** 拉历史会话侧栏 */
 
@@ -534,6 +545,8 @@ export default function KnowledgePage() {
 
                             patchTurn(turnId, { references: refs, phase: 'generating' })
 
+                            notifyContentChanged()
+
                         },
 
                         onChunk: (chunk) => {
@@ -550,13 +563,15 @@ export default function KnowledgePage() {
 
                             )
 
+                            notifyContentChanged()
+
                         },
 
                         onDone: finishTurn,
 
                     },
 
-                    { topK: 3, sessionId, excludeTurnId, signal: controller.signal },
+                    { topK: 6, sessionId, excludeTurnId, signal: controller.signal },
 
                 )
 
@@ -588,7 +603,7 @@ export default function KnowledgePage() {
 
         },
 
-        [patchTurn],
+        [patchTurn, notifyContentChanged],
 
     )
 
@@ -646,56 +661,6 @@ export default function KnowledgePage() {
 
 
 
-    const handlePickFile = () => fileInputRef.current?.click()
-
-
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-
-        const file = e.target.files?.[0]
-
-        e.target.value = ''
-
-        if (!file) return
-
-
-
-        const err = validateKnowledgeFile(file)
-
-        if (err) {
-
-            message.error(err)
-
-            return
-
-        }
-
-
-
-        setUploading(true)
-
-        try {
-
-            const result = await uploadKnowledgeApi(file)
-
-            message.success(`已索引 ${result.indexedCount} 个片段`)
-
-            await loadDocuments()
-
-        } catch (error) {
-
-            message.error(error instanceof Error ? error.message : '上传失败')
-
-        } finally {
-
-            setUploading(false)
-
-        }
-
-    }
-
-
-
     const handleQuery = async () => {
 
         const question = draft.trim()
@@ -740,7 +705,7 @@ export default function KnowledgePage() {
 
             ])
 
-
+            forceScrollToBottom()
 
             const result = await streamTurn(turnId, question, sessionId)
 
@@ -773,6 +738,8 @@ export default function KnowledgePage() {
         setQuerying(true)
 
         try {
+
+            forceScrollToBottom()
 
             const result = await streamTurn(
                 turnId,
@@ -838,6 +805,7 @@ export default function KnowledgePage() {
                         const detail = await getKnowledgeSessionApi(nextList[0].id)
                         setActiveSessionId(detail.id)
                         setTurns(detail.turns.map(mapTurnFromApi))
+                        forceScrollToBottom()
                     } else {
                         setActiveSessionId(null)
                         setTurns([])
@@ -897,6 +865,7 @@ export default function KnowledgePage() {
             setActiveSessionId(detail.id)
 
             setTurns(detail.turns.map(mapTurnFromApi))
+            forceScrollToBottom()
 
         } catch (error) {
 
@@ -997,11 +966,13 @@ export default function KnowledgePage() {
 
                             type="file"
 
+                            multiple
+
                             accept={KNOWLEDGE_ACCEPT_ATTR}
 
                             className={styles.hiddenInput}
 
-                            onChange={handleFileChange}
+                            onChange={(e) => void handleFileChange(e)}
 
                         />
 
@@ -1009,11 +980,13 @@ export default function KnowledgePage() {
 
                             type="primary"
 
+                            htmlType="button"
+
                             block
 
                             loading={uploading}
 
-                            onClick={handlePickFile}
+                            onClick={openFilePicker}
 
                             className={styles.uploadBtn}
 
@@ -1186,7 +1159,7 @@ export default function KnowledgePage() {
 
                 <section className={styles.main}>
 
-                    <div className={styles.thread}>
+                    <div className={styles.thread} ref={threadRef}>
 
                         {turns.length === 0 && !querying && (
 
