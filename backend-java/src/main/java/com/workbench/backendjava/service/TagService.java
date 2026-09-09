@@ -53,7 +53,8 @@ public class TagService {
         tagMapper.insert(tag);
         log.info("标签创建成功，tagId{}, name={}", tag.getId(), tag.getName());
 
-        return toTagVO(tag);
+        Tag saved = tagMapper.selectById(tag.getId());
+        return toTagVO(saved != null ? saved : tag);
     }
 
     private TagVO toTagVO(Tag tag) {
@@ -114,7 +115,8 @@ public class TagService {
         tagMapper.updateById(exist);
 
         log.info("标签更新成功, tagId={}, name={}", id, exist.getName());
-        return toTagVO(exist);
+        Tag saved = tagMapper.selectById(id);
+        return toTagVO(saved != null ? saved : exist);
     }
 
     /**
