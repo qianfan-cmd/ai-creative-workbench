@@ -1,6 +1,6 @@
 # AI Creative Workbench — 项目迭代计划表
 
-> 更新日期：2026-09-09（Wave D 方案入档）  
+> 更新日期：2026-09-10（Wave D D1.8 Admin 信号 + embed filename）  
 > 目标岗位：AI 应用前端 / AI 全栈（腾讯 AI 应用工程师、字节 AIGC / 飞书 Agent 全栈等）  
 > 说明：本文仅作计划与验收清单；每项具体用 **Chat 带着做** 还是 **Agent 直接做**，实施时再定。
 
@@ -297,11 +297,12 @@ flowchart LR
 | Wave | 主题 | 预估 | 核心产出 | 状态 |
 |------|------|------|----------|------|
 | **D1** | LangChain 混合检索 + 调优 v1 | 2～3d | BM25+向量+RRF、threshold | ✅ |
-| **D1.5** | RAG 质量 + 9 步闭环 | 4～5d | 改写/rerank/chunk/trace/G-Resume | ✅ 待 re-index 验收 |
+| **D1.5** | RAG 质量 + 9 步闭环 | 4～5d | 改写/rerank/chunk/trace/G-Resume | ✅ |
+| **D1.8** | Admin 信号 + embed filename | 1d | 撤销 penalize/boost、全库 reindex、embed 含 filename | ✅ 待手测 |
 | **D2** | Tool Router + Tavily | 2d | 知识库优先、联网兜底 | ⬜ |
 | **D3** | AI 反馈闭环 | 1～2d | `ai_feedback` 表、RAG/Chat 👍👎、Admin stats | ✅ |
 | **D4** | 上下文管理 | 1d | Chat 清空上下文、生图清空附件、无隐式 reference | ⬜ |
-| **D6** | 评测与面试材料 | 0.5～1d | rag-eval Golden Set、interview STAR、portfolio 更新 | ⬜ |
+| **D6** | 评测与面试材料 | 0.5～1d | rag-eval Golden Set、interview STAR、portfolio/resume 更新 | 进行中（resume ✅，Golden 待填） |
 | **D5** | Redis（可选） | 1d | 限流或 embedding 缓存 | ⬜ |
 
 **建议顺序：** D1 → **D1.5** → D3 → D2 → D4 → D6 → D5（可选）；**1-F HTTPS** 可并行。

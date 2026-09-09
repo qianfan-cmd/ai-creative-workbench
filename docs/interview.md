@@ -31,12 +31,12 @@
 
 ---
 
-## 3. 手写 RAG 流水线
+## 3. 混合 RAG 流水线（Wave D1 + D1.5）
 
-**S** 知识库问答需要「有依据、可引用」，不能只调 Chat。  
-**T** 实现入库 + 检索 + 生成，且能讲清每一步。  
-**A** Python：`parse → split(400,50) → embed → Chroma`；问答 `embed(question) → top_k → prompt 约束仅依据资料 → stream LLM`；references 带 source/index。Java BFF 转发，前端展示角标。  
-**R** md/txt 文档问答准确，references 可点击溯源；未引入 LangChain 降低黑盒度。
+**S** 知识库问答需要「有依据、可引用」；纯向量 top3 漏专有名词、简历列举不全。  
+**T** 实现可诊断的入库 + 混合检索 + rerank + 生成，生成/Prompt/SSE 保持手写。  
+**A** 入库：semantic chunk + AI 打标 + `build_embed_text`  enriched embed；问答：Query 改写 → hybrid 30 候选 → BGE rerank → top 6 → 流式 LLM；`RAG_TRACE` 分阶段归因。Java BFF 转发，前端 references 角标。  
+**R** 4 格式文档可问答；30→6 检索链可演示；LangChain **仅检索链**，生成侧无黑盒。
 
 📄 [`rag-eval.md`](rag-eval.md)
 
@@ -106,30 +106,42 @@
 
 ---
 
+## 9. Admin 文档信号 + Embedding 含 Filename（D1.8）
+
+**S** 点踩 penalize 后 Admin 无法撤销；dense 检索对文件名关键词（如 PNG）弱。  
+**T** 运营可管的文档级信号 + 升级 embedding 输入，references 不被污染。  
+**A** `rag_source_signal` + Admin 撤销 API；`build_embed_text` 与 rerank 格式对齐，documents 存纯 content；全库 reindex + 超时分级（10min）。  
+**R** 反馈闭环可演示写入/撤销；reindex 后 filename 进入 dense（待 Golden 手测一句）。
+
+📄 [`dev-log/2026-09-rag-admin-embed-signals.md`](dev-log/2026-09-rag-admin-embed-signals.md)
+
+---
+
 ## 使用建议
 
-1. **投递前**：挑 3 个故事练熟——RAG（#3+#4）、Chat 流式（#1）、CD（#5）。  
+1. **投递前**：挑 3 个故事练熟——RAG（#3+#4+#9）、Chat 流式（#1）、CD（#5）。  
 2. **全栈岗**：加 #7 性能、#6 多模态。  
-3. **AI 应用岗**：强调 #3/#4/#8，边界（无 OCR）主动说。  
+3. **AI 应用岗**：强调 #3/#4/#8/#9，边界（无 OCR）主动说。  
 4. 每个故事准备 **1 个失败尝试**（dev-log 里「放弃的方案」）。
 
 ---
 
 ## 简历 Bullet 参考
 
-> 完整 bullet 库、STAR 30s/60s、JD 映射 → [`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)  
+> **可直接复制的完整项目段落：** [`resume-project.md`](resume-project.md)  
+> bullet 库、JD 映射 → [`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)  
 > 完成状态以 [`project-roadmap.md`](project-roadmap.md) §9 为准。
 
-### Wave C 版（4 条 · 当前投递默认 · 已验收）
+### 当前投递版（推荐 · 完整段落）
 
-- 独立设计并实现 React + Spring Boot + FastAPI 三端架构，Docker Compose **4 服务** + GitHub Actions **CI/CD**（GHCR → 阿里云 ECS），镜像 **commit SHA** 版本化，公网 Demo 可重复部署。  
-- 实现 RAG「解析 → chunk → embed → Chroma → 流式问答 + references」流水线，插件化扩展 **PDF/DOCX**（**4** 种格式，DOCX ~**7000** 字可问答），references 可溯源。  
-- Chat SSE 流式 + 虚拟列表双模式（**1000+** 条流畅），**7** 页路由 lazy load + 统一 **401/502/断网** 中文错误体验。  
-- 2G ECS 素材页定位标签 **N+1**（~**80+** SQL/页）→ 批量 **2** 次查询 + 懒加载，修复 nginx `/assets` 冲突，保障 Demo 刷新稳定。
+见 **[`resume-project.md`](resume-project.md)** — 含 5 条「个人项目成果」+ 2 条 STAR + 诚实档位说明。
 
-### Wave D 加强版（D1.5 验收全绿后追加 · 已交付待验收）
+### 精简 4 bullet 版（空间不够时用 · 已验收）
 
-- LangChain **检索链**（BM25 + 向量 + RRF），**30** 候选 → BGE rerank → **top 6** 进 Prompt；Query 改写、结构化 chunk、**RAG_TRACE** 与 Golden Set 闭环。（**非** LangChain 全家桶；生成/Prompt/SSE 仍手写）
+- 独立设计并实现 React + Spring Boot + FastAPI 三端，Docker **4 服务** + GitHub Actions **CI/CD** 部署 **2G** ECS，公网 Demo 可重复更新。  
+- 混合 RAG：**30** 候选 → BGE rerank → **top 6**；**4** 格式文档 + 反馈闭环 + Admin 信号运营。（LangChain **仅检索链**）  
+- Chat SSE + 虚拟列表双模式（**1000+** 条）；**8** 页 lazy load + 统一 **401/502/断网** 中文错误。  
+- 素材页 **N+1**（~**80+** SQL/页）→ 批量 **2** 次查询，修复 nginx `/assets` **502**。
 
 ### 技术规划（D2–D6 · 规划中 · 正式简历默认不写）
 

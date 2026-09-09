@@ -24,10 +24,11 @@
 |------|----------|
 | **前端** | Studio Neutral 设计体系；Chat SSE + 虚拟列表双模式；路由 lazy load；统一 API 错误；知识库 / 素材 / Campaign 业务页 |
 | **Java** | JWT 鉴权、素材与知识库 CRUD、文件上传、SSE 转发、AI 调用日志（`ai_call_log`）、Python 客户端封装 |
-| **Python** | FastAPI；手写 RAG（split → embed → Chroma → LLM）；PDF/DOCX 解析；Chat 流式与 usage 事件 |
+| **Python** | FastAPI；混合 RAG（语义 chunk → embed → Chroma → hybrid+rerank → LLM）；PDF/DOCX 解析；反馈分诊与自愈 |
 | **工程化** | Docker 四服务 compose；GitHub Actions CI + CD（GHCR → 阿里云 ECS）；2G 轻量机性能与部署踩坑复盘 |
 
-简历 bullet / STAR / JD 对齐材料见 [`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)。
+**简历正文（可直接复制）：** [`resume-project.md`](resume-project.md)  
+STAR / JD 对齐见 [`interview.md`](interview.md)、[`.cursor/skills/resume-project-expert/`](../.cursor/skills/resume-project-expert/SKILL.md)。
 
 ---
 
@@ -38,18 +39,21 @@
 - 前端 **只调 Java**，不直连 Python（统一鉴权与错误模型）。
 - Python 专注 **模型、向量、文档解析**；业务状态与文件在 Java + MySQL。
 
-### 3.2 RAG 流水线（手写，非 LangChain 全家桶）
+### 3.2 RAG 流水线（生成/Prompt/SSE 手写；LangChain 仅检索链）
 
 ```
-上传文档 → 按后缀解析为 plain text
-         → split（400 字 / overlap 50）
-         → Embedding API 批量向量化
-         → 写入 Chroma（metadata: source, document_id, index）
-问答     → 问题 embed → TopK 检索 → Prompt 约束「仅依据参考资料」→ 流式回答 + references
+入库     → parse（md/txt/pdf/docx）
+         → semantic_chunk + AI 打标
+         → build_embed_text(文档:filename 小节:heading 摘要:summary + content) → embed
+         → Chroma（documents=纯 content；metadata: section/heading/tags/...）
+问答     → Query 改写 + multi-query hybrid（dense+BM25+tag+RRF, 30 候选）
+         → BGE rerank → select_context(top 6) → Prompt（列举穷尽）→ 流式 LLM + references
+反馈     → 👍/👎 → 分诊 Agent → penalize/boost/reindex → Admin 可撤销信号 / 全库 re-index
 ```
 
 **格式支持：** `.md` / `.txt` / `.pdf` / `.docx`  
-**边界：** 无 OCR（扫描版 PDF / 纯图片 DOCX 明确报错）；二进制文档只读预览、更新需重传。
+**边界：** 无 OCR（扫描版 PDF / 纯图片 DOCX 明确报错）；二进制文档只读预览、更新需重传。  
+**embedding 升级：** 旧文档需 Admin「重建全库向量」一次后 filename 才进入 dense 向量。
 
 ### 3.3 Chat 与其它 AI 能力
 
@@ -71,6 +75,9 @@
 | 文本框版 DOCX 简历 | docx2txt 提取 ~7000 字，RAG 可引用 ✅ |
 | Chat 长会话 | 虚拟列表 + 流式双模式，布局不重叠 ✅ |
 | 素材页 2G ECS | N+1 优化 + 懒加载，刷新稳定 ✅ |
+| RAG 混合检索 + rerank | 30 候选 → BGE → top 6，trace 可诊断 ✅ |
+| AI 反馈闭环 | 👍👎 持久化 + Admin 统计 + 文档信号撤销 ✅ |
+| Admin 全库 re-index | embedding 含 filename 后一键重建 ✅ |
 
 **建议现场演示路径（约 3 分钟）：**
 

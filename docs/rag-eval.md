@@ -31,10 +31,15 @@
 ```
 POST /ai/documents/index
   → parse_upload_file
-  → split_text_structured（标题/空行 → 超长 fallback 400/50）
-  → embed_texts
-  → Chroma（metadata: source, index, section, heading, document_id）
+  → semantic_chunk（LLM 语义边界 + 规则 fallback 400/50）
+  → knowledge_tagger（文档/chunk AI 打标）
+  → build_embed_text(文档:filename 小节:heading 摘要:summary + content)
+  → embed_texts(enriched) + add_chunks(documents=纯 content)
+  → Chroma（metadata: source, index, section, heading, tags, document_id）
 ```
+
+**D1.8b embed 升级：** 向量编码 enriched 文本；展示/references 仍为纯 chunk content。  
+**已有文档：** Admin `POST /api/admin/knowledge/reindex-all` 全库重建后 dense 方可命中 filename 关键词。
 
 ### 1.2 问答路径（Wave D1.5）
 
@@ -118,6 +123,8 @@ POST /ai/rag/query-stream
 | `retrieval/reranker.py` | BGE rerank |
 | `retrieval/context_selector.py` | 证据选取 |
 | `retrieval/rag_trace.py` | 分阶段 trace |
+| `embed_text_builder.py` | 入库 embed 文本（含 filename/heading/summary） |
+| `source_signal_client.py` | rerank 拉取 Java `rag_source_signal`（30s 缓存） |
 | `text_splitter.py` | 结构化 chunk |
 | `rag_service.py` | Prompt + 流式 |
 | `tests/test_d15_modules.py` | D1.5 单测 |

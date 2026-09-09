@@ -7,6 +7,7 @@
 **产品截图导览：** [`docs/portfolio.md#产品截图导览`](docs/portfolio.md#产品截图导览)（逐页说明 + 占位图）
 
 **作品说明（投递用）：** [`docs/portfolio.md`](docs/portfolio.md)  
+**简历项目经历（可直接复制）：** [`docs/resume-project.md`](docs/resume-project.md)  
 **架构详解：** [`docs/architecture.md`](docs/architecture.md)  
 **面试 STAR：** [`docs/interview.md`](docs/interview.md)
 
@@ -17,7 +18,7 @@
 | 模块 | 说明 |
 |------|------|
 | **素材库** | 上传、标签、Grid/List、懒加载；2G ECS 下 N+1 优化与分页 |
-| **知识库 RAG** | md/txt/pdf/docx 入库 → chunk → embed → Chroma；流式问答 + 引用来源 |
+| **知识库 RAG** | 4 格式入库 → 语义 chunk → hybrid+rerank → 流式问答 + 引用；👍👎 反馈闭环 |
 | **AI Chat** | SSE 流式输出；虚拟列表 + 流式双模式；可选参考图多模态 |
 | **Campaign / 抠图** | 活动帖配图、AI 方案生成、Matting 任务侧栏 |
 | **工程化** | Docker 四服务、GitHub Actions CI/CD、GHCR → ECS 一键部署 |
