@@ -131,7 +131,6 @@ public class KnowledgeSessionService {
             sessionMapper.updateById(session);
         }
 
-        Long userId = requireUserId();
         String rating = aiFeedbackService.getRatingMapForRefs(userId, "knowledge_turn", List.of(turnId))
                 .get(turnId);
         return toTurnVO(turn, rating);
