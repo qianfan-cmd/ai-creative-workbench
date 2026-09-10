@@ -75,4 +75,8 @@ pnpm-debug.log*
 # =========================
 uploads/
 storage/
+.npm-cache/
 
+美术机台_需求文档Module.md
+docs/html/
+workbench_backup.sql
