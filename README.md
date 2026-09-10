@@ -23,9 +23,7 @@
 | **Campaign / 抠图** | 活动帖配图、AI 方案生成、Matting 任务侧栏 |
 | **工程化** | Docker 四服务、GitHub Actions CI/CD、GHCR → ECS 一键部署 |
 
-### 产品界面（截图占位）
-
-放入 [`docs/screenshots/`](docs/screenshots/) 后下方自动显示。拍摄清单见 [`docs/screenshots/README.md`](docs/screenshots/README.md)。
+### 产品界面
 
 | | |
 |:---:|:---:|
@@ -132,9 +130,6 @@ ai-creative-workbench/
 
 ---
 
-## 个人定位（简历一句话）
-
-> 前端工程背景的全栈 AI 应用开发者：React 流式交互 + Java BFF 工程闭环 + Python 手写 RAG，独立交付可公网演示的三端项目。
 
 ---
 
