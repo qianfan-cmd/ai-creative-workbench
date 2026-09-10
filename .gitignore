@@ -75,4 +75,4 @@ pnpm-debug.log*
 # =========================
 uploads/
 storage/
-*.sql
+
