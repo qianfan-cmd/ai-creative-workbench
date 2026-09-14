@@ -430,29 +430,30 @@ CI 见 [`.github/workflows/githubCI.yml`](../.github/workflows/githubCI.yml)；C
 
 ---
 
-## 12. GitHub Actions CD（GHCR → ECS）
+## 12. GitHub Actions CD（GHCR / ACR → ECS）
 
-> 更新日期：2026-09-08 · Roadmap **3d**
+> 更新日期：2026-09-14 · 增加 ACR 国内拉取 + Deploy SSH 超时修复
 
 ### 12.1 流程概览
 
 ```
 GitHub Actions (workflow_dispatch)
-  ├─ mvn package + docker build → push GHCR (backend / frontend / ai)
+  ├─ mvn package + docker build → push GHCR (+ 可选 push 阿里云 ACR)
   └─ SSH ECS → git pull → compose pull/up（仅三业务容器，MySQL 不动）
+       └─ ECS 优先从 ACR 拉镜像（配了 ACR Secrets 时）；否则回退 GHCR
 ```
 
-| 镜像 | GHCR 地址 |
-|------|-----------|
-| Backend | `ghcr.io/qianfan-cmd/ai-creative-workbench/backend:<tag>` |
-| Frontend | `ghcr.io/qianfan-cmd/ai-creative-workbench/frontend:<tag>` |
-| AI | `ghcr.io/qianfan-cmd/ai-creative-workbench/ai:<tag>` |
+| 镜像 | GHCR（备份 / Packages 页） | ECS 生产拉取（推荐） |
+|------|---------------------------|----------------------|
+| Backend | `ghcr.io/qianfan-cmd/ai-creative-workbench/backend:<tag>` | `${ACR_REGISTRY}/${ACR_NAMESPACE}/backend:<tag>` |
+| Frontend | `ghcr.io/.../frontend:<tag>` | `${ACR_REGISTRY}/${ACR_NAMESPACE}/frontend:<tag>` |
+| AI | `ghcr.io/.../ai:<tag>` | `${ACR_REGISTRY}/${ACR_NAMESPACE}/ai:<tag>` |
 
-每次部署打两个 tag：**`<commit-sha>`** 与 **`latest`**。ECS 上通过 `.env.workbench` 指定 `WORKBENCH_IMAGE_TAG`（默认用本次 commit SHA）。
+每次部署打两个 tag：**`<commit-sha>`** 与 **`latest`**。ECS 上 `.env.workbench` 写入 `WORKBENCH_IMAGE_TAG` 与 `IMAGE_PREFIX`（由 [`deploy.yml`](../.github/workflows/deploy.yml) SSH 脚本生成）。
 
 ### 12.2 首次启用前（一次性）
 
-1. **把本仓库 CD 相关改动 push 到 `main`**（含 `docker-compose.prod.yml` 的 GHCR `image:`、`deploy.yml`）。
+1. **把本仓库 CD 相关改动 push 到 `main`**（含 `docker-compose.prod.yml` 的 `IMAGE_PREFIX`、`deploy.yml` ACR/超时）。
 2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加：
 
 | Secret | 示例值 | 说明 |
@@ -461,7 +462,20 @@ GitHub Actions (workflow_dispatch)
 | `ECS_USER` | `root` | SSH 用户 |
 | `ECS_SSH_KEY` | （私钥全文） | 对应 ECS 上已授权的 key |
 | `ECS_DEPLOY_PATH` | `/root/ai-creative-workbench` | 项目目录 |
-| `GHCR_PAT` | （可选） | 若 GHCR 包为 **private**，需 `read:packages` PAT；公开仓库包通常可省略 |
+| `GHCR_PAT` | （可选） | 未配 ACR 时 ECS 从 GHCR pull；GHCR 包 **private** 时必填 |
+| `ACR_REGISTRY` | `registry.cn-hangzhou.aliyuncs.com` | **推荐** 阿里云 ACR 地址（与 ECS 同地域） |
+| `ACR_NAMESPACE` | `workbench` | ACR 命名空间 |
+| `ACR_USERNAME` | （ACR 固定凭证用户名） | Actions push + ECS pull 登录用 |
+| `ACR_PASSWORD` | （ACR 固定凭证密码） | 同上 |
+
+#### 12.2.1 阿里云 ACR 一次性配置（推荐）
+
+1. 登录 [容器镜像服务 ACR](https://cr.console.aliyun.com/) → **个人版** 即可。
+2. 创建**命名空间**，例如 `workbench`。
+3. 创建三个**镜像仓库**（与 compose 服务名一致）：`backend`、`frontend`、`ai`。
+4. **访问凭证** → 设置固定用户名/密码 → 填入 GitHub Secrets：`ACR_USERNAME`、`ACR_PASSWORD`。
+5. 复制**公网地址**（如 `registry.cn-hangzhou.aliyuncs.com`）→ Secret `ACR_REGISTRY`；命名空间 → `ACR_NAMESPACE`。
+6. push 本仓库 `main` 后 Run workflow：**Build** 会双 push GHCR + ACR；**Deploy** 会 login ACR 并 `compose pull`。
 
 3. ECS 上确认已有 `ai-service-python/.env`（API Key 等），**不会被 CD 覆盖**。
 4. **ECS 上创建 backend 密钥文件**（只需一次，CD 不会覆盖）：
@@ -478,14 +492,19 @@ MySQL 密码由 `docker-compose.yml` 的 `SPRING_DATASOURCE_PASSWORD: workbench`
 
 ```bash
 cd /root/ai-creative-workbench
-echo "WORKBENCH_IMAGE_TAG=latest" > .env.workbench
+cat > .env.workbench <<'EOF'
+WORKBENCH_IMAGE_TAG=latest
+IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/workbench
+EOF
+# 未配 ACR 时用 GHCR：
+# IMAGE_PREFIX=ghcr.io/qianfan-cmd/ai-creative-workbench
 docker compose --env-file .env.workbench -f docker-compose.yml -f docker-compose.prod.yml config | grep image
 ```
 
 ### 12.3 触发部署
 
 1. 打开 GitHub → **Actions** → **Deploy to ECS** → **Run workflow**。
-2. 默认：构建当前 commit 三镜像 → push GHCR → SSH 部署。
+2. 默认：构建当前 commit 三镜像 → push GHCR（+ 配了 ACR Secrets 时同步 push ACR）→ SSH 部署。
 3. 可选输入：
    - **image_tag**：指定要拉取的 tag（回滚时用旧 commit SHA）。
    - **skip_build**：勾选后跳过构建，仅 ECS 上 `pull` + `up -d`（配合 **image_tag** 回滚）。
@@ -497,8 +516,13 @@ docker compose --env-file .env.workbench -f docker-compose.yml -f docker-compose
 ```bash
 cd /root/ai-creative-workbench
 git pull origin main
-echo "WORKBENCH_IMAGE_TAG=<sha>" > .env.workbench
-# 若 GHCR 包 private：echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
+cat > .env.workbench <<EOF
+WORKBENCH_IMAGE_TAG=<sha>
+IMAGE_PREFIX=registry.cn-hangzhou.aliyuncs.com/workbench
+EOF
+# ACR（推荐）：
+echo "$ACR_PASSWORD" | docker login registry.cn-hangzhou.aliyuncs.com -u "$ACR_USERNAME" --password-stdin
+# 或 GHCR 回退：echo "$GHCR_PAT" | docker login ghcr.io -u qianfan-cmd --password-stdin
 docker compose --env-file .env.workbench \
   -f docker-compose.yml -f docker-compose.prod.yml \
   pull backend frontend ai
@@ -521,7 +545,7 @@ MySQL 与 volume（`mysql_data`、`uploads_data`）**不会**被重建。
 | 场景 | 镜像来源 |
 |------|----------|
 | 本机开发 / 手工部署 | `docker build -t workbench-*:latest`（见 §3） |
-| ECS 生产（CD 后） | GHCR + `docker-compose.prod.yml` |
+| ECS 生产（CD 后） | ACR（推荐）或 GHCR + `docker-compose.prod.yml` |
 
 本机仍用 `docker-compose.yml` 默认的 `workbench-*:latest`；**不要**在本机混用 prod 覆盖，除非已 login GHCR 并设置了 `WORKBENCH_IMAGE_TAG`。
 
@@ -534,7 +558,29 @@ MySQL 与 volume（`mysql_data`、`uploads_data`）**不会**被重建。
 
 复盘见 [`dev-log/2026-09-github-actions-cd.md`](dev-log/2026-09-github-actions-cd.md)。
 
-### 12.8 完整原理（配置与请求两条线）
+### 12.8 Deploy 拉镜像超时（GHCR `Pulling fs layer 0B`）
+
+| 项 | 说明 |
+|----|------|
+| 现象 | Actions **Deploy on ECS** 约 **10m** 失败；日志停在 `docker compose pull`；层显示 `Pulling fs layer 0B` |
+| 根因 | 阿里云 ECS 访问 **ghcr.io** 跨境慢/不稳定；AI 镜像含 torch 体积大；原 SSH 步骤默认 **10 分钟** 超时 |
+| 已做修复 | [`deploy.yml`](../.github/workflows/deploy.yml)：`command_timeout: 45m` + pull 起止日志；**ACR 双 push + ECS 从 ACR pull** |
+| 手动验证 | ECS 上运行 [`scripts/verify-ecs-image-pull.sh`](../scripts/verify-ecs-image-pull.sh)（需 `IMAGE_TAG` + ACR 或 `GHCR_PAT`） |
+
+```bash
+# ECS 上示例
+cd /root/ai-creative-workbench
+export IMAGE_TAG='<commit-sha>'
+export ACR_REGISTRY='registry.cn-hangzhou.aliyuncs.com'
+export ACR_NAMESPACE='workbench'
+export ACR_USERNAME='...'
+export ACR_PASSWORD='...'
+bash scripts/verify-ecs-image-pull.sh
+```
+
+若 `time docker pull` 单镜像仍 **>15 分钟**，检查 ACR 是否与 ECS **同地域**、安全组是否放行 443。
+
+### 12.9 完整原理（配置与请求两条线）
 
 **配置线：谁在哪儿读密钥**
 
@@ -562,7 +608,7 @@ Spring Boot 启动顺序：**先解析 YAML** → 再合并 `application-local.y
 若 backend 容器 Exited → Nginx 502 Bad Gateway（登录页静态资源仍正常）
 ```
 
-### 12.9 踩坑实录（2026-09 首次 CD 上线）
+### 12.10 踩坑实录（2026-09 首次 CD 上线）
 
 #### A. SSH：`unable to authenticate, attempted methods [none publickey]`
 
@@ -589,7 +635,7 @@ Spring Boot 启动顺序：**先解析 YAML** → 再合并 `application-local.y
 
 **日常发版不需要改任何密码**；只有换 JWT / 换 AI Key 时才改 ECS 上对应文件。
 
-### 12.10 SSH 密钥一次性配置步骤
+### 12.11 SSH 密钥一次性配置步骤
 
 ```bash
 # 本机：生成密钥（无 passphrase）
@@ -606,7 +652,7 @@ chmod 600 ~/.ssh/authorized_keys
 ssh -i ~/.ssh/workbench_deploy root@8.148.238.164
 ```
 
-### 12.11 ECS 密钥文件一次性配置
+### 12.12 ECS 密钥文件一次性配置
 
 ```bash
 cd /root/ai-creative-workbench
@@ -615,7 +661,7 @@ nano .env.secrets   # JWT_SECRET=至少32位随机字符串
 # ai-service-python/.env 同理，填 MODEL_API_KEY 等
 ```
 
-### 12.12 ECS Demo 数据持久化（MySQL volume）
+### 12.13 ECS Demo 数据持久化（MySQL volume）
 
 公网 Demo 的 MySQL 数据保存在 Docker **命名卷** `mysql_data`（见 `docker-compose.yml`）。以下操作会导致 **历史数据丢失**（含 `ai_feedback`、RAG 信号等 Wave D3 表）：
 

@@ -16,15 +16,19 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_REPO: ghcr.io/qianfan-cmd/ai-creative-workbench
+  GHCR_IMAGE_PREFIX: ghcr.io/qianfan-cmd/ai-creative-workbench
 
 jobs:
   build-and-push:
-    name: Build & push GHCR images
+    name: Build & push images
     if: ${{ inputs.skip_build != true }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+      ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +37,14 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun ACR
+        if: env.ACR_REGISTRY != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -46,15 +58,38 @@ jobs:
         working-directory: backend-java
         run: mvn -B package -DskipTests
 
+      - name: Prepare image tags
+        id: image_tags
+        run: |
+          write_tags() {
+            local name="$1"
+            local file="tags-${name}.txt"
+            {
+              echo "${IMAGE_REPO}/${name}:${GITHUB_SHA}"
+              echo "${IMAGE_REPO}/${name}:latest"
+              if [ -n "${ACR_REGISTRY}" ] && [ -n "${ACR_NAMESPACE}" ]; then
+                echo "${ACR_REGISTRY}/${ACR_NAMESPACE}/${name}:${GITHUB_SHA}"
+                echo "${ACR_REGISTRY}/${ACR_NAMESPACE}/${name}:latest"
+              fi
+            } > "$file"
+            echo "${name}_tags<<EOF" >> "$GITHUB_OUTPUT"
+            cat "$file" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          }
+          write_tags backend
+          write_tags frontend
+          write_tags ai
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          IMAGE_REPO: ${{ env.IMAGE_REPO }}
+
       - name: Push backend image
         uses: docker/build-push-action@v6
         with:
           context: backend-java
           file: backend-java/Dockerfile.runtime
           push: true
-          tags: |
-            ${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
-            ${{ env.IMAGE_REPO }}/backend:latest
+          tags: ${{ steps.image_tags.outputs.backend_tags }}
 
       - name: Push frontend image
         uses: docker/build-push-action@v6
@@ -62,9 +97,7 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
-            ${{ env.IMAGE_REPO }}/frontend:latest
+          tags: ${{ steps.image_tags.outputs.frontend_tags }}
 
       - name: Push AI service image
         uses: docker/build-push-action@v6
@@ -72,9 +105,7 @@ jobs:
           context: ai-service-python
           file: ai-service-python/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_REPO }}/ai:${{ github.sha }}
-            ${{ env.IMAGE_REPO }}/ai:latest
+          tags: ${{ steps.image_tags.outputs.ai_tags }}
 
   deploy:
     name: Deploy on ECS
@@ -101,26 +132,45 @@ jobs:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           ECS_DEPLOY_PATH: ${{ secrets.ECS_DEPLOY_PATH }}
           GHCR_USER: ${{ github.repository_owner }}
+          GHCR_IMAGE_PREFIX: ${{ env.GHCR_IMAGE_PREFIX }}
+          ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
-          envs: WORKBENCH_IMAGE_TAG,GHCR_PAT,ECS_DEPLOY_PATH,GHCR_USER
+          command_timeout: 45m
+          envs: WORKBENCH_IMAGE_TAG,GHCR_PAT,ECS_DEPLOY_PATH,GHCR_USER,GHCR_IMAGE_PREFIX,ACR_REGISTRY,ACR_NAMESPACE,ACR_USERNAME,ACR_PASSWORD
           script: |
             set -euo pipefail
             DEPLOY_PATH="${ECS_DEPLOY_PATH:-/root/ai-creative-workbench}"
             cd "$DEPLOY_PATH"
             git pull origin main
-            echo "WORKBENCH_IMAGE_TAG=${WORKBENCH_IMAGE_TAG}" > .env.workbench
-            if [ -n "${GHCR_PAT:-}" ]; then
+
+            {
+              echo "WORKBENCH_IMAGE_TAG=${WORKBENCH_IMAGE_TAG}"
+              if [ -n "${ACR_REGISTRY:-}" ] && [ -n "${ACR_NAMESPACE:-}" ]; then
+                echo "IMAGE_PREFIX=${ACR_REGISTRY}/${ACR_NAMESPACE}"
+              else
+                echo "IMAGE_PREFIX=${GHCR_IMAGE_PREFIX}"
+              fi
+            } > .env.workbench
+
+            if [ -n "${ACR_REGISTRY:-}" ] && [ -n "${ACR_USERNAME:-}" ] && [ -n "${ACR_PASSWORD:-}" ]; then
+              echo "=== docker login ACR (${ACR_REGISTRY}) ==="
+              echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" -u "$ACR_USERNAME" --password-stdin
+            elif [ -n "${GHCR_PAT:-}" ]; then
+              echo "=== docker login GHCR (fallback) ==="
               echo "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             fi
-            docker compose --env-file .env.workbench \
-              -f docker-compose.yml -f docker-compose.prod.yml \
-              pull backend frontend ai
-            docker compose --env-file .env.workbench \
-              -f docker-compose.yml -f docker-compose.prod.yml \
-              up -d backend frontend ai
-            docker compose --env-file .env.workbench \
-              -f docker-compose.yml -f docker-compose.prod.yml \
-              ps
+
+            COMPOSE="docker compose --env-file .env.workbench -f docker-compose.yml -f docker-compose.prod.yml"
+
+            echo "=== pull start $(date -Is) tag=${WORKBENCH_IMAGE_TAG} prefix=$(grep IMAGE_PREFIX .env.workbench) ==="
+            $COMPOSE pull backend frontend ai
+            echo "=== pull done $(date -Is) ==="
+
+            $COMPOSE up -d backend frontend ai
+            $COMPOSE ps
