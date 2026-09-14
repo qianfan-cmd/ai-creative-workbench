@@ -1,6 +1,8 @@
 package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.entity.RagFeedbackAction;
 import com.workbench.backendjava.mapper.RagFeedbackActionMapper;
 import com.workbench.backendjava.vo.RagFeedbackActionVO;
@@ -36,13 +38,18 @@ public class RagFeedbackActionService {
         actionMapper.insert(row);
     }
 
-    public List<RagFeedbackActionVO> listRecent(int limit) {
-        int n = Math.min(Math.max(limit, 1), 100);
-        return actionMapper.selectList(
+    public PageResult<RagFeedbackActionVO> listPage(long page, long size) {
+        long p = Math.max(page, 1);
+        long s = Math.min(Math.max(size, 1), 100);
+        Page<RagFeedbackAction> result = actionMapper.selectPage(
+                new Page<>(p, s),
                 new LambdaQueryWrapper<RagFeedbackAction>()
                         .orderByDesc(RagFeedbackAction::getCreatedAt)
-                        .last("LIMIT " + n)
-        ).stream().map(this::toVO).collect(Collectors.toList());
+        );
+        List<RagFeedbackActionVO> records = result.getRecords().stream()
+                .map(this::toVO)
+                .collect(Collectors.toList());
+        return PageResult.of(records, result.getTotal(), p, s);
     }
 
     public List<RagFeedbackActionVO> listByTurnId(Long turnId) {

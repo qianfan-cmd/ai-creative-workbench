@@ -1,6 +1,7 @@
 package com.workbench.backendjava.controller;
 
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.common.Result;
 import com.workbench.backendjava.dto.RagSourceSignalClearRequest;
 import com.workbench.backendjava.entity.RagSourceSignal;
@@ -14,10 +15,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -28,12 +27,19 @@ public class AdminRagSignalController {
     private final KnowledgeDocumentService knowledgeDocumentService;
 
     @GetMapping("/rag/source-signals")
-    public Result<List<RagSourceSignalVO>> listSourceSignals() {
+    public Result<PageResult<RagSourceSignalVO>> listSourceSignals(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size
+    ) {
         LoginUserContext.requireAdmin();
-        List<RagSourceSignalVO> list = sourceSignalService.listActiveSignals().stream()
-                .map(this::toVO)
-                .collect(Collectors.toList());
-        return Result.ok(list);
+        PageResult<RagSourceSignal> pageResult = sourceSignalService.listActiveSignalsPage(page, size);
+        PageResult<RagSourceSignalVO> voPage = PageResult.of(
+                pageResult.getRecords().stream().map(this::toVO).toList(),
+                pageResult.getTotal(),
+                pageResult.getPage(),
+                pageResult.getSize()
+        );
+        return Result.ok(voPage);
     }
 
     @PostMapping("/rag/source-signals/clear")

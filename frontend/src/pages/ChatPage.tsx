@@ -1,34 +1,35 @@
 import styles from '@/pages/ChatPage.module.css'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { message } from 'antd'
 import {
-  chatStreamApi,
-  listConversationsApi,
   createConversationApi,
-  saveChatMessagesApi,
-  updateChatAssistantApi,
   getConversationApi,
+  listConversationsApi,
+  saveChatMessagesApi,
   type ConversationVO,
 } from '@/api/chat'
 import AiImageComposer, { type AiComposerPayload } from '@/components/ai/AiImageComposer'
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
+import { useCopyFeedback } from '@/hooks/useCopyFeedback'
 import ChatHistorySidebar from '@/components/chat/ChatHistorySidebar'
 import ChatMessageRow from '@/components/chat/ChatMessageRow'
 import FeedbackButtons from '@/components/ai/FeedbackButtons'
 import AnswerRenderer from '@/components/knowledge/AnswerRenderer'
 import VirtualChatMessageList from '@/components/chat/VirtualChatMessageList'
+import { CHAT_ACTIVE_CONVERSATION_KEY, readStoredId } from '@/constants/aiSessionKeys'
+import { abortStreamByKey, runChatStream } from '@/services/aiStreamRunner'
+import { useAiSessionStore } from '@/stores/aiSessionStore'
 import { showApiError } from '@/utils/apiError'
+import { isChatStreaming, mergeChatMessagesWithStreams } from '@/utils/mergeAiStreams'
 
 export type ChatRole = 'user' | 'assistant'
 
-/** 单条聊天消息 */
 export interface ChatMessage {
   id: string
   role: ChatRole
   content: string
   imageUrls?: string[]
   streaming?: boolean
-  /** Phase C：服务端 message.id，持久化后填入 */
   dbId?: number
   feedbackRating?: 'up' | 'down'
 }
@@ -55,19 +56,44 @@ function scrollMessagesToBottom(el: HTMLElement) {
   el.scrollTop = el.scrollHeight
 }
 
+function mapMessageFromApi(m: {
+  id: number
+  role: string
+  content: string
+  imageUrls?: string[]
+  userFeedbackRating?: 'up' | 'down'
+}): ChatMessage {
+  return {
+    id: String(m.id),
+    role: m.role as ChatRole,
+    content: m.content,
+    imageUrls: m.imageUrls,
+    dbId: m.id,
+    feedbackRating: m.userFeedbackRating,
+  }
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
-  const [streaming, setStreaming] = useState(false)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const { copiedId, handleCopy } = useCopyFeedback()
 
   const [conversations, setConversations] = useState<ConversationVO[]>([])
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null)
+  const activeConversationId = useAiSessionStore((s) => s.activeChatConversationId)
+  const setActiveChatConversationId = useAiSessionStore((s) => s.setActiveChatConversationId)
+  const streams = useAiSessionStore((s) => s.streams)
 
-  const abortRef = useRef<AbortController | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   const forceScrollRef = useRef(false)
   const stickToBottomRef = useRef(true)
+  const initialRestoreRef = useRef(false)
+
+  const streaming = isChatStreaming(activeConversationId, streams)
+
+  const displayMessages = useMemo(
+    () => mergeChatMessagesWithStreams(messages, activeConversationId, streams),
+    [messages, activeConversationId, streams],
+  )
 
   const loadConversations = useCallback(async () => {
     try {
@@ -78,169 +104,105 @@ export default function ChatPage() {
     }
   }, [])
 
+  const loadConversationDetail = useCallback(async (conversationId: number) => {
+    const detail = await getConversationApi(conversationId)
+    setActiveChatConversationId(detail.id)
+    forceScrollRef.current = true
+    stickToBottomRef.current = true
+    setMessages(detail.messages.map(mapMessageFromApi))
+    return detail
+  }, [setActiveChatConversationId])
+
   useEffect(() => {
     void loadConversations()
   }, [loadConversations])
+
+  useEffect(() => {
+    if (initialRestoreRef.current) return
+    initialRestoreRef.current = true
+    void (async () => {
+      const storedId =
+        readStoredId(CHAT_ACTIVE_CONVERSATION_KEY) ??
+        useAiSessionStore.getState().activeChatConversationId
+      if (!storedId) return
+      try {
+        await loadConversationDetail(storedId)
+      } catch {
+        setActiveChatConversationId(null)
+      }
+    })()
+  }, [loadConversationDetail, setActiveChatConversationId])
 
   const ensureConversation = useCallback(async (): Promise<number> => {
     if (activeConversationId != null) return activeConversationId
 
     const conversation = await createConversationApi()
-    setActiveConversationId(conversation.id)
+    setActiveChatConversationId(conversation.id)
     setConversations((prev) => [conversation, ...prev])
     return conversation.id
-  }, [activeConversationId])
-
-  function mapMessageFromApi(m: {
-    id: number
-    role: string
-    content: string
-    imageUrls?: string[]
-    userFeedbackRating?: 'up' | 'down'
-  }): ChatMessage {
-    return {
-      id: String(m.id),
-      role: m.role as ChatRole,
-      content: m.content,
-      imageUrls: m.imageUrls,
-      dbId: m.id,
-      feedbackRating: m.userFeedbackRating,
-    }
-  }
-
-  const streamAssistantReply = useCallback(
-    async (
-      userText: string,
-      imageUrls: string[] | undefined,
-      assistantId: string,
-      conversationId: number,
-    ) => {
-      setSending(true)
-      setStreaming(true)
-      let finalAnswer = ''
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId ? { ...m, content: '', streaming: true } : m,
-        ),
-      )
-
-      const controller = new AbortController()
-      abortRef.current = controller
-
-      const finishAssistant = () => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, streaming: false } : m,
-          ),
-        )
-      }
-
-      try {
-        await chatStreamApi(
-          userText,
-          {
-            conversationId,
-            imageUrls,
-            onChunk: (chunk) => {
-              finalAnswer += chunk
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: m.content + chunk }
-                    : m,
-                ),
-              )
-            },
-            onDone: finishAssistant,
-          },
-          controller.signal,
-        )
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          finishAssistant()
-          return finalAnswer
-        }
-        showApiError(err, '生成失败')
-        finishAssistant()
-      } finally {
-        setSending(false)
-        setStreaming(false)
-        abortRef.current = null
-      }
-      return finalAnswer
-    },
-    [],
-  )
+  }, [activeConversationId, setActiveChatConversationId])
 
   const handleComposerSend = async ({ text, attachments }: AiComposerPayload) => {
     const trimmed = text.trim()
-    if ((!trimmed && attachments.length === 0) || sending) return
+    if ((!trimmed && attachments.length === 0) || sending || streaming) return
 
     const imageUrls = attachments.map((a) => a.url)
-    const conversationId = await ensureConversation()
+    setSending(true)
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      content: trimmed,
-      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-    }
-    const assistantId = `a-${Date.now()}`
-    const assistantMsg: ChatMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      streaming: true,
-    }
+    try {
+      const conversationId = await ensureConversation()
+      setActiveChatConversationId(conversationId)
 
-    setMessages((prev) => [...prev, userMsg, assistantMsg])
-    forceScrollRef.current = true
-    stickToBottomRef.current = true
+      const pair = await saveChatMessagesApi(conversationId, {
+        userContent: trimmed,
+        assistantContent: '',
+        userImageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+      })
 
-    const assistantContent = await streamAssistantReply(
-      trimmed,
-      imageUrls.length > 0 ? imageUrls : undefined,
-      assistantId,
-      conversationId,
-    )
-
-    if (assistantContent.trim()) {
-      try {
-        await saveChatMessagesApi(conversationId, {
-          userContent: trimmed,
-          assistantContent,
-          userImageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-        })
-        await loadConversations()
-
-        const detail = await getConversationApi(conversationId)
-        forceScrollRef.current = true
-        stickToBottomRef.current = true
-        setMessages((prev) => {
-          if (prev.length !== detail.messages.length) {
-            return detail.messages.map(mapMessageFromApi)
-          }
-          return prev.map((m, i) => {
-            const server = detail.messages[i]
-            if (!server) return m
-            return {
-              ...m,
-              dbId: server.id,
-              content: server.content,
-              imageUrls: server.imageUrls,
-              streaming: false,
-            }
-          })
-        })
-      } catch (error) {
-        showApiError(error, '保存失败')
+      const userMsg: ChatMessage = {
+        id: String(pair.userMessageId),
+        dbId: pair.userMessageId,
+        role: 'user',
+        content: trimmed,
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
       }
+      const assistantMsg: ChatMessage = {
+        id: String(pair.assistantMessageId),
+        dbId: pair.assistantMessageId,
+        role: 'assistant',
+        content: '',
+        streaming: true,
+      }
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg])
+      forceScrollRef.current = true
+      stickToBottomRef.current = true
+      await loadConversations()
+
+      void runChatStream({
+        conversationId,
+        assistantMessageId: pair.assistantMessageId,
+        userText: trimmed,
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+        onComplete: async () => {
+          await loadConversations()
+          try {
+            const detail = await getConversationApi(conversationId)
+            setMessages(detail.messages.map(mapMessageFromApi))
+          } catch {
+            // keep local + store merge
+          }
+        },
+      }).catch((error) => showApiError(error, '生成失败'))
+    } catch (error) {
+      showApiError(error, '发送失败')
+    } finally {
+      setSending(false)
     }
   }
 
   const handleRegenerate = async (assistantId: string) => {
-    if (streaming) return
+    if (streaming || sending) return
 
     const idx = messages.findIndex((m) => m.id === assistantId)
     if (idx === -1) return
@@ -262,40 +224,40 @@ export default function ChatPage() {
       return
     }
 
-    setMessages((prev) => prev.slice(0, idx + 1))
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === assistantId ? { ...m, content: '', streaming: true } : m,
+      ),
+    )
     forceScrollRef.current = true
     stickToBottomRef.current = true
-    const assistantContent = await streamAssistantReply(
-      userPrompt.content,
-      userPrompt.imageUrls,
-      assistantId,
-      activeConversationId,
-    )
-    if (assistantContent.trim()) {
-      try {
-        await updateChatAssistantApi(activeConversationId, assistantMsg.dbId, assistantContent)
-      } catch (error) {
-        showApiError(error, '更新回答失败')
-      }
-    }
+
+    void runChatStream({
+      conversationId: activeConversationId,
+      assistantMessageId: assistantMsg.dbId,
+      userText: userPrompt.content,
+      imageUrls: userPrompt.imageUrls,
+      onComplete: async () => {
+        try {
+          const detail = await getConversationApi(activeConversationId)
+          setMessages(detail.messages.map(mapMessageFromApi))
+        } catch {
+          // ignore
+        }
+      },
+    }).catch((error) => showApiError(error, '重新生成失败'))
   }
 
   const handleStop = () => {
-    abortRef.current?.abort()
-  }
-
-  const handleCopy = async (msgId: string, content: string) => {
-    if (!content.trim()) {
-      message.warning('暂无内容可复制')
-      return
-    }
-    try {
-      await navigator.clipboard.writeText(content)
-      setCopiedId(msgId)
-      window.setTimeout(() => setCopiedId(null), 1000)
-      message.success('复制成功')
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '复制失败')
+    if (activeConversationId == null) return
+    const activeStream = Object.values(streams).find(
+      (s) =>
+        s.module === 'chat' &&
+        s.meta.conversationId === activeConversationId &&
+        s.status === 'streaming',
+    )
+    if (activeStream) {
+      abortStreamByKey(activeStream.key)
     }
   }
 
@@ -303,11 +265,7 @@ export default function ChatPage() {
     if (streaming || sending || conversationId === activeConversationId) return
 
     try {
-      const detail = await getConversationApi(conversationId)
-      setActiveConversationId(detail.id)
-      forceScrollRef.current = true
-      stickToBottomRef.current = true
-      setMessages(detail.messages.map(mapMessageFromApi))
+      await loadConversationDetail(conversationId)
     } catch (error) {
       showApiError(error, '加载对话失败')
     }
@@ -318,7 +276,7 @@ export default function ChatPage() {
 
     try {
       const conversation = await createConversationApi()
-      setActiveConversationId(conversation.id)
+      setActiveChatConversationId(conversation.id)
       setMessages([])
       await loadConversations()
     } catch (error) {
@@ -331,13 +289,14 @@ export default function ChatPage() {
     setConversations(nextList)
     if (activeConversationId === deletedId) {
       if (nextList.length > 0) {
-        const detail = await getConversationApi(nextList[0].id)
-        setActiveConversationId(detail.id)
-        forceScrollRef.current = true
-        stickToBottomRef.current = true
-        setMessages(detail.messages.map(mapMessageFromApi))
+        try {
+          await loadConversationDetail(nextList[0].id)
+        } catch {
+          setActiveChatConversationId(null)
+          setMessages([])
+        }
       } else {
-        setActiveConversationId(null)
+        setActiveChatConversationId(null)
         setMessages([])
       }
     }
@@ -346,7 +305,7 @@ export default function ChatPage() {
 
   useMainContentLayout({ lockScroll: true, fullBleed: true })
 
-  const isEmpty = messages.length === 0
+  const isEmpty = displayMessages.length === 0
 
   useEffect(() => {
     const el = messagesRef.current
@@ -368,7 +327,7 @@ export default function ChatPage() {
       requestAnimationFrame(() => scrollMessagesToBottom(el))
       forceScrollRef.current = false
     }
-  }, [messages])
+  }, [displayMessages])
 
   const composer = (
     <AiImageComposer
@@ -407,7 +366,7 @@ export default function ChatPage() {
           <>
             <div className={styles.messages} ref={messagesRef}>
               <VirtualChatMessageList
-                items={messages}
+                items={displayMessages}
                 scrollRef={messagesRef}
                 disableVirtualization={streaming}
                 listResetKey={activeConversationId ?? 'new'}
@@ -424,7 +383,7 @@ export default function ChatPage() {
                         ? () => void handleRegenerate(msg.id)
                         : undefined
                     }
-                    regenerateDisabled={streaming}
+                    regenerateDisabled={streaming || sending}
                     feedback={
                       msg.role === 'assistant' ? (
                         <FeedbackButtons

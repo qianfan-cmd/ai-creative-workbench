@@ -1,8 +1,10 @@
 package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.LoginUserContext;
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.dto.AiFeedbackCreateRequest;
 import com.workbench.backendjava.entity.AiFeedback;
 import com.workbench.backendjava.entity.Conversation;
@@ -123,40 +125,65 @@ public class AiFeedbackService {
                 .collect(Collectors.toMap(AiFeedback::getRefId, AiFeedback::getRating, (a, b) -> b));
     }
 
-    public AiFeedbackStatsVO getStats(int recentLimit) {
+    public AiFeedbackStatsVO getStatsSummary() {
         LoginUserContext.requireAdmin();
-        int limit = Math.min(Math.max(recentLimit, 1), 100);
-
-        List<AiFeedback> all = feedbackMapper.selectList(new LambdaQueryWrapper<>());
         AiFeedbackStatsVO vo = new AiFeedbackStatsVO();
-        for (AiFeedback fb : all) {
-            if ("up".equals(fb.getRating())) {
-                vo.setUpCount(vo.getUpCount() + 1);
-                if ("rag".equals(fb.getScene())) vo.setRagUp(vo.getRagUp() + 1);
-                if ("chat".equals(fb.getScene())) vo.setChatUp(vo.getChatUp() + 1);
-            } else if ("down".equals(fb.getRating())) {
-                vo.setDownCount(vo.getDownCount() + 1);
-                if ("rag".equals(fb.getScene())) vo.setRagDown(vo.getRagDown() + 1);
-                if ("chat".equals(fb.getScene())) vo.setChatDown(vo.getChatDown() + 1);
-            }
+        vo.setUpCount(countByRating("up"));
+        vo.setDownCount(countByRating("down"));
+        vo.setRagUp(countBySceneAndRating("rag", "up"));
+        vo.setRagDown(countBySceneAndRating("rag", "down"));
+        vo.setChatUp(countBySceneAndRating("chat", "up"));
+        vo.setChatDown(countBySceneAndRating("chat", "down"));
+        return vo;
+    }
+
+    public PageResult<AiFeedbackDownItemVO> listDownsPage(
+            long page,
+            long size,
+            String scene,
+            String reason
+    ) {
+        LoginUserContext.requireAdmin();
+        long p = Math.max(page, 1);
+        long s = Math.min(Math.max(size, 1), 100);
+
+        LambdaQueryWrapper<AiFeedback> wrapper = new LambdaQueryWrapper<AiFeedback>()
+                .eq(AiFeedback::getRating, "down")
+                .orderByDesc(AiFeedback::getCreatedAt);
+        if (scene != null && !scene.isBlank()) {
+            wrapper.eq(AiFeedback::getScene, scene.trim());
+        }
+        if (reason != null && !reason.isBlank()) {
+            wrapper.eq(AiFeedback::getReason, reason.trim());
         }
 
-        List<AiFeedback> downs = feedbackMapper.selectList(
-                new LambdaQueryWrapper<AiFeedback>()
-                        .eq(AiFeedback::getRating, "down")
-                        .orderByDesc(AiFeedback::getCreatedAt)
-                        .last("LIMIT " + limit)
-        );
-
-        Map<Long, String> usernames = loadUsernames(downs);
-        vo.setRecentDowns(downs.stream().map(fb -> toDownItem(fb, usernames)).collect(Collectors.toList()));
-        vo.setRecentRagActions(ragFeedbackActionService.listRecent(limit));
-        for (AiFeedbackDownItemVO item : vo.getRecentDowns()) {
+        Page<AiFeedback> result = feedbackMapper.selectPage(new Page<>(p, s), wrapper);
+        Map<Long, String> usernames = loadUsernames(result.getRecords());
+        List<AiFeedbackDownItemVO> records = result.getRecords().stream()
+                .map(fb -> toDownItem(fb, usernames))
+                .collect(Collectors.toList());
+        for (AiFeedbackDownItemVO item : records) {
             if ("knowledge_turn".equals(item.getRefType())) {
                 item.setRagActions(ragFeedbackActionService.listByTurnId(item.getRefId()));
             }
         }
-        return vo;
+        return PageResult.of(records, result.getTotal(), p, s);
+    }
+
+    private long countByRating(String rating) {
+        Long count = feedbackMapper.selectCount(
+                new LambdaQueryWrapper<AiFeedback>().eq(AiFeedback::getRating, rating)
+        );
+        return count != null ? count : 0L;
+    }
+
+    private long countBySceneAndRating(String scene, String rating) {
+        Long count = feedbackMapper.selectCount(
+                new LambdaQueryWrapper<AiFeedback>()
+                        .eq(AiFeedback::getScene, scene)
+                        .eq(AiFeedback::getRating, rating)
+        );
+        return count != null ? count : 0L;
     }
 
     private Map<Long, String> loadUsernames(List<AiFeedback> rows) {

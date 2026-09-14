@@ -1,6 +1,8 @@
 package com.workbench.backendjava.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.entity.RagSourceSignal;
 import com.workbench.backendjava.mapper.RagSourceSignalMapper;
 import lombok.RequiredArgsConstructor;
@@ -32,12 +34,16 @@ public class RagSourceSignalService {
         return map;
     }
 
-    public List<RagSourceSignal> listActiveSignals() {
-        return signalMapper.selectList(
+    public PageResult<RagSourceSignal> listActiveSignalsPage(long page, long size) {
+        long p = Math.max(page, 1);
+        long s = Math.min(Math.max(size, 1), 100);
+        Page<RagSourceSignal> result = signalMapper.selectPage(
+                new Page<>(p, s),
                 new LambdaQueryWrapper<RagSourceSignal>()
                         .and(w -> w.gt(RagSourceSignal::getPenalty, 0).or().gt(RagSourceSignal::getBoost, 0))
                         .orderByDesc(RagSourceSignal::getUpdatedAt)
         );
+        return PageResult.of(result.getRecords(), result.getTotal(), p, s);
     }
 
     @Transactional

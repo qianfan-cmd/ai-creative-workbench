@@ -4,6 +4,8 @@ import type { ColumnsType } from 'antd/es/table'
 import {
   clearSourceSignalApi,
   getAdminFeedbackStatsApi,
+  listAdminFeedbackDownsApi,
+  listAdminRagActionsApi,
   listSourceSignalsApi,
   reindexAllKnowledgeApi,
   type AiFeedbackDownItem,
@@ -18,6 +20,8 @@ import { showApiError } from '@/utils/apiError'
 import { formatDate } from '@/utils/format'
 import styles from '@/pages/AdminFeedbackPage.module.css'
 
+const PAGE_SIZE = 20
+
 const REASON_LABEL: Record<string, string> = {
   incomplete_list: '列举不全',
   wrong_fact: '事实错误',
@@ -26,39 +30,105 @@ const REASON_LABEL: Record<string, string> = {
 }
 
 export default function AdminFeedbackPage() {
-  const [loading, setLoading] = useState(false)
+  const [statsLoading, setStatsLoading] = useState(false)
   const [stats, setStats] = useState<AiFeedbackStats | null>(null)
+
+  const [downsLoading, setDownsLoading] = useState(false)
+  const [downs, setDowns] = useState<AiFeedbackDownItem[]>([])
+  const [downsPage, setDownsPage] = useState(1)
+  const [downsTotal, setDownsTotal] = useState(0)
+
+  const [actionsLoading, setActionsLoading] = useState(false)
+  const [ragActions, setRagActions] = useState<RagFeedbackActionItem[]>([])
+  const [actionsPage, setActionsPage] = useState(1)
+  const [actionsTotal, setActionsTotal] = useState(0)
+
+  const [signalsLoading, setSignalsLoading] = useState(false)
   const [signals, setSignals] = useState<RagSourceSignalItem[]>([])
+  const [signalsPage, setSignalsPage] = useState(1)
+  const [signalsTotal, setSignalsTotal] = useState(0)
+
   const [reindexing, setReindexing] = useState(false)
   const [reindexResult, setReindexResult] = useState<KnowledgeReindexAllResult | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true)
     try {
-      const [statsData, signalsData] = await Promise.all([
-        getAdminFeedbackStatsApi(30),
-        listSourceSignalsApi(),
-      ])
+      const statsData = await getAdminFeedbackStatsApi()
       setStats(statsData)
-      setSignals(signalsData)
     } catch (error) {
       showApiError(error, '加载反馈统计失败')
     } finally {
-      setLoading(false)
+      setStatsLoading(false)
     }
   }, [])
 
+  const loadDowns = useCallback(async () => {
+    setDownsLoading(true)
+    try {
+      const data = await listAdminFeedbackDownsApi({ page: downsPage, size: PAGE_SIZE })
+      setDowns(data.records)
+      setDownsTotal(data.total)
+    } catch (error) {
+      showApiError(error, '加载点踩列表失败')
+    } finally {
+      setDownsLoading(false)
+    }
+  }, [downsPage])
+
+  const loadRagActions = useCallback(async () => {
+    setActionsLoading(true)
+    try {
+      const data = await listAdminRagActionsApi({ page: actionsPage, size: PAGE_SIZE })
+      setRagActions(data.records)
+      setActionsTotal(data.total)
+    } catch (error) {
+      showApiError(error, '加载自愈日志失败')
+    } finally {
+      setActionsLoading(false)
+    }
+  }, [actionsPage])
+
+  const loadSignals = useCallback(async () => {
+    setSignalsLoading(true)
+    try {
+      const data = await listSourceSignalsApi({ page: signalsPage, size: PAGE_SIZE })
+      setSignals(data.records)
+      setSignalsTotal(data.total)
+    } catch (error) {
+      showApiError(error, '加载文档信号失败')
+    } finally {
+      setSignalsLoading(false)
+    }
+  }, [signalsPage])
+
   useEffect(() => {
-    void load()
-  }, [load])
+    void loadStats()
+  }, [loadStats])
+
+  useEffect(() => {
+    void loadDowns()
+  }, [loadDowns])
+
+  useEffect(() => {
+    void loadRagActions()
+  }, [loadRagActions])
+
+  useEffect(() => {
+    void loadSignals()
+  }, [loadSignals])
 
   useMainContentLayout({ lockScroll: false })
+
+  const refreshAll = async () => {
+    await Promise.all([loadStats(), loadDowns(), loadRagActions(), loadSignals()])
+  }
 
   const handleClearSignal = async (source: string, field: RagSourceSignalClearField) => {
     try {
       await clearSourceSignalApi(source, field)
       message.success('已撤销信号')
-      await load()
+      await refreshAll()
     } catch (error) {
       showApiError(error, '撤销失败')
     }
@@ -195,111 +265,126 @@ export default function AdminFeedbackPage() {
       <p className={styles.sub}>Wave D3 · RAG / Chat 用户点赞点踩闭环</p>
 
       {stats && (
-        <>
-          <div className={styles.cards}>
-            <div className={styles.card}>
-              <div className={styles.cardLabel}>总 👍</div>
-              <div className={styles.cardValue}>{stats.upCount}</div>
-            </div>
-            <div className={styles.card}>
-              <div className={styles.cardLabel}>总 👎</div>
-              <div className={styles.cardValue}>{stats.downCount}</div>
-            </div>
-            <div className={styles.card}>
-              <div className={styles.cardLabel}>RAG 👍 / 👎</div>
-              <div className={styles.cardValue}>
-                {stats.ragUp} / {stats.ragDown}
-              </div>
-            </div>
-            <div className={styles.card}>
-              <div className={styles.cardLabel}>Chat 👍 / 👎</div>
-              <div className={styles.cardValue}>
-                {stats.chatUp} / {stats.chatDown}
-              </div>
+        <div className={styles.cards}>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>总 👍</div>
+            <div className={styles.cardValue}>{stats.upCount}</div>
+          </div>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>总 👎</div>
+            <div className={styles.cardValue}>{stats.downCount}</div>
+          </div>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>RAG 👍 / 👎</div>
+            <div className={styles.cardValue}>
+              {stats.ragUp} / {stats.ragDown}
             </div>
           </div>
+          <div className={styles.card}>
+            <div className={styles.cardLabel}>Chat 👍 / 👎</div>
+            <div className={styles.cardValue}>
+              {stats.chatUp} / {stats.chatDown}
+            </div>
+          </div>
+        </div>
+      )}
 
-          <h2 className={styles.sectionTitle}>最近点踩（Bad Case 候选）</h2>
+      <h2 className={styles.sectionTitle}>最近点踩（Bad Case 候选）</h2>
+      <Table
+        rowKey="id"
+        loading={statsLoading || downsLoading}
+        columns={columns}
+        dataSource={downs}
+        size="small"
+        pagination={{
+          current: downsPage,
+          pageSize: PAGE_SIZE,
+          total: downsTotal,
+          showSizeChanger: false,
+          onChange: (p) => setDownsPage(p),
+        }}
+      />
+
+      <h2 className={styles.sectionTitle}>RAG 自愈动作日志</h2>
+      <Table<RagFeedbackActionItem>
+        rowKey="id"
+        loading={actionsLoading}
+        size="small"
+        dataSource={ragActions}
+        pagination={{
+          current: actionsPage,
+          pageSize: PAGE_SIZE,
+          total: actionsTotal,
+          showSizeChanger: false,
+          onChange: (p) => setActionsPage(p),
+        }}
+        columns={[
+          { title: '类型', dataIndex: 'actionType', width: 100 },
+          { title: '阶段', dataIndex: 'triageStep', width: 64 },
+          { title: '状态', dataIndex: 'status', width: 80 },
+          { title: '详情', dataIndex: 'detailJson', ellipsis: true },
+          {
+            title: '时间',
+            dataIndex: 'createdAt',
+            width: 160,
+            render: (v: string) => formatDate(v),
+          },
+        ]}
+      />
+
+      <div className={styles.sectionBlock}>
+        <h2 className={styles.sectionTitle}>文档级反馈信号</h2>
+        <p className={styles.sectionHint}>
+          点踩分诊写入的全局 penalize / boost 信号。撤销后 Python rerank 最多 30 秒内生效。
+        </p>
+        <Table
+          rowKey="source"
+          loading={signalsLoading}
+          size="small"
+          dataSource={signals}
+          columns={signalColumns}
+          locale={{ emptyText: '暂无活跃信号' }}
+          pagination={{
+            current: signalsPage,
+            pageSize: PAGE_SIZE,
+            total: signalsTotal,
+            showSizeChanger: false,
+            onChange: (p) => setSignalsPage(p),
+          }}
+        />
+      </div>
+
+      <div className={styles.sectionBlock}>
+        <h2 className={styles.sectionTitle}>向量索引维护</h2>
+        <p className={styles.sectionHint}>
+          embedding 策略升级后请执行一次全库重建，使 filename / heading 等元数据进入 dense 向量。
+        </p>
+        <div className={styles.reindexBar}>
+          <Button type="primary" loading={reindexing} onClick={handleReindexAll}>
+            重建全库向量
+          </Button>
+          {reindexResult && (
+            <span className={styles.reindexResult}>
+              上次：成功 {reindexResult.succeeded}/{reindexResult.total}
+              {reindexResult.failed.length > 0 && `，失败 ${reindexResult.failed.length}`}
+            </span>
+          )}
+        </div>
+        {reindexResult && reindexResult.failed.length > 0 && (
           <Table
             rowKey="id"
-            loading={loading}
-            columns={columns}
-            dataSource={stats.recentDowns}
-            pagination={false}
-            size="small"
-          />
-
-          <h2 className={styles.sectionTitle}>RAG 自愈动作日志</h2>
-          <Table<RagFeedbackActionItem>
-            rowKey="id"
-            loading={loading}
             size="small"
             pagination={false}
-            dataSource={stats.recentRagActions ?? []}
+            className={styles.reindexFailures}
+            dataSource={reindexResult.failed}
             columns={[
-              { title: '类型', dataIndex: 'actionType', width: 100 },
-              { title: '阶段', dataIndex: 'triageStep', width: 64 },
-              { title: '状态', dataIndex: 'status', width: 80 },
-              { title: '详情', dataIndex: 'detailJson', ellipsis: true },
-              {
-                title: '时间',
-                dataIndex: 'createdAt',
-                width: 160,
-                render: (v: string) => formatDate(v),
-              },
+              { title: 'ID', dataIndex: 'id', width: 64 },
+              { title: '文档', dataIndex: 'filename', ellipsis: true },
+              { title: '原因', dataIndex: 'reason', ellipsis: true },
             ]}
           />
-
-          <div className={styles.sectionBlock}>
-            <h2 className={styles.sectionTitle}>文档级反馈信号</h2>
-            <p className={styles.sectionHint}>
-              点踩分诊写入的全局 penalize / boost 信号。撤销后 Python rerank 最多 30 秒内生效。
-            </p>
-            <Table
-              rowKey="source"
-              loading={loading}
-              size="small"
-              pagination={false}
-              dataSource={signals}
-              columns={signalColumns}
-              locale={{ emptyText: '暂无活跃信号' }}
-            />
-          </div>
-
-          <div className={styles.sectionBlock}>
-            <h2 className={styles.sectionTitle}>向量索引维护</h2>
-            <p className={styles.sectionHint}>
-              embedding 策略升级后请执行一次全库重建，使 filename / heading 等元数据进入 dense 向量。
-            </p>
-            <div className={styles.reindexBar}>
-              <Button type="primary" loading={reindexing} onClick={handleReindexAll}>
-                重建全库向量
-              </Button>
-              {reindexResult && (
-                <span className={styles.reindexResult}>
-                  上次：成功 {reindexResult.succeeded}/{reindexResult.total}
-                  {reindexResult.failed.length > 0 &&
-                    `，失败 ${reindexResult.failed.length}`}
-                </span>
-              )}
-            </div>
-            {reindexResult && reindexResult.failed.length > 0 && (
-              <Table
-                rowKey="id"
-                size="small"
-                pagination={false}
-                className={styles.reindexFailures}
-                dataSource={reindexResult.failed}
-                columns={[
-                  { title: 'ID', dataIndex: 'id', width: 64 },
-                  { title: '文档', dataIndex: 'filename', ellipsis: true },
-                  { title: '原因', dataIndex: 'reason', ellipsis: true },
-                ]}
-              />
-            )}
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   )
 }

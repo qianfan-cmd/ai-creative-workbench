@@ -14,7 +14,7 @@ public class ChatMessagesCreateRequest {
     @NotBlank(message = "用户消息不能为空")
     private String userContent;
 
-    @NotBlank(message = "助手回复不能为空")
+    /** 流式开始前可为空字符串，完成后 update */
     private String assistantContent;
 
     /** 用户消息附图 URL（可选，持久化后用于历史展示） */

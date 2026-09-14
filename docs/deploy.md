@@ -168,6 +168,13 @@ docker compose ps
 | 场景 | 配置来源 |
 |------|----------|
 | 本机 IDE 跑 Spring Boot | `application-local.yml`（gitignore，从 `application-local.yml.example` 复制） |
+
+**IDE 启动报 `Failed to configure a DataSource: 'url' attribute is not specified`：**
+
+1. 确认 `backend-java/src/main/resources/application.yml` 存在（含 `spring.datasource.url`）。
+2. 在 `backend-java` 目录执行 `mvn process-resources`，或 IDE 里 **Build → Rebuild Project**，确保 `target/classes/application.yml` 已生成。
+3. 检查 Run Configuration **不要** 单独设置空的 `SPRING_DATASOURCE_URL`；若启用了 `spring.profiles.active=local`，请保证 `application-local.yml` 里也写了 `datasource.url`（见 example）。
+4. 本机 MySQL 需在 **3306** 有 `workbench` 库；若只用 Docker MySQL，请改 url 端口为 **3307**（见 §1 端口表）。
 | Docker / ECS MySQL 密码 | `docker-compose.yml` → `SPRING_DATASOURCE_PASSWORD` |
 | ECS 生产 JWT | 服务器上 `.env.secrets` → `JWT_SECRET`（见 `env.secrets.example`） |
 | AI API Key | `ai-service-python/.env`（gitignore） |
@@ -607,3 +614,50 @@ cp env.secrets.example .env.secrets
 nano .env.secrets   # JWT_SECRET=至少32位随机字符串
 # ai-service-python/.env 同理，填 MODEL_API_KEY 等
 ```
+
+### 12.12 ECS Demo 数据持久化（MySQL volume）
+
+公网 Demo 的 MySQL 数据保存在 Docker **命名卷** `mysql_data`（见 `docker-compose.yml`）。以下操作会导致 **历史数据丢失**（含 `ai_feedback`、RAG 信号等 Wave D3 表）：
+
+| 操作 | 后果 |
+|------|------|
+| `docker compose down -v` | **删除 volume，MySQL 全库清空** |
+| 换 ECS / 重装 Docker 且未恢复备份 | 新 volume = 空库 |
+| 仅跑 `docs/sql/*.sql` 建表 | 表存在但 **0 行**，无法恢复历史反馈 |
+
+**禁止** 在生产 Demo 上使用 `docker compose down -v`。日常 CD 只 `pull` + `up -d` 业务容器，**不** 动 MySQL volume。
+
+`docs/sql/` 迁移脚本使用 `CREATE TABLE IF NOT EXISTS`，**不会** 删除已有行；但若 volume 已丢，只能重新积累数据或从自有备份恢复。
+
+#### 反馈数据诊断（只读 SQL）
+
+SSH 进 ECS 后执行：
+
+```bash
+# 1. 确认 MySQL volume 存在
+docker volume ls | grep mysql
+
+# 2. 各表行数（Admin 统计卡片应与 ai_feedback 总数一致）
+docker exec -i workbench-mysql mysql -uroot -pworkbench workbench -e "
+  SELECT 'ai_feedback' AS t, COUNT(*) AS c FROM ai_feedback
+  UNION ALL SELECT 'rag_feedback_action', COUNT(*) FROM rag_feedback_action
+  UNION ALL SELECT 'rag_source_signal', COUNT(*) FROM rag_source_signal;
+"
+
+# 3. 最近一条反馈时间（若有数据）
+docker exec -i workbench-mysql mysql -uroot -pworkbench workbench -e "
+  SELECT MAX(created_at) AS last_feedback FROM ai_feedback;
+"
+```
+
+- COUNT 全 0 → 数据已丢，需重新积累或从 **mysqldump 备份** 恢复（仓库内 `workbench_backup.sql` **不含** `ai_feedback`，无法靠它恢复反馈）
+- COUNT > 0 但 Admin 仍 0 → 检查 backend 是否连错库（`.env` / `SPRING_DATASOURCE_URL`）
+
+#### 建议定期备份
+
+```bash
+docker exec workbench-mysql mysqldump -uroot -pworkbench workbench \
+  > /root/backups/workbench_$(date +%Y%m%d).sql
+```
+
+可将 `/root/backups/` 同步到对象存储或本机，升配重启前至少备份一次。

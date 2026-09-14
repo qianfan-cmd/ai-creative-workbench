@@ -1,0 +1,39 @@
+.turnBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.userCopyActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: var(--space-1);
+}
+
+.actionBtn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.actionBtn:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+}
+
+.actionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.assistantWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

@@ -65,7 +65,7 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
     const fileList = e.target.files
     if (!fileList || fileList.length === 0) return
 
-    const files = Array.from(fileList)
+    const files = Array.from(fileList) // 将类数组转换为数组
     e.target.value = ''
 
     setUploading(true)
@@ -77,8 +77,8 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
         return
       }
 
-      const invalid: { filename: string; reason: string }[] = []
-      const valid: File[] = []
+      const invalid: { filename: string; reason: string }[] = [] // 无效文件列表
+      const valid: File[] = [] // 有效文件列表
       for (const file of files) {
         const err = validateKnowledgeFile(file)
         if (err) {

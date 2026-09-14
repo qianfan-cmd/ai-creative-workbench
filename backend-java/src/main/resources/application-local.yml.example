@@ -3,7 +3,12 @@
 
 spring:
   datasource:
+    # IDE 若未把 application.yml 同步到 classpath，此处 url 可兜底（与 application.yml 一致）
+    url: jdbc:mysql://localhost:3306/workbench?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    # 含 # 等特殊字符时请加引号，例如 password: "your-mysql-password"
     password: your-mysql-password
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   # --- QQ 邮箱 SMTP（找回密码）---
   # 步骤：mail.qq.com → 设置 → 账户 → 开启 SMTP → 生成授权码

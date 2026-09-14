@@ -4,18 +4,16 @@
 import { SaveOutlined, SettingOutlined } from '@ant-design/icons'
 import { Badge, Button, DatePicker, Input, message, Select, Tooltip } from 'antd'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import styles from '@/pages/CampaignPage.module.css'
 import {
   createCampaignDraft,
   deleteCampaignDraftApi,
   exportCampaignDraftApi,
-  generateCopyStreamApi,
   getCampaignDraftApi,
   getStyleTemplateApi,
   getVisualStyleOptionsApi,
   listCampaignDraftsApi,
-  buildCampaignCopyPayload,
   patchCampaignDraftApi,
   saveCampaignCopyApi,
   saveCampaignImagesApi,
@@ -37,6 +35,10 @@ import MattingWorkspaceFrame from '@/components/ops/MattingWorkspaceFrame'
 import PromptTemplateDrawer from '@/components/ops/PromptTemplateDrawer'
 import PromptTemplateHelp from '@/components/settings/PromptTemplateHelp'
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
+import { CAMPAIGN_ACTIVE_DRAFT_KEY, readStoredId } from '@/constants/aiSessionKeys'
+import { abortStreamByKey, runCampaignCopyStream } from '@/services/aiStreamRunner'
+import { campaignStreamKey, useAiSessionStore } from '@/stores/aiSessionStore'
+import { isCampaignCopyStreaming } from '@/utils/mergeAiStreams'
 
 type TabKey = 'image' | 'copy' | 'preview'
 
@@ -58,7 +60,6 @@ const ASPECT_RATIO_OPTIONS = [
   { value: '1:1', label: '1:1' },
 ]
 
-const DRAFT_ID_STORAGE_KEY = 'campaignActiveDraftId'
 const THEME_SYNC_DEBOUNCE_MS = 400
 const { RangePicker } = DatePicker
 
@@ -105,8 +106,8 @@ export default function CampaignPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('copy')
   const [copyTitle, setCopyTitle] = useState('')
   const [copyBody, setCopyBody] = useState('')
-  const [streamRaw, setStreamRaw] = useState('')
-  const [streaming, setStreaming] = useState(false)
+  const setActiveCampaignDraftId = useAiSessionStore((s) => s.setActiveCampaignDraftId)
+  const streams = useAiSessionStore((s) => s.streams)
   const [savingCopy, setSavingCopy] = useState(false)
   const [savingPost, setSavingPost] = useState(false)
 
@@ -116,7 +117,9 @@ export default function CampaignPage() {
 
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
 
-  const abortRef = useRef<AbortController | null>(null)
+  const streaming = isCampaignCopyStreaming(draftId, streams)
+  const streamRaw =
+    draftId != null ? (streams[campaignStreamKey(draftId)]?.accumulatedText ?? '') : ''
 
   const refreshPreviewFromWorkflow = useCallback(async (id: number) => {
     try {
@@ -183,15 +186,15 @@ export default function CampaignPage() {
       try {
         const draft = await getCampaignDraftApi(id)
         setDraftId(draft.id)
+        setActiveCampaignDraftId(draft.id)
         applyDraftToForm(draft)
-        sessionStorage.setItem(DRAFT_ID_STORAGE_KEY, String(id))
       } catch (err) {
         message.error(err instanceof Error ? err.message : '加载草稿失败')
       } finally {
         setLoadingDraft(false)
       }
     },
-    [applyDraftToForm],
+    [applyDraftToForm, setActiveCampaignDraftId],
   )
 
   const resetWorkspace = () => {
@@ -208,7 +211,7 @@ export default function CampaignPage() {
     setCopyTitle('')
     setCopyBody('')
     setPreviewUrls([])
-    sessionStorage.removeItem(DRAFT_ID_STORAGE_KEY)
+    setActiveCampaignDraftId(null)
   }
 
   useEffect(() => {
@@ -216,16 +219,15 @@ export default function CampaignPage() {
     void refreshVisualStyleOptions()
 
     void refreshDraftList().then(async () => {
-      const stored = sessionStorage.getItem(DRAFT_ID_STORAGE_KEY)
-      if (stored && !Number.isNaN(Number(stored))) {
-        await loadDraft(Number(stored))
+      const stored =
+        readStoredId(CAMPAIGN_ACTIVE_DRAFT_KEY) ?? readStoredId('campaignActiveDraftId')
+      if (stored) {
+        await loadDraft(stored)
       } else {
         setLoadingDraft(false)
       }
     })
   }, [loadDraft, refreshDraftList, refreshStyleTemplates, refreshVisualStyleOptions])
-
-  useEffect(() => () => abortRef.current?.abort(), [])
 
   const buildForm = (): CampaignActivityForm => ({
     theme: theme.trim(),
@@ -271,7 +273,7 @@ export default function CampaignPage() {
           : await createCampaignDraft(form)
       setDraftId(draft.id)
       setDraftStatus(draft.status ?? 'draft')
-      sessionStorage.setItem(DRAFT_ID_STORAGE_KEY, String(draft.id))
+      setActiveCampaignDraftId(draft.id)
       await refreshDraftList()
       message.success('草稿已保存')
     } catch (err) {
@@ -305,7 +307,7 @@ export default function CampaignPage() {
       const saved = await saveCampaignImagesApi(id, {})
       setDraftStatus(saved.status ?? 'ready')
       await refreshPreviewFromWorkflow(id)
-      sessionStorage.setItem(DRAFT_ID_STORAGE_KEY, String(id))
+      setActiveCampaignDraftId(id)
       await refreshDraftList()
       message.success('活动帖已保存')
     } catch (err) {
@@ -383,49 +385,36 @@ export default function CampaignPage() {
         copyBody: copyBody.trim(),
       })
     }
-    abortRef.current?.abort()
-    const ac = new AbortController()
-    abortRef.current = ac
-    setStreaming(true)
-    setStreamRaw('')
-    let accumulated = ''
-    try {
-      await generateCopyStreamApi(
-        draftId,
-        {
-          mode,
-          styleTemplateId: mode === 'refine' ? styleTemplateId : undefined,
-          hint: mode === 'refine' ? refineHint.trim() || undefined : undefined,
-          onChunk: (chunk) => {
-            accumulated += chunk
-            setStreamRaw(accumulated)
-          },
-          onDone: () => {},
-        },
-        ac.signal,
-      )
-      const fallbackTitle = copyTitle.trim() || theme.trim() || '未命名活动'
-      const payload = buildCampaignCopyPayload(accumulated, fallbackTitle)
-      if (!payload.copyBody.trim()) {
-        message.error('文案服务未返回内容，请确认 AI 服务已启动并重试')
-        return
-      }
-      setCopyTitle(payload.copyTitle)
-      setCopyBody(payload.copyBody)
-      try {
+    const fallbackTitle = copyTitle.trim() || theme.trim() || '未命名活动'
+    setActiveCampaignDraftId(draftId)
+
+    void runCampaignCopyStream({
+      draftId,
+      mode,
+      styleTemplateId,
+      hint: refineHint.trim() || undefined,
+      fallbackTitle,
+      onDebouncedSave: async (payload) => {
         await saveCampaignCopyApi(draftId, payload)
-      } catch (saveErr) {
-        message.error(saveErr instanceof Error ? saveErr.message : '文案已生成但保存失败')
-        return
-      }
-      message.success(mode === 'draft' ? '初稿已生成' : '优化完成')
-    } catch (err) {
+      },
+      onComplete: (payload) => {
+        if (!payload.copyBody.trim()) {
+          message.error('文案服务未返回内容，请确认 AI 服务已启动并重试')
+          return
+        }
+        setCopyTitle(payload.copyTitle)
+        setCopyBody(payload.copyBody)
+        message.success(mode === 'draft' ? '初稿已生成' : '优化完成')
+      },
+    }).catch((err) => {
       if (err instanceof Error && err.name === 'AbortError') return
       message.error(err instanceof Error ? err.message : '文案生成失败')
-    } finally {
-      setStreaming(false)
-      setStreamRaw('')
-    }
+    })
+  }
+
+  const handleStopCopyStream = () => {
+    if (draftId == null) return
+    abortStreamByKey(campaignStreamKey(draftId))
   }
 
   const handleNewDraft = async () => {
@@ -434,7 +423,7 @@ export default function CampaignPage() {
     try {
       const draft = await createCampaignDraft({ theme: '', aspectRatio: '16:9' })
       setDraftId(draft.id)
-      sessionStorage.setItem(DRAFT_ID_STORAGE_KEY, String(draft.id))
+      setActiveCampaignDraftId(draft.id)
       await refreshDraftList()
     } catch (err) {
       message.error(err instanceof Error ? err.message : '新建活动帖失败')
@@ -624,6 +613,11 @@ export default function CampaignPage() {
               <Button loading={streaming} disabled={draftId == null || !copyBody.trim()} onClick={() => void runCopyStream('refine')}>
                 AI 优化
               </Button>
+              {streaming && (
+                <Button danger onClick={handleStopCopyStream}>
+                  停止生成
+                </Button>
+              )}
               <Button loading={savingCopy} disabled={draftId == null || streaming} onClick={() => void handleSaveCopy()}>
                 保存文案
               </Button>

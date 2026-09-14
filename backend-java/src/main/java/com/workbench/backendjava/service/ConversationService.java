@@ -10,6 +10,7 @@ import com.workbench.backendjava.entity.Conversation;
 import com.workbench.backendjava.entity.Message;
 import com.workbench.backendjava.mapper.ConversationMapper;
 import com.workbench.backendjava.mapper.MessageMapper;
+import com.workbench.backendjava.vo.ChatMessagePairVO;
 import com.workbench.backendjava.vo.ConversationDetailVO;
 import com.workbench.backendjava.vo.ConversationVO;
 import com.workbench.backendjava.vo.MessageVO;
@@ -113,6 +114,10 @@ public class ConversationService {
 
         List<Map<String, Object>> messages = new ArrayList<>();
         for (Message msg : history) {
+            if ("assistant".equals(msg.getRole())
+                    && (msg.getContent() == null || msg.getContent().isBlank())) {
+                continue;
+            }
             Map<String, Object> item = new HashMap<>();
             item.put("role", msg.getRole());
             if ("user".equals(msg.getRole())) {
@@ -124,17 +129,32 @@ public class ConversationService {
             messages.add(item);
         }
 
-        Map<String, Object> current = new HashMap<>();
-        current.put("role", "user");
-        current.put("content", ChatMultimodalUtil.buildLlmContent(currentUserMessage.trim(), currentImageUrls));
-        messages.add(current);
+        String trimmedCurrent = currentUserMessage.trim();
+        boolean skipAppendCurrent = false;
+        if (!messages.isEmpty()) {
+            Map<String, Object> last = messages.get(messages.size() - 1);
+            if ("user".equals(last.get("role"))) {
+                String lastText = extractTextFromLlmContent(last.get("content"));
+                if (trimmedCurrent.equals(lastText)) {
+                    skipAppendCurrent = true;
+                }
+            }
+        }
+        if (!skipAppendCurrent) {
+            Map<String, Object> current = new HashMap<>();
+            current.put("role", "user");
+            current.put("content", ChatMultimodalUtil.buildLlmContent(trimmedCurrent, currentImageUrls));
+            messages.add(current);
+        }
         return messages;
     }
 
     @Transactional
-    public void saveMessagePair(Long conversationId, ChatMessagesCreateRequest request) {
+    public ChatMessagePairVO saveMessagePair(Long conversationId, ChatMessagesCreateRequest request) {
         Long userId = requireUserId();
         Conversation conversation = getOwnedConversation(conversationId, userId);
+
+        String assistantContent = request.getAssistantContent() != null ? request.getAssistantContent() : "";
 
         Message userMsg = new Message();
         userMsg.setConversationId(conversationId);
@@ -148,7 +168,7 @@ public class ConversationService {
         Message assistantMsg = new Message();
         assistantMsg.setConversationId(conversationId);
         assistantMsg.setRole("assistant");
-        assistantMsg.setContent(request.getAssistantContent());
+        assistantMsg.setContent(assistantContent);
         assistantMsg.setCreatedAt(LocalDateTime.now());
         messageMapper.insert(assistantMsg);
 
@@ -159,6 +179,11 @@ public class ConversationService {
         conversationMapper.updateById(conversation);
 
         log.info("Chat 消息入库, userId={}, conversationId={}", userId, conversationId);
+
+        ChatMessagePairVO vo = new ChatMessagePairVO();
+        vo.setUserMessageId(userMsg.getId());
+        vo.setAssistantMessageId(assistantMsg.getId());
+        return vo;
     }
 
     @Transactional
@@ -241,6 +266,32 @@ public class ConversationService {
         vo.setPinned(conversation.getPinned() != null && conversation.getPinned() == 1);
         vo.setUpdatedAt(conversation.getUpdatedAt());
         return vo;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String extractTextFromLlmContent(Object content) {
+        if (content == null) {
+            return "";
+        }
+        if (content instanceof String s) {
+            return s.trim();
+        }
+        if (content instanceof List<?> list) {
+            StringBuilder sb = new StringBuilder();
+            for (Object part : list) {
+                if (part instanceof Map<?, ?> map) {
+                    Object type = map.get("type");
+                    if ("text".equals(type) && map.get("text") != null) {
+                        if (sb.length() > 0) {
+                            sb.append('\n');
+                        }
+                        sb.append(map.get("text").toString());
+                    }
+                }
+            }
+            return sb.toString().trim();
+        }
+        return content.toString().trim();
     }
 
     private MessageVO toMessageVO(Message message, String userFeedbackRating) {

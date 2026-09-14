@@ -5,6 +5,7 @@ import com.workbench.backendjava.dto.ChatMessageUpdateRequest;
 import com.workbench.backendjava.dto.ChatMessagesCreateRequest;
 import com.workbench.backendjava.dto.ConversationPatchRequest;
 import com.workbench.backendjava.service.ConversationService;
+import com.workbench.backendjava.vo.ChatMessagePairVO;
 import com.workbench.backendjava.vo.ConversationDetailVO;
 import com.workbench.backendjava.vo.ConversationVO;
 import jakarta.validation.Valid;
@@ -45,12 +46,11 @@ public class ConversationController {
 
     /** 流式结束后写入一轮 user + assistant */
     @PostMapping("/{id}/messages")
-    public Result<Void> saveMessages(
+    public Result<ChatMessagePairVO> saveMessages(
             @PathVariable Long id,
             @Valid @RequestBody ChatMessagesCreateRequest request
     ) {
-        conversationService.saveMessagePair(id, request);
-        return Result.ok(null);
+        return Result.ok(conversationService.saveMessagePair(id, request));
     }
 
     /** 重新生成后更新 assistant 消息 */

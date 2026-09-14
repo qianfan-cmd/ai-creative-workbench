@@ -1,6 +1,7 @@
 import { CopyOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { Button, Input, Segmented, Tooltip, message } from 'antd'
 import { useState } from 'react'
+import { copyToClipboard } from '@/utils/copyToClipboard'
 import CampaignNowcoderMobilePreview from '@/components/ops/CampaignNowcoderMobilePreview'
 import CampaignNowcoderWebPreview from '@/components/ops/CampaignNowcoderWebPreview'
 import styles from '@/components/ops/CampaignPreviewPanel.module.css'
@@ -41,7 +42,7 @@ export default function CampaignPreviewPanel({
       return
     }
     try {
-      await navigator.clipboard.writeText(text)
+      await copyToClipboard(text)
       message.success('已复制标题与正文')
     } catch {
       message.error('复制失败，请手动选择复制')

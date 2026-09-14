@@ -22,7 +22,7 @@ export function validateKnowledgeFile(file: File): string | null {
 }
 
 export function isBinaryKnowledgeFile(filename?: string, fileType?: string): boolean {
-  const lower = filename?.toLowerCase() ?? ''
+  const lower = filename.toLowerCase()
   if (lower.endsWith('.pdf') || lower.endsWith('.docx')) return true
   if (fileType === 'application/pdf') return true
   return fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'

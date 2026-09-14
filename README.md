@@ -2,7 +2,7 @@
 
 **AI 创意素材与知识工作台** — 把团队素材、内部文档和 AI 能力放在同一套产品里。
 
-**在线体验：** http://8.148.238.164:8088（支持注册登录）
+**在线体验：** http://8.148.238.164:8088
 
 ---
 
@@ -196,6 +196,13 @@
 ```bash
 docker compose up -d
 # 浏览器访问 http://localhost:8088
+```
+
+前端开发（**请使用 pnpm**，项目锁文件为 `frontend/pnpm-lock.yaml`）：
+
+```bash
+cd frontend && pnpm install && pnpm dev
+# 构建验证：pnpm -C frontend run build
 ```
 
 - 部署与环境变量：[docs/deploy.md](docs/deploy.md)

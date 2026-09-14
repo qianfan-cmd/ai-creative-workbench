@@ -67,15 +67,21 @@ export async function patchConversationApi(
     return res.data.data
 }
 
-/** 流式结束后批量写入 user + assistant（Phase C 接线） */
+export interface ChatMessagePairVO {
+    userMessageId: number
+    assistantMessageId: number
+}
+
+/** 发送时写入 user + assistant（assistant 可为空，流式结束后 update） */
 export async function saveChatMessagesApi(
     conversationId: number,
     payload: { userContent: string; assistantContent: string; userImageUrls?: string[] },
 ) {
-    await request.post<ApiResponse<null>>(
+    const res = await request.post<ApiResponse<ChatMessagePairVO>>(
         `/conversations/${conversationId}/messages`,
         payload,
     )
+    return res.data.data
 }
 
 /** 重新生成后更新 assistant 消息（Phase C 接线） */
