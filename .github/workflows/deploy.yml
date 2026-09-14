@@ -89,6 +89,8 @@ jobs:
           context: backend-java
           file: backend-java/Dockerfile.runtime
           push: true
+          provenance: false    # 加这行
+          sbom: false          # 加这行
           tags: ${{ steps.image_tags.outputs.backend_tags }}
 
       - name: Push frontend image
@@ -97,6 +99,8 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: true
+          push: true
+          provenance: false    # 加这行
           tags: ${{ steps.image_tags.outputs.frontend_tags }}
 
       - name: Push AI service image
@@ -105,6 +109,8 @@ jobs:
           context: ai-service-python
           file: ai-service-python/Dockerfile
           push: true
+          push: true
+          provenance: false    # 加这行
           tags: ${{ steps.image_tags.outputs.ai_tags }}
 
   deploy:
