@@ -224,7 +224,7 @@ export async function generateCopyStreamApi(
  * seed 模板要求 LLM 输出 JSON：{"title":"...","body":"..."}
  * 解析成功则用于 PUT /copy；失败则降级为整段正文或正则提取。
  */
-export function parseCampaignCopyFromLlm(raw: string): {
+function parseCampaignCopyFromLlm(raw: string): {
   copyTitle: string
   copyBody: string
 } | null {
@@ -404,11 +404,6 @@ export async function getMattingCropRegionsApi(id: number) {
   return res.data.data
 }
 
-export async function generateOpsImageApi(body: { prompt: string; count?: number; sourceUrl?: string }) {
-  const res = await request.post<ApiResponse<GenerationJobVO>>('/ops/image-gen', body, { timeout: 180000 })
-  return res.data.data
-}
-
 export async function saveMattingCropRegionsApi(
   id: number,
   body: {
@@ -533,16 +528,7 @@ export async function saveMattingElementsApi(
   return res.data.data
 }
 
-export async function getMattingPromptTemplatesApi() {
-    const res = await request.get<ApiResponse<PromptTemplateVO[]>>('/prompts')
-    return res.data.data.filter((t) => t.scene === 'matting')
-}
-
-export async function listMattingTasksApi() {
-    const res = await request.get<ApiResponse<MattingTaskVO[]>>('/ops/matting/tasks')
-    return res.data.data
-}
-
+/** Matting 左栏：分组 + 任务列表（替代 legacy listMattingTasksApi）。 */
 export async function getMattingSidebarApi() {
     const res = await request.get<ApiResponse<MattingSidebarVO>>('/ops/matting/task-groups')
     return res.data.data
@@ -588,33 +574,7 @@ export async function getMattingTaskApi(id: number) {
     return res.data.data
 }
 
-export async function patchMattingTaskApi(id: number, body: Partial<MattingTaskVO> & { configJson?: string }) {
-    const res = await request.patch<ApiResponse<MattingTaskVO>>(`/ops/matting/tasks/${id}`, body)
-    return res.data.data
-}
-
-export async function generateMattingApi(id: number, body?: { prompt?: string; count?: number }) {
-    const res = await request.post<ApiResponse<GenerationJobVO>>(
-        `/ops/matting/tasks/${id}/generate`,
-        body ?? {},
-        { timeout: 180000 },
-    )
-    return res.data.data
-}
-
-export async function saveMattingToAssetsApi(id: number, candidateUrl: string, name?: string) {
-    const res = await request.post<ApiResponse<{ id: number; url: string; name: string }>>(
-        `/ops/matting/tasks/${id}/save`,
-        { candidateUrl, name },
-    )
-    return res.data.data
-}
-
-export async function getMattingHistoryApi(id: number) {
-    const res = await request.get<ApiResponse<GenerationJobVO[]>>(`/ops/matting/tasks/${id}/history`)
-    return res.data.data
-}
-
+/** Campaign 步骤生图：POST /ops/campaign/{draftId}/generate-images，返回 GenerationJob。 */
 export async function generateCampaignImagesApi(
     draftId: number,
     body?: { sourceAssetId?: number; promptOverride?: string; count?: number },

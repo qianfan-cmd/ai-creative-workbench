@@ -121,11 +121,6 @@ export async function listRecentKnowledgeDocumentsApi(limit = 50) {
     return res.data.data
 }
 
-/** @deprecated 使用 listRecentKnowledgeDocumentsApi 或 listKnowledgeDocumentsPageApi */
-export async function listKnowledgeDocumentsApi() {
-    return listRecentKnowledgeDocumentsApi(50)
-}
-
 export async function patchKnowledgeDocumentApi(id: number, payload: { filename: string }) {
     const res = await request.patch<ApiResponse<KnowledgeDocumentVO>>(
         `/knowledge/documents/${id}`,
@@ -224,18 +219,9 @@ export async function updateKnowledgeTurnApi(
 }
 
 /**
- * 上传文件到知识库（单文件，兼容旧调用）
- * @deprecated 新代码请用 uploadKnowledgeDocumentsApi
+ * 批量上传文档：POST /knowledge/documents/upload，服务端并发入库并写 Chroma。
+ * 前端大文件列表应分片（见 KNOWLEDGE_UPLOAD_CHUNK_SIZE）避免 HTTP 超时。
  */
-export async function uploadKnowledgeApi(file: File) {
-    const batch = await uploadKnowledgeDocumentsApi([file])
-    if (batch.succeeded.length === 0) {
-        throw new Error(batch.failed[0]?.reason ?? '上传失败')
-    }
-    return batch.succeeded[0]
-}
-
-/** 批量上传（单/多文件同一接口） */
 export async function uploadKnowledgeDocumentsApi(files: File[]) {
     const formData = new FormData()
     files.forEach((file) => formData.append('files', file))
@@ -251,6 +237,7 @@ export async function uploadKnowledgeDocumentsApi(files: File[]) {
     return res.data.data
 }
 
+/** 批量删除文档：逐条删 MySQL + 向量 + 磁盘，部分失败仍返回 failures 列表。 */
 export async function batchDeleteKnowledgeDocumentsApi(ids: number[]) {
     const res = await request.post<ApiResponse<KnowledgeBatchDeleteVO>>(
         '/knowledge/documents/batch-delete',
@@ -258,21 +245,6 @@ export async function batchDeleteKnowledgeDocumentsApi(ids: number[]) {
         { timeout: API_TIMEOUT_BATCH },
     )
     return res.data.data
-}
-
-/**
- * RAG 知识库问答
- * @param question 用户问题
- * @param topK 检索条数，默认 3
- */
-export async function ragQueryApi(question: string, topK: number = 6) {
-    const res = await request.post<ApiResponse<RagQueryVO>>(
-        '/rag/query',
-        { question, topK },
-        { timeout: 120000 }, // Embedding + DeepSeek，给足时间
-      )
-
-      return res.data.data;
 }
 
 export interface RagStreamHandlers {
@@ -290,6 +262,7 @@ export interface RagStreamOptions {
     signal?: AbortSignal
 }
 
+/** RAG 流式问答：fetch SSE /api/rag/query/stream，先 references 再 answer 增量。 */
 export async function ragStreamApi(
     question: string,
     handlers: RagStreamHandlers,

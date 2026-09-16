@@ -237,20 +237,6 @@ def delete_by_source(source: str) -> int:
     return len(ids)
 
 
-def delete_by_document_id(document_id: int) -> int:
-    """按 metadata.document_id 删除该文档的全部 chunk。"""
-    if document_id is None or document_id <= 0:
-        return 0
-    collection = _get_collection()
-    result = collection.get(where={"document_id": document_id}, include=[])
-    ids = result.get("ids") or []
-    if not ids:
-        return 0
-    collection.delete(ids=ids)
-    _invalidate_bm25_cache()
-    return len(ids)
-
-
 def delete_document_vectors(*, source: str | None = None, document_id: int | None = None) -> int:
     """
     按 document_id 与/或 source 删除向量，两者都传则都尝试（去重后的 id 并集）。

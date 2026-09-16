@@ -3,10 +3,6 @@ import type { ApiResponse } from '@/types/api';
 import { getToken } from '@/utils/token'
 import { parseApiError, parseHttpStatus, finalizeApiRequestError } from '@/utils/apiError';
 
-export interface ChatRelyVO {
-    reply: string;
-}
-
 /** 历史会话侧栏项 */
 export interface ConversationVO {
     id: number
@@ -27,11 +23,6 @@ export interface ConversationDetailVO {
     id: number
     title: string
     messages: MessageVO[]
-}
-
-export async function chatApi(message: string) {
-    const res = await request.post<ApiResponse<ChatRelyVO>>('/chat', { message });
-    return res.data.data;
 }
 
 /** 历史会话列表（侧栏只读展示，Phase C 接线切换） */
@@ -107,8 +98,8 @@ export interface ChatStreamOptions {
 }
 
 /**
- * Chat SSE 流式接口。
- * message 事件 data 为 JSON 编码的 chunk（保留 Markdown 换行）。
+ * Chat SSE 流式：POST /api/chat/stream，message 事件 data 为 JSON 编码 chunk（保留 Markdown 换行）。
+ * 支持 conversationId 多轮与 imageUrls 多模态附件。
  */
 export async function chatStreamApi(
     message: string,

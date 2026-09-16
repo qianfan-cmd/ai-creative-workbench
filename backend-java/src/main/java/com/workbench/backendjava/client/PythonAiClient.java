@@ -23,7 +23,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.BufferedReader;
@@ -71,10 +70,12 @@ public class PythonAiClient {
     }
 
     /**
-     * 调用python  post ai/chat接口，返回模型文本
+     * 非流式 Chat：调用 Python {@code POST /ai/chat}，返回完整回复文本。
+     * 调用方：早期调试或 Admin 探测；生产 Chat 页使用 {@link #chatStream}。
      *
-     * @param message 用户问题
-     * @return 回复
+     * @param message 用户单轮问题
+     * @return 模型回复正文
+     * @throws BusinessException Python 不可用或返回空内容（502）
      */
     public String chat(String message) {
         // 拼接完整url
@@ -115,10 +116,14 @@ public class PythonAiClient {
 
 
     /**
-     * 调用 Python POST /ai/rag/query，返回 RAG 问答结果。
+     * 非流式 RAG：调用 Python {@code POST /ai/rag/query}，一次性返回 answer + references。
+     * 调用方：Java 内部或集成测试；前端 Knowledge 页使用 {@link #ragQueryStream}。
      *
      * @param question 用户问题
-     * @param topK     检索条数，传给 Python 的 top_k
+     * @param topK     向量检索条数（Python {@code top_k}）
+     * @param history  同会话 prior Q/A，可为空
+     * @return 答案与引用片段列表
+     * @throws BusinessException Python 不可用或 answer 为空（502）
      */
     public RagQueryVO ragQuery(String question, int topK, List<RagHistoryItem> history) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query";
@@ -170,8 +175,9 @@ public class PythonAiClient {
     }
 
     /**
-     * 调用 Python GET /ai/documents/list，获取已索引文档列表。
-     * Chroma 当前全局共享，未按 userId 隔离。
+     * 列出 Chroma 已索引文档：GET Python {@code /ai/documents/list}（legacy 同步用）。
+     * 调用方：{@link com.workbench.backendjava.service.KnowledgeDocumentService#syncFromChromaIfNeeded}。
+     * 注意：Chroma 侧未按 userId 隔离，仅用于 MySQL 与向量库对账。
      */
     public List<KnowledgeDocumentVO> listDocuments() {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/list";
@@ -193,16 +199,16 @@ public class PythonAiClient {
     }
 
     /**
-     * 转发文件到 Python POST /ai/documents/index，完成 RAG 入库。
+     * RAG 入库：将文档二进制转发至 Python {@code POST /ai/documents/index}，写入 Chroma。
+     * 调用方：{@link com.workbench.backendjava.service.KnowledgeDocumentService} 上传 / reindex。
+     *
+     * @param bytes       文件内容（Service 已从 MultipartFile 或磁盘读出）
+     * @param filename    原始文件名，用作 Chroma source 与展示名
+     * @param documentId  MySQL {@code knowledge_document.id}，写入向量 metadata 做用户隔离
+     * @param userId      用于 embedding token 用量日志；为 null 则跳过 {@code ai_call_log}
+     * @return 入库结果（charCount、chunkCount、indexedCount、suggestedTags）
+     * @throws BusinessException Python 4xx/502 或 indexedCount=0
      */
-    public KnowledgeUploadVO indexDocument(MultipartFile file) {
-        try {
-            return indexDocument(file.getBytes(), file.getOriginalFilename(), null, null);
-        } catch (Exception e) {
-            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
-        }
-    }
-
     public KnowledgeUploadVO indexDocument(byte[] bytes, String filename, Long documentId, Long userId) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/index";
 
@@ -275,7 +281,13 @@ public class PythonAiClient {
     }
 
     /**
-     * 调用 Python POST /ai/documents/parse，提取文档纯文本（PDF/DOCX 预览与入库前解析）。
+     * 文档解析：调用 Python {@code POST /ai/documents/parse}，提取 PDF/DOCX 等纯文本。
+     * 调用方：{@link com.workbench.backendjava.service.KnowledgeDocumentService#getContent} 预览。
+     *
+     * @param bytes    文件二进制
+     * @param filename 原始文件名（决定解析器）
+     * @return 文件名、正文与 charCount
+     * @throws BusinessException 解析失败或返回空（400/502）
      */
     public PythonParseResult parseDocument(byte[] bytes, String filename) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/documents/parse";
@@ -346,10 +358,14 @@ public class PythonAiClient {
     }
 
     /**
-     * 按 Chroma source / document_id 删除文档向量（POST JSON，避免 query 编码问题）。
+     * 删除向量：调用 Python {@code POST /ai/documents/delete}，按 source 和/或 document_id 删 Chroma chunk。
+     * 调用方：{@link com.workbench.backendjava.service.KnowledgeDocumentService} 删除 / 重命名 / 编辑前清旧索引。
      *
-     * @param expectedChunkCount MySQL 记录的 chunk 数；&gt;0 时要求至少删除 1 条
+     * @param source               Chroma metadata.source（通常为 filename）
+     * @param documentId           MySQL 文档 id；与 source 可同时传
+     * @param expectedChunkCount   MySQL 记录的 chunk 数；&gt;0 时要求至少删除 1 条，否则 502
      * @return 实际删除的 chunk 数
+     * @throws BusinessException Python 不可用或校验失败（502）
      */
     public int deleteDocument(String source, Long documentId, int expectedChunkCount) {
         boolean hasSource = source != null && !source.isBlank();
@@ -393,21 +409,13 @@ public class PythonAiClient {
         }
     }
 
-    /** 重命名/重索引等场景：按 source 删除，不要求 chunk 校验 */
-    public void deleteDocument(String source) {
-        deleteDocument(source, null, 0);
-    }
-
     /**
-     * 调用 Python POST /ai/chat/stream，把 SSE 事件转发到 emitter。
-     * messages 为 DeepSeek 多轮格式 [{role, content}, ...]。
-     */
-    public void chatStream(List<Map<String, Object>> messages, SseEmitter emitter) {
-        chatStream(messages, emitter, null);
-    }
-
-    /**
-     * 调用 Python POST /ai/chat/stream，转发 SSE；可选在流结束后写 ai_call_log。
+     * 流式 Chat：调用 Python {@code POST /ai/chat/stream}，在异步线程转发 SSE 到 {@link SseEmitter}。
+     * 调用方：{@link com.workbench.backendjava.service.ChatService}。
+     *
+     * @param messages           DeepSeek 多轮格式 {@code [{role, content}, ...]}
+     * @param emitter            向前端推送 message / usage / done / error 事件
+     * @param userIdForUsageLog  非 null 时在流结束后写入 {@code ai_call_log}（含 token 用量）
      */
     public void chatStream(List<Map<String, Object>> messages, SseEmitter emitter, Long userIdForUsageLog) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/chat/stream";
@@ -441,8 +449,14 @@ public class PythonAiClient {
     }
 
     /**
-     * 调用 Python POST /ai/rag/query-stream，把 SSE 事件转发到 emitter。
-     * 在异步线程里跑，避免阻塞 Tomcat 请求线程。
+     * 流式 RAG：调用 Python {@code POST /ai/rag/query-stream}，转发 references + answer 增量 SSE。
+     * 调用方：{@link com.workbench.backendjava.service.KnowledgeService} / RAG Controller。
+     * 使用 {@code ragStreamRestTemplate}（更长 readTimeout）。
+     *
+     * @param question 用户问题
+     * @param topK     检索条数
+     * @param history  同会话 prior Q/A
+     * @param emitter  向前端推送 references / message / done / error
      */
     public void ragQueryStream(String question, int topK, List<RagHistoryItem> history, SseEmitter emitter) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/rag/query-stream";
@@ -604,10 +618,13 @@ public class PythonAiClient {
     }
 
     /**
-     * 提示词 流式渲染
-     * @param template
-     * @param variables
-     * @return
+     * Prompt 渲染：调用 Python {@code POST /ai/ops/render-prompt}，将模板与变量合成最终 prompt。
+     * 调用方：Campaign / Matting 等业务在调 LLM 前填充占位符。
+     *
+     * @param template  含 {@code {{key}}} 占位符的模板
+     * @param variables 占位符键值
+     * @return 渲染后的 prompt 字符串
+     * @throws BusinessException Python 不可用或未返回 prompt（502）
      */
     public String renderPrompt(String template, Map<String, String> variables) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/render-prompt";
@@ -627,10 +644,14 @@ public class PythonAiClient {
         }
     }
 
-    public void opsCopyStream(String prompt, SseEmitter emitter) {
-        opsCopyStream(prompt, emitter, null);
-    }
-
+    /**
+     * 流式文案生成：调用 Python {@code POST /ai/ops/copy/stream}，转发 SSE 并可选记 usage。
+     * 调用方：{@link com.workbench.backendjava.service.CampaignDraftService}。
+     *
+     * @param prompt              已渲染的完整 prompt
+     * @param emitter             向前端推送流式文案
+     * @param userIdForUsageLog   非 null 时流结束后写 {@code ai_call_log}
+     */
     public void opsCopyStream(String prompt, SseEmitter emitter, Long userIdForUsageLog) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/copy/stream";
 
@@ -658,34 +679,35 @@ public class PythonAiClient {
         });
     }
 
-    /** 调用 Python POST /ai/ops/image-gen */
-    public PythonImageGenerateResponse opsImageGen(String prompt, String sourceUrl, int count, String aspectRatio) {
-        return opsImageGen(prompt, sourceUrl, count, aspectRatio, null);
-    }
-
+    /**
+     * 通用生图：调用 Python {@code POST /ai/ops/image-gen}。
+     * 调用方：{@link com.workbench.backendjava.service.GenerationJobService}。
+     *
+     * @param imageBytes 可选 inline base64 参考图（ECS 内网 URL 不可达时的 L2 兜底）
+     */
     public PythonImageGenerateResponse opsImageGen(
             String prompt, String sourceUrl, int count, String aspectRatio, byte[] imageBytes
     ) {
         return callImageEndpoint("/ai/ops/image-gen", prompt, sourceUrl, count, aspectRatio, imageBytes);
     }
 
-    /** 调用 Python POST /ai/ops/matting */
-    public PythonImageGenerateResponse opsMatting(String prompt, String sourceUrl, int count, String aspectRatio) {
-        return opsMatting(prompt, sourceUrl, count, aspectRatio, null);
-    }
-
+    /**
+     * Matting 抠图生图：调用 Python {@code POST /ai/ops/matting}。
+     * 调用方：{@link com.workbench.backendjava.service.GenerationJobService}。
+     */
     public PythonImageGenerateResponse opsMatting(
             String prompt, String sourceUrl, int count, String aspectRatio, byte[] imageBytes
     ) {
         return callImageEndpoint("/ai/ops/matting", prompt, sourceUrl, count, aspectRatio, imageBytes);
     }
 
-    /** 视觉元素识别 POST /ai/ops/detect-elements */
-    public PythonDetectElementsResponse opsDetectElements(String imageUrl, String prompt) {
-        return opsDetectElements(imageUrl, prompt, null);
-    }
-
-    /** 视觉元素识别 — 可选传 imageBytes 作为 L2 inline base64 兜底 */
+    /**
+     * 视觉元素识别：调用 Python {@code POST /ai/ops/detect-elements}，返回分组元素列表。
+     * 调用方：{@link com.workbench.backendjava.service.MattingTaskService}。
+     *
+     * @param imageUrl   可浏览器访问的图片 URL；与 imageBytes 至少其一
+     * @param imageBytes 可选 inline base64 兜底
+     */
     public PythonDetectElementsResponse opsDetectElements(String imageUrl, String prompt, byte[] imageBytes) {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/ai/ops/detect-elements";
         Map<String, Object> body = new HashMap<>();
@@ -714,12 +736,18 @@ public class PythonAiClient {
         }
     }
 
-    /** 元素提取 POST /ai/ops/extract-element */
+    /**
+     * 元素提取（无 inline 图）：调用 {@link #opsExtractElement(String, String, int, byte[])}。
+     * 调用方：{@link com.workbench.backendjava.service.MattingExtractService}（URL 可达时）。
+     */
     public PythonImageGenerateResponse opsExtractElement(String sourceUrl, String prompt, int count) {
         return opsExtractElement(sourceUrl, prompt, count, null);
     }
 
-    /** 元素提取 — 可选传 imageBytes 作为 L2 inline base64 兜底 */
+    /**
+     * 元素提取：调用 Python {@code POST /ai/ops/extract-element}，按 prompt 从图中抠出元素候选。
+     * 调用方：{@link com.workbench.backendjava.service.MattingExtractService}。
+     */
     public PythonImageGenerateResponse opsExtractElement(
             String sourceUrl, String prompt, int count, byte[] imageBytes
     ) {
@@ -786,7 +814,8 @@ public class PythonAiClient {
     }
 
     /**
-     * 探测python是否存活
+     * 健康检查：GET Python {@code /health}，status 为 {@code ok} 时返回 true。
+     * 调用方：Admin 或启动探测；失败时返回 false 不抛异常。
      */
     public boolean isHealthy() {
         String url = aiServiceProperties.getBaseUrl().replaceAll("/$", "") + "/health";

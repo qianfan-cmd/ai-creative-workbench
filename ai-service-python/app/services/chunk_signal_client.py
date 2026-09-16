@@ -41,8 +41,3 @@ def get_chunk_signals() -> dict[str, dict[str, Any]]:
     _CACHE = _fetch_signals()
     _CACHE_AT = now
     return _CACHE
-
-
-def invalidate_chunk_signal_cache() -> None:
-    global _CACHE_AT
-    _CACHE_AT = 0.0

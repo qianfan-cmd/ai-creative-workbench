@@ -61,11 +61,11 @@ public class WorkflowSourceService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
-    public WorkflowSourceVO upload(String context, Long taskId, Long draftId, MultipartFile file, Long userId) {
-        return upload(context, taskId, draftId, file, userId, false);
-    }
-
+    /**
+     * Matting/Campaign 工作流上传参考图：存盘并写入 {@code ops_workflow_source}。
+     *
+     * @param ephemeralReference true 时仅作 LLM 参考，不长期保留为素材库条目
+     */
     @Transactional
     public WorkflowSourceVO upload(String context, Long taskId, Long draftId, MultipartFile file, Long userId,
                                    boolean ephemeralReference) {

@@ -10,7 +10,7 @@
 
 ### 企业知识库 — 问文档，答有据
 
-上传规范、策划案、FAQ、简历说明等文档，用自然语言提问，AI 基于**已索引内容**回答，并标注引用来源，减少「凭空编造」。
+上传规范、策划案、F、简历说明等文档，用自然语言提问，AI 基于**已索引内容**回答，并标注引用来源，减少「凭空编造」。
 
 - 支持 **md / txt / pdf / docx** 上传与自动入库
 - 流式问答，回答带 **[1][2]** 引用角标，可查看原文片段与文件名
@@ -196,13 +196,6 @@
 ```bash
 docker compose up -d
 # 浏览器访问 http://localhost:8088
-```
-
-前端开发（**请使用 pnpm**，项目锁文件为 `frontend/pnpm-lock.yaml`）：
-
-```bash
-cd frontend && pnpm install && pnpm dev
-# 构建验证：pnpm -C frontend run build
 ```
 
 - 部署与环境变量：[docs/deploy.md](docs/deploy.md)

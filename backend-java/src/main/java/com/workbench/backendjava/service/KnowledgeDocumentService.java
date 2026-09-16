@@ -44,6 +44,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
+/**
+ * 知识库文档业务：MySQL 元数据 + 磁盘原文件 + Python 向量索引（RAG 入库/删除/reindex）。
+ * Controller 经 {@link KnowledgeService} 或直接调用本类；不处理 RAG 问答流（见 Chat/RAG Service）。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -64,6 +68,10 @@ public class KnowledgeDocumentService {
     private final ObjectProvider<KnowledgeDocumentService> selfProvider;
     private final KnowledgeDocumentTagService documentTagService;
 
+    /**
+     * 批量上传：并发 {@link #uploadDocument}（线程池大小 {@value #BATCH_UPLOAD_CONCURRENCY}），
+     * 单文件失败不影响其他文件，结果分 succeeded / failed 返回。
+     */
     public KnowledgeBatchUploadVO uploadDocumentsBatch(MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new BusinessException(400, "请选择至少一个文件");
@@ -105,6 +113,7 @@ public class KnowledgeDocumentService {
         return result;
     }
 
+    /** 批量删除：逐条 {@link #deleteDocument}，失败收集到 failures 不中断整批。 */
     public KnowledgeBatchDeleteVO deleteDocumentsBatch(IdsBatchDeleteRequest request) {
         if (request.getIds() == null || request.getIds().isEmpty()) {
             throw new BusinessException(400, "请选择至少一条记录");
@@ -133,6 +142,10 @@ public class KnowledgeDocumentService {
         return result;
     }
 
+    /**
+     * 单文件上传入库：insert MySQL → 存盘 → {@link PythonAiClient#indexDocument} → 更新统计与 AI 标签。
+     * 向量入库失败时回滚 DB 行与磁盘文件。
+     */
     @Transactional
     public KnowledgeUploadVO uploadDocument(MultipartFile file) {
         Long userId = requireUserId();
@@ -155,6 +168,7 @@ public class KnowledgeDocumentService {
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.insert(doc);
 
+        // 存储文件到指定目录下
         String storedPath = storeKnowledgeFile(userId, doc.getId(), filename, bytes);
         doc.setStoredPath(storedPath);
         documentMapper.updateById(doc);
@@ -176,6 +190,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 文档库分页列表（当前用户），支持文件名 keyword 与 createdAt 排序。 */
     public PageResult<KnowledgeDocumentVO> listPage(long page, long size, String keyword, String sort) {
         Long userId = requireUserId();
 
@@ -202,6 +217,7 @@ public class KnowledgeDocumentService {
         return PageResult.of(records, result.getTotal(), result.getCurrent(), result.getSize());
     }
 
+    /** 侧栏最近文档（轻量，默认最多 50 条）。 */
     public List<KnowledgeDocumentVO> listRecent(int limit) {
         Long userId = requireUserId();
 
@@ -220,11 +236,10 @@ public class KnowledgeDocumentService {
         return list;
     }
 
-    @Transactional
-    public void reindexDocumentById(Long id) {
-        reindexDocumentById(id, requireUserId());
-    }
-
+    /**
+     * 按 id 重建向量索引（从磁盘原文件 re-read 再 index）。
+     * 调用方：用户手动 reindex、{@link RagFeedbackFixService}（可指定 doc 所属 userId）。
+     */
     @Transactional
     public void reindexDocumentById(Long id, Long userId) {
         KnowledgeDocument doc = getOwnedDocument(id, userId);
@@ -275,6 +290,7 @@ public class KnowledgeDocumentService {
         return result;
     }
 
+    /** 重命名文档：删旧向量 → 写盘 → 按新 filename 重新 index。 */
     @Transactional
     public KnowledgeDocumentVO patchDocument(Long id, KnowledgeDocumentPatchRequest request) {
         Long userId = requireUserId();
@@ -298,6 +314,7 @@ public class KnowledgeDocumentService {
         return toVO(doc);
     }
 
+    /** 在线编辑 txt/md 正文：覆盖磁盘文件并 reindex（PDF/DOCX 不支持）。 */
     @Transactional
     public KnowledgeDocumentVO saveContent(Long id, String content) {
         Long userId = requireUserId();
@@ -348,6 +365,7 @@ public class KnowledgeDocumentService {
         documentMapper.updateById(doc);
     }
 
+    /** 删除文档：Chroma 向量 + 磁盘原文件 + MySQL 行（需归属当前用户）。 */
     @Transactional
     public void deleteDocument(Long id) {
         Long userId = requireUserId();
@@ -367,6 +385,7 @@ public class KnowledgeDocumentService {
         documentMapper.deleteById(id);
     }
 
+    /** 读取文档正文：文本直接读盘，PDF/DOCX 经 Python parse。 */
     public KnowledgeDocumentContentVO getContent(Long id) {
         Long userId = requireUserId();
         KnowledgeDocument doc = getOwnedDocument(id, userId);
@@ -532,8 +551,8 @@ public class KnowledgeDocumentService {
 
     private String storeKnowledgeFile(Long userId, Long docId, String filename, byte[] bytes) {
         String safeName = sanitizeFilename(filename);
-        String relative = "knowledge/" + userId + "/" + docId + "/" + safeName;
-        Path target = Paths.get(uploadProperties.getDir()).resolve(relative);
+        String relative = "knowledge/" + userId + "/" + docId + "/" + safeName; // 相对路径
+        Path target = Paths.get(uploadProperties.getDir()).resolve(relative); // 目标路径
         try {
             Files.createDirectories(target.getParent());
             Files.write(target, bytes);
@@ -587,6 +606,9 @@ public class KnowledgeDocumentService {
         return p;
     }
 
+/**
+ * 替换为安全的文件名，避免文件名中包含特殊字符，导致文件无法被正确识别。
+ */
     private static String sanitizeFilename(String filename) {
         String name = filename.replace("\\", "/");
         int slash = name.lastIndexOf('/');
@@ -596,6 +618,7 @@ public class KnowledgeDocumentService {
         return name.replaceAll("[^a-zA-Z0-9._\\-\\u4e00-\\u9fff]", "_");
     }
 
+    /** 当前用户文档总数（侧栏/配额展示）。 */
     public long countForCurrentUser() {
         Long userId = requireUserId();
         return documentMapper.selectCount(

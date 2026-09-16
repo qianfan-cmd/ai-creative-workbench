@@ -7,12 +7,19 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
+/**
+ * AI 调用审计日志：写入 {@code ai_call_log}，供 Admin 用量统计与计费估算。
+ */
 @Service
 @RequiredArgsConstructor
 public class AiCallLogService {
 
     private final AiCallLogMapper aiCallLogMapper;
 
+    /**
+     * 完整字段写入（含 imageCount），用于生图类 scene。
+     * 调用方：{@link GenerationJobService}、{@link MattingExtractService}。
+     */
     public void logCall(Long userId, String scene, String provider, String model, String prompt,
                         String status, int costMs, String summary,
                         Integer promptTokens, Integer completionTokens, Integer totalTokens,
@@ -34,16 +41,15 @@ public class AiCallLogService {
         aiCallLogMapper.insert(row);
     }
 
+    /**
+     * 写入 token 用量（无 imageCount），用于 Chat/RAG stream、embedding、matting_detect 等。
+     * 调用方：{@link com.workbench.backendjava.client.PythonAiClient}、{@link MattingTaskService}。
+     */
     public void logCall(Long userId, String scene, String provider, String model, String prompt,
                         String status, int costMs, String summary,
                         Integer promptTokens, Integer completionTokens, Integer totalTokens) {
         logCall(userId, scene, provider, model, prompt, status, costMs, summary,
                 promptTokens, completionTokens, totalTokens, null);
-    }
-
-    public void logCall(Long userId, String scene, String provider, String model, String prompt,
-                        String status, int costMs, String summary) {
-        logCall(userId, scene, provider, model, prompt, status, costMs, summary, null, null, null, null);
     }
 
     private static String truncate(String s, int max) {
