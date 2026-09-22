@@ -15,18 +15,24 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * RAG 知识库问答业务层（≈ ChatService）。
+ * RAG 知识库问答业务层：校验登录与参数，组装多轮 history，委托 {@link PythonAiClient}。
+ * 调用方：{@link com.workbench.backendjava.controller.RagController}。
  */
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class RagService {
 
+    /** 传给 Python 的同会话 prior Q/A 上限（不含 references 全文）。 */
     private static final int RAG_HISTORY_LIMIT = 10;
 
     private final PythonAiClient pythonAiClient;
     private final KnowledgeSessionService knowledgeSessionService;
 
+    /**
+     * 非流式 RAG（集成测试/备用）；生产前端用 {@link #streamQuery}。
+     * 调用 Python {@code POST /ai/rag/query}。
+     */
     public RagQueryVO query(RagQueryRequest request) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -47,6 +53,10 @@ public class RagService {
         return pythonAiClient.ragQuery(question, topK, history);
     }
 
+    /**
+     * 流式 RAG：创建 120s {@link SseEmitter}，异步转发 Python SSE。
+     * 调用方：{@code POST /api/rag/query/stream}。
+     */
     public SseEmitter streamQuery(RagQueryRequest request) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -67,6 +77,11 @@ public class RagService {
         return emitter;
     }
 
+    /**
+     * 从 {@link KnowledgeSessionService} 加载 prior turns 作为多轮上下文。
+     *
+     * @param request sessionId 为空则返回空列表；excludeTurnId 用于重新生成时排除当前 turn
+     */
     private List<RagHistoryItem> resolveHistory(RagQueryRequest request) {
         if (request.getSessionId() == null) {
             return Collections.emptyList();

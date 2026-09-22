@@ -8,10 +8,12 @@ import {
 } from '@/api/knowledge'
 import { validateKnowledgeFile } from '@/constants/knowledgeFormats'
 
+/** 上传 Hook 配置项 */
 interface UseKnowledgeDocumentUploadOptions {
   onSuccess?: () => void | Promise<void>
 }
 
+/** 将文件列表按固定大小切分为多批，避免单次 HTTP 超时 */
 function chunkFiles(files: File[], size: number): File[][] {
   const chunks: File[][] = []
   for (let i = 0; i < files.length; i += size) {
@@ -20,6 +22,7 @@ function chunkFiles(files: File[], size: number): File[][] {
   return chunks
 }
 
+/** 根据批量上传结果展示成功/失败提示与详情弹窗 */
 function showBatchUploadResult(total: number, succeeded: number, failed: { filename: string; reason: string }[]) {
   if (succeeded > 0) {
     message.success(
@@ -43,6 +46,10 @@ function showBatchUploadResult(total: number, succeeded: number, failed: { filen
   }
 }
 
+/**
+ * 知识库文档批量上传 Hook
+ * 校验格式 → 分片 POST /knowledge/documents/upload → 汇总结果
+ */
 export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOptions = {}) {
   const onSuccessRef = useRef(options.onSuccess)
   onSuccessRef.current = options.onSuccess

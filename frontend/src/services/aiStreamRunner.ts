@@ -17,6 +17,7 @@ import {
   type AiStreamEntry,
 } from '@/stores/aiSessionStore'
 
+/** 聊天流式生成参数 */
 export interface RunChatStreamParams {
   conversationId: number
   assistantMessageId: number
@@ -25,6 +26,7 @@ export interface RunChatStreamParams {
   onComplete?: (text: string) => void | Promise<void>
 }
 
+/** RAG 流式问答参数 */
 export interface RunRagStreamParams {
   sessionId: number
   turnDbId: number
@@ -33,6 +35,7 @@ export interface RunRagStreamParams {
   onComplete?: (payload: { answer: string; references: RagReferenceVO[] }) => void | Promise<void>
 }
 
+/** 营销文案流式生成参数 */
 export interface RunCampaignCopyStreamParams {
   draftId: number
   mode: 'draft' | 'refine'
@@ -43,10 +46,12 @@ export interface RunCampaignCopyStreamParams {
   onDebouncedSave?: (payload: { copyTitle: string; copyBody: string }) => void | Promise<void>
 }
 
+/** 在 aiSessionStore 中初始化流式条目 */
 function initStreamEntry(partial: AiStreamEntry) {
   useAiSessionStore.getState().upsertStream(partial)
 }
 
+/** 流结束后持久化聊天助手回复 PUT /chat/conversations/{id}/messages/{messageId} */
 async function persistChatAssistant(
   conversationId: number,
   assistantMessageId: number,
@@ -56,6 +61,7 @@ async function persistChatAssistant(
   await updateChatAssistantApi(conversationId, assistantMessageId, content)
 }
 
+/** 流结束后持久化 RAG turn PUT /knowledge/sessions/{sessionId}/turns/{turnId} */
 async function persistRagTurn(
   sessionId: number,
   turnDbId: number,
@@ -70,6 +76,7 @@ async function persistRagTurn(
   })
 }
 
+/** 启动聊天 SSE 流，写入 store 并在完成后持久化 */
 export async function runChatStream(params: RunChatStreamParams): Promise<string> {
   const { conversationId, assistantMessageId, userText, imageUrls, onComplete } = params
   const key = chatStreamKey(conversationId, assistantMessageId)
@@ -120,6 +127,7 @@ export async function runChatStream(params: RunChatStreamParams): Promise<string
   }
 }
 
+/** 启动 RAG SSE 流（POST /api/rag/query/stream），写入 store 并在完成后持久化 turn */
 export async function runRagStream(params: RunRagStreamParams): Promise<{
   answer: string
   references: RagReferenceVO[]
@@ -177,6 +185,7 @@ export async function runRagStream(params: RunRagStreamParams): Promise<{
   }
 }
 
+/** 启动营销文案 SSE 流，支持防抖中间保存与最终落库 */
 export async function runCampaignCopyStream(params: RunCampaignCopyStreamParams): Promise<{
   copyTitle: string
   copyBody: string
@@ -253,6 +262,7 @@ export async function runCampaignCopyStream(params: RunCampaignCopyStreamParams)
   }
 }
 
+/** 按 store key 中止正在进行的流式请求 */
 export function abortStreamByKey(key: string) {
   useAiSessionStore.getState().abortStream(key)
 }

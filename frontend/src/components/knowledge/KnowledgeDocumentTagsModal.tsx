@@ -14,6 +14,7 @@ interface KnowledgeDocumentTagsModalProps {
   onSaved: (tags: TagVO[]) => void
 }
 
+/** 编辑文档标签弹窗 PUT /knowledge/documents/{id}/tags */
 export default function KnowledgeDocumentTagsModal({
   open,
   documentId,

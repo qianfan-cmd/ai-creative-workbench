@@ -1,3 +1,7 @@
+/**
+ * 知识问答主页面（RAG）
+ * 左侧：文档库上传/列表 + 历史会话；右侧：问答线程与流式回答
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -44,6 +48,7 @@ interface IndexedDoc {
   hasOriginalFile?: boolean
 }
 
+/** 将 API turn 映射为前端 RagTurnView（含 dbId 供持久化/反馈） */
 function mapTurnFromApi(turn: {
   id: number
   question: string
@@ -63,6 +68,7 @@ function mapTurnFromApi(turn: {
   }
 }
 
+/** 知识问答页：文档上传、会话管理与 RAG 流式提问 */
 export default function KnowledgePage() {
   const navigate = useNavigate()
 
@@ -87,6 +93,7 @@ export default function KnowledgePage() {
     [turns, activeSessionId, streams],
   )
 
+  /** 加载侧栏最近文档 GET /knowledge/documents/recent */
   const loadDocuments = useCallback(async () => {
     try {
       const list = await listRecentKnowledgeDocumentsApi(50)
@@ -103,6 +110,7 @@ export default function KnowledgePage() {
     }
   }, [])
 
+  /** 加载历史会话列表 GET /knowledge/sessions */
   const loadSessions = useCallback(async () => {
     try {
       const list = await listKnowledgeSessionsApi()
@@ -112,6 +120,7 @@ export default function KnowledgePage() {
     }
   }, [])
 
+  /** 加载并激活指定会话 GET /knowledge/sessions/{id} */
   const loadSessionDetail = useCallback(
     async (sessionId: number) => {
       const detail = await getKnowledgeSessionApi(sessionId)
@@ -177,6 +186,7 @@ export default function KnowledgePage() {
     notifyContentChanged()
   }, [displayTurns, notifyContentChanged])
 
+  /** 若无活跃会话则 POST /knowledge/sessions 创建新会话 */
   const ensureSession = useCallback(async (): Promise<number> => {
     if (activeSessionId != null) return activeSessionId
 
@@ -186,6 +196,7 @@ export default function KnowledgePage() {
     return session.id
   }, [activeSessionId, setActiveKnowledgeSessionId])
 
+  /** 提交问题：先保存空 turn，再启动 RAG 流式生成 */
   const handleQuery = async () => {
     const question = draft.trim()
     if (!question || querying) return
@@ -238,6 +249,7 @@ export default function KnowledgePage() {
     }
   }
 
+  /** 重新生成指定 turn（excludeTurnId 排除旧答案上下文） */
   const handleRetry = async (turnId: string) => {
     if (querying) return
 
@@ -271,6 +283,7 @@ export default function KnowledgePage() {
     })
   }
 
+  /** 创建空白新会话并清空当前线程 */
   const handleNewSession = async () => {
     if (querying) return
 
@@ -284,6 +297,7 @@ export default function KnowledgePage() {
     }
   }
 
+  /** 删除历史会话 DELETE /knowledge/sessions/{id} */
   const handleDeleteSession = (session: KnowledgeSessionVO) => {
     Modal.confirm({
       title: '删除问答',
@@ -308,6 +322,7 @@ export default function KnowledgePage() {
     })
   }
 
+  /** 切换会话置顶 PATCH /knowledge/sessions/{id} */
   const handlePinSession = async (session: KnowledgeSessionVO) => {
     try {
       await patchKnowledgeSessionApi(session.id, { pinned: !session.pinned })
@@ -317,6 +332,7 @@ export default function KnowledgePage() {
     }
   }
 
+  /** 弹窗重命名会话标题 */
   const handleRenameSession = (session: KnowledgeSessionVO) => {
     Modal.confirm({
       title: '重命名',
@@ -348,6 +364,7 @@ export default function KnowledgePage() {
     })
   }
 
+  /** 切换至指定历史会话 */
   const handleSelectSession = async (sessionId: number) => {
     if (querying || sessionId === activeSessionId) return
 
@@ -365,6 +382,7 @@ export default function KnowledgePage() {
     }
   }
 
+  /** 中止当前会话正在进行的 RAG 流 */
   const handleStop = () => {
     if (activeSessionId == null) return
     const activeStream = Object.values(streams).find(

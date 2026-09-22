@@ -23,6 +23,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 知识库文档标签：文档与 tag 多对多关联，支持用户手动绑定与 AI 入库建议标签。
+ * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController}、{@link KnowledgeDocumentService}。
+ */
 @Service
 @RequiredArgsConstructor
 public class KnowledgeDocumentTagService {
@@ -31,6 +35,11 @@ public class KnowledgeDocumentTagService {
     private final KnowledgeDocumentMapper documentMapper;
     private final TagMapper tagMapper;
 
+    /**
+     * 查询单文档已绑定的标签列表。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#getDocumentTags}；
+     * 前端 {@code getKnowledgeDocumentTagsApi}。
+     */
     public List<TagVO> listTagsForDocument(Long documentId) {
         requireOwnedDocument(documentId);
         List<KnowledgeDocumentTag> relations = documentTagMapper.selectList(
@@ -57,6 +66,11 @@ public class KnowledgeDocumentTagService {
         return out;
     }
 
+    /**
+     * 全量替换文档的用户标签（diff 增删，source=user）。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#updateDocumentTags}；
+     * 前端 {@code updateKnowledgeDocumentTagsApi}。
+     */
     @Transactional
     public List<TagVO> replaceUserTags(Long documentId, List<Long> tagIds) {
         requireOwnedDocument(documentId);
@@ -103,6 +117,10 @@ public class KnowledgeDocumentTagService {
         return listTagsForDocument(documentId);
     }
 
+    /**
+     * 应用 AI 建议标签：按名称 find-or-create tag，source=ai，已存在则跳过。
+     * 调用方：{@link KnowledgeDocumentService} 入库/reindex 后、{@link RagFeedbackFixService} 自动修复。
+     */
     @Transactional
     public void applyAiSuggestedTags(Long documentId, List<String> tagNames) {
         if (tagNames == null || tagNames.isEmpty()) {
@@ -139,6 +157,7 @@ public class KnowledgeDocumentTagService {
         }
     }
 
+    /** 批量查询多文档标签，供文档列表页一次性 attach（documentId → tags）。 */
     public Map<Long, List<TagVO>> listTagsForDocuments(List<Long> documentIds) {
         if (documentIds == null || documentIds.isEmpty()) {
             return Map.of();
@@ -166,6 +185,7 @@ public class KnowledgeDocumentTagService {
         ));
     }
 
+    /** 校验文档归属当前登录用户，未登录或不存在抛异常。 */
     private void requireOwnedDocument(Long documentId) {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {

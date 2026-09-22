@@ -10,6 +10,7 @@ interface EditKnowledgeDocumentModalProps {
   onSuccess: () => void
 }
 
+/** 重命名知识库文档弹窗 PATCH /knowledge/documents/{id} */
 export default function EditKnowledgeDocumentModal({
   open,
   document,

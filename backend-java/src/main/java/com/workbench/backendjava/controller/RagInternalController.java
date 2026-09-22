@@ -13,7 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Python RAG 服务内部调用 — 无需登录（仅 localhost 联调）。 */
+/**
+ * Python RAG 服务内部回调 — 拉取 Java 侧 chunk/source 反馈信号供 rerank 使用，无需登录（localhost 联调）。
+ * 前缀 {@code /api/internal/rag}；调用方：Python {@code chunk_signal_client.py}、{@code source_signal_client.py}。
+ */
 @RestController
 @RequestMapping("/api/internal/rag")
 @RequiredArgsConstructor
@@ -22,6 +25,10 @@ public class RagInternalController {
     private final RagChunkSignalService chunkSignalService;
     private final RagSourceSignalService sourceSignalService;
 
+    /**
+     * {@code GET /api/internal/rag/chunk-signals} — 全量 chunk penalty/boost 信号。
+     * 委托 {@link RagChunkSignalService#loadAllAsMap}；Python {@code get_chunk_signals()}。
+     */
     @GetMapping("/chunk-signals")
     public Result<Map<String, Map<String, Object>>> chunkSignals() {
         Map<String, RagChunkSignal> rows = chunkSignalService.loadAllAsMap();
@@ -37,6 +44,10 @@ public class RagInternalController {
         return Result.ok(out);
     }
 
+    /**
+     * {@code GET /api/internal/rag/source-signals} — 全量文档源 penalty/boost 信号。
+     * 委托 {@link RagSourceSignalService#loadAllAsMap}；Python {@code get_source_signals()}。
+     */
     @GetMapping("/source-signals")
     public Result<Map<String, Map<String, Object>>> sourceSignals() {
         Map<String, RagSourceSignal> rows = sourceSignalService.loadAllAsMap();

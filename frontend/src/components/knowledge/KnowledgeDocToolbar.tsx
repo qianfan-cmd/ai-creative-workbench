@@ -9,6 +9,7 @@ interface KnowledgeDocToolbarProps {
   onSortChange: (value: 'asc' | 'desc') => void
 }
 
+/** 文档库列表搜索与排序工具栏 */
 export default function KnowledgeDocToolbar({
   searchInput,
   onSearchInputChange,

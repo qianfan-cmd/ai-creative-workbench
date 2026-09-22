@@ -1,3 +1,7 @@
+/**
+ * 知识库文档编辑器
+ * 双栏 Markdown/纯文本编辑与预览，保存后触发 PUT /knowledge/documents/{id}/content 重建索引
+ */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeftOutlined } from '@ant-design/icons'
@@ -19,6 +23,7 @@ function isPlainText(fileType?: string, filename?: string) {
   return Boolean(filename?.toLowerCase().endsWith('.txt'))
 }
 
+/** 单文档编辑页：源码编辑 + 实时预览 + 保存索引 */
 export default function KnowledgeDocumentEditorPage() {
   const navigate = useNavigate()
   const { id: idParam } = useParams()

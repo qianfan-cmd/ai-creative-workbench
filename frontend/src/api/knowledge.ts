@@ -12,28 +12,33 @@ export interface KnowledgeIndexUploadVO {
     indexedCount: number
 }
 
+/** 单文件上传失败明细 */
 export interface KnowledgeUploadFailureVO {
     filename: string
     reason: string
 }
 
+/** 批量上传汇总结果 */
 export interface KnowledgeBatchUploadVO {
     total: number
     succeeded: KnowledgeIndexUploadVO[]
     failed: KnowledgeUploadFailureVO[]
 }
 
+/** 单条文档删除失败明细 */
 export interface KnowledgeDeleteFailureVO {
     id: number
     reason: string
 }
 
+/** 批量删除汇总结果 */
 export interface KnowledgeBatchDeleteVO {
     total: number
     deletedIds: number[]
     failures: KnowledgeDeleteFailureVO[]
 }
 
+/** 单次批量上传允许的最大文件数 */
 export const KNOWLEDGE_MAX_BATCH_UPLOAD = 20
 /** 前端分片：每批请求最多文件数，避免单次 HTTP 等待整批入库超时 */
 export const KNOWLEDGE_UPLOAD_CHUNK_SIZE = 5
@@ -64,6 +69,7 @@ export interface KnowledgeDocumentVO {
     tags?: TagVO[]
 }
 
+/** 文档库分页查询参数 */
 export interface ListKnowledgeDocumentsParams {
     page?: number
     size?: number
@@ -71,6 +77,7 @@ export interface ListKnowledgeDocumentsParams {
     sort?: 'asc' | 'desc'
 }
 
+/** 文档正文（编辑器加载/保存用） */
 export interface KnowledgeDocumentContentVO {
     id: number
     filename: string
@@ -95,6 +102,7 @@ export interface KnowledgeTurnVO {
     userFeedbackRating?: 'up' | 'down'
 }
 
+/** 历史会话详情（含全部 turn） */
 export interface KnowledgeSessionDetailVO {
     id: number
     title: string
@@ -103,6 +111,7 @@ export interface KnowledgeSessionDetailVO {
 
 /**
  * 分页获取文档库列表
+ * GET /knowledge/documents
  */
 export async function listKnowledgeDocumentsPageApi(params: ListKnowledgeDocumentsParams = {}) {
     const res = await request.get<ApiResponse<PageResult<KnowledgeDocumentVO>>>('/knowledge/documents', {
@@ -113,6 +122,7 @@ export async function listKnowledgeDocumentsPageApi(params: ListKnowledgeDocumen
 
 /**
  * 侧栏最近文档（轻量列表）
+ * GET /knowledge/documents/recent
  */
 export async function listRecentKnowledgeDocumentsApi(limit = 50) {
     const res = await request.get<ApiResponse<KnowledgeDocumentVO[]>>('/knowledge/documents/recent', {
@@ -121,6 +131,7 @@ export async function listRecentKnowledgeDocumentsApi(limit = 50) {
     return res.data.data
 }
 
+/** 重命名文档 PATCH /knowledge/documents/{id} */
 export async function patchKnowledgeDocumentApi(id: number, payload: { filename: string }) {
     const res = await request.patch<ApiResponse<KnowledgeDocumentVO>>(
         `/knowledge/documents/${id}`,
@@ -130,22 +141,26 @@ export async function patchKnowledgeDocumentApi(id: number, payload: { filename:
     return res.data.data
 }
 
+/** 删除单条文档 DELETE /knowledge/documents/{id} */
 export async function deleteKnowledgeDocumentApi(id: number) {
     await request.delete<ApiResponse<null>>(`/knowledge/documents/${id}`, {
         timeout: API_TIMEOUT_BATCH,
     })
 }
 
+/** 获取文档标签 GET /knowledge/documents/{id}/tags */
 export async function getKnowledgeDocumentTagsApi(id: number) {
     const res = await request.get<ApiResponse<TagVO[]>>(`/knowledge/documents/${id}/tags`)
     return res.data.data
 }
 
+/** 更新文档标签 PUT /knowledge/documents/{id}/tags */
 export async function updateKnowledgeDocumentTagsApi(id: number, tagIds: number[]) {
     const res = await request.put<ApiResponse<TagVO[]>>(`/knowledge/documents/${id}/tags`, { tagIds })
     return res.data.data
 }
 
+/** 获取文档正文 GET /knowledge/documents/{id}/content */
 export async function getKnowledgeDocumentContentApi(id: number) {
     const res = await request.get<ApiResponse<KnowledgeDocumentContentVO>>(
         `/knowledge/documents/${id}/content`,
@@ -153,6 +168,7 @@ export async function getKnowledgeDocumentContentApi(id: number) {
     return res.data.data
 }
 
+/** 保存文档正文并重建索引 PUT /knowledge/documents/{id}/content */
 export async function saveKnowledgeDocumentContentApi(id: number, content: string) {
     const res = await request.put<ApiResponse<KnowledgeDocumentVO>>(
         `/knowledge/documents/${id}/content`,
@@ -162,17 +178,19 @@ export async function saveKnowledgeDocumentContentApi(id: number, content: strin
     return res.data.data
 }
 
-/** 历史会话列表 */
+/** 历史会话列表 GET /knowledge/sessions */
 export async function listKnowledgeSessionsApi() {
     const res = await request.get<ApiResponse<KnowledgeSessionVO[]>>('/knowledge/sessions')
     return res.data.data
 }
 
+/** 创建新问答会话 POST /knowledge/sessions */
 export async function createKnowledgeSessionApi() {
     const res = await request.post<ApiResponse<KnowledgeSessionVO>>('/knowledge/sessions')
     return res.data.data
 }
 
+/** 获取会话详情 GET /knowledge/sessions/{sessionId} */
 export async function getKnowledgeSessionApi(sessionId: number) {
     const res = await request.get<ApiResponse<KnowledgeSessionDetailVO>>(
         `/knowledge/sessions/${sessionId}`,
@@ -180,10 +198,12 @@ export async function getKnowledgeSessionApi(sessionId: number) {
     return res.data.data
 }
 
+/** 删除问答会话 DELETE /knowledge/sessions/{sessionId} */
 export async function deleteKnowledgeSessionApi(sessionId: number) {
     await request.delete<ApiResponse<null>>(`/knowledge/sessions/${sessionId}`)
 }
 
+/** 更新会话标题/置顶 PATCH /knowledge/sessions/{sessionId} */
 export async function patchKnowledgeSessionApi(
     sessionId: number,
     payload: { title?: string; pinned?: boolean },
@@ -195,6 +215,7 @@ export async function patchKnowledgeSessionApi(
     return res.data.data
 }
 
+/** 保存一轮问答 POST /knowledge/sessions/{sessionId}/turns */
 export async function saveKnowledgeTurnApi(
     sessionId: number,
     payload: { question: string; answer: string; references: RagReferenceVO[] },
@@ -206,6 +227,7 @@ export async function saveKnowledgeTurnApi(
     return res.data.data
 }
 
+/** 更新 turn 答案与引用 PUT /knowledge/sessions/{sessionId}/turns/{turnId} */
 export async function updateKnowledgeTurnApi(
     sessionId: number,
     turnId: number,
@@ -247,12 +269,14 @@ export async function batchDeleteKnowledgeDocumentsApi(ids: number[]) {
     return res.data.data
 }
 
+/** RAG SSE 流式回调 */
 export interface RagStreamHandlers {
     onReferences: (references: RagReferenceVO[]) => void;
     onChunk: (chunk: string) => void;
     onDone: () => void;
 }
 
+/** RAG 流式请求可选参数 */
 export interface RagStreamOptions {
     topK?: number
     /** 同会话 id — Java 从 knowledge_turn 加载 prior Q/A */

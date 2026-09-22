@@ -53,13 +53,20 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KnowledgeDocumentService {
 
+    /** 允许上传的文件扩展名（小写，含点）。 */
     private static final Set<String> ALLOWED_EXT = Set.of(".txt", ".md", ".markdown", ".pdf", ".docx");
+    /** 需经 Python parse 的二进制格式（不支持在线编辑）。 */
     private static final Set<String> BINARY_EXT = Set.of(".pdf", ".docx");
+    /** 单次批量上传文件数上限。 */
     private static final int MAX_BATCH_UPLOAD = 20;
+    /** 单次批量删除文档数上限。 */
     private static final int MAX_BATCH_DELETE = 100;
+    /** 批量上传并发线程数（固定线程池大小）。 */
     private static final int BATCH_UPLOAD_CONCURRENCY = 2;
+    /** 批量上传专用线程池，复用 {@link #BATCH_UPLOAD_CONCURRENCY} 个 worker。 */
     private static final ExecutorService BATCH_UPLOAD_EXECUTOR =
             Executors.newFixedThreadPool(BATCH_UPLOAD_CONCURRENCY);
+    /** ISO 本地时间格式，用于 VO 的 createdAt 展示。 */
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final KnowledgeDocumentMapper documentMapper;
@@ -246,6 +253,7 @@ public class KnowledgeDocumentService {
         reindexDocumentInternal(doc);
     }
 
+    /** 从磁盘原文件 re-read 并重新 index，更新 charCount/chunkCount 与 AI 标签。 */
     private void reindexDocumentInternal(KnowledgeDocument doc) {
         if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
             throw new BusinessException(400, "该文档无原文件，无法 re-index");
@@ -340,6 +348,7 @@ public class KnowledgeDocumentService {
         return toVO(doc);
     }
 
+    /** 删旧向量 → 写盘 → 按新 filename 重新 index，供 patch/saveContent 共用。 */
     private void reindexDocument(KnowledgeDocument doc, Long userId, String filename, byte[] bytes) {
         String oldSource = doc.getChromaSource();
         if (oldSource != null && !oldSource.isBlank()) {
@@ -445,6 +454,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 按 id 查文档并校验归属 userId，不存在或不归属抛 404。 */
     private KnowledgeDocument getOwnedDocument(Long id, Long userId) {
         KnowledgeDocument doc = documentMapper.selectById(id);
         if (doc == null || !userId.equals(doc.getUserId())) {
@@ -453,6 +463,7 @@ public class KnowledgeDocumentService {
         return doc;
     }
 
+    /** 批量为文档 VO 列表填充 tags 字段（一次查库避免 N+1）。 */
     private void attachTags(List<KnowledgeDocumentVO> records) {
         if (records == null || records.isEmpty()) {
             return;
@@ -464,6 +475,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** Entity → 列表/详情 VO（不含 tags，由 {@link #attachTags} 补充）。 */
     private KnowledgeDocumentVO toVO(KnowledgeDocument doc) {
         KnowledgeDocumentVO vo = new KnowledgeDocumentVO();
         vo.setId(doc.getId());
@@ -479,6 +491,7 @@ public class KnowledgeDocumentService {
         return vo;
     }
 
+    /** 从 MultipartFile 提取文件名，无效时返回 {@code unknown}。 */
     private static String resolveFilename(MultipartFile file) {
         if (file == null || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
             return "unknown";
@@ -486,6 +499,7 @@ public class KnowledgeDocumentService {
         return file.getOriginalFilename().trim();
     }
 
+    /** 构造批量上传失败项 VO。 */
     private static KnowledgeUploadFailureVO failureOf(String filename, String reason) {
         KnowledgeUploadFailureVO vo = new KnowledgeUploadFailureVO();
         vo.setFilename(filename);
@@ -493,6 +507,7 @@ public class KnowledgeDocumentService {
         return vo;
     }
 
+    /** 构造批量删除失败项 VO。 */
     private static KnowledgeDeleteFailureVO deleteFailureOf(Long id, String reason) {
         KnowledgeDeleteFailureVO vo = new KnowledgeDeleteFailureVO();
         vo.setId(id);
@@ -500,6 +515,7 @@ public class KnowledgeDocumentService {
         return vo;
     }
 
+    /** 校验上传文件非空、文件名合法、扩展名允许、大小未超限。 */
     private void validateUploadFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(400, "请选择文件");
@@ -514,6 +530,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 校验文件名扩展名在 {@link #ALLOWED_EXT} 内。 */
     private void validateFilename(String filename) {
         String ext = extensionOf(filename);
         if (!ALLOWED_EXT.contains(ext)) {
@@ -521,16 +538,19 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 判断扩展名是否为 PDF/DOCX 等二进制格式。 */
     private boolean isBinaryExtension(String ext) {
         return BINARY_EXT.contains(ext);
     }
 
+    /** 提取小写扩展名（含点），无扩展名返回空串。 */
     private String extensionOf(String filename) {
         return filename.contains(".")
                 ? filename.substring(filename.lastIndexOf('.')).toLowerCase(Locale.ROOT)
                 : "";
     }
 
+    /** 扩展名 → MIME type，未知扩展名返回 {@code application/octet-stream}。 */
     private String mimeOf(String ext) {
         return switch (ext) {
             case ".md", ".markdown" -> "text/markdown";
@@ -541,6 +561,7 @@ public class KnowledgeDocumentService {
         };
     }
 
+    /** 读取 MultipartFile 字节，IO 失败抛 500。 */
     private byte[] readBytes(MultipartFile file) {
         try {
             return file.getBytes();
@@ -549,6 +570,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 将原文件写入 {@code knowledge/{userId}/{docId}/{safeName}}，返回相对路径。 */
     private String storeKnowledgeFile(Long userId, Long docId, String filename, byte[] bytes) {
         String safeName = sanitizeFilename(filename);
         String relative = "knowledge/" + userId + "/" + docId + "/" + safeName; // 相对路径
@@ -563,6 +585,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 从 upload 目录读取已存原文件字节。 */
     private byte[] readStoredBytes(String storedPath) {
         Path file = Paths.get(uploadProperties.getDir()).resolve(normalizeStoredPath(storedPath));
         try {
@@ -575,6 +598,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 删除磁盘原文件；若父目录为空则一并删除。 */
     private void deleteStoredFile(String storedPath) {
         if (storedPath == null || storedPath.isBlank()) {
             return;
@@ -595,6 +619,7 @@ public class KnowledgeDocumentService {
         }
     }
 
+    /** 去掉 storedPath 中 {@code /uploads/} 或 {@code uploads/} 前缀，统一为相对路径。 */
     private static String normalizeStoredPath(String storedPath) {
         String p = storedPath.replace("\\", "/");
         if (p.startsWith("/uploads/")) {
@@ -606,9 +631,7 @@ public class KnowledgeDocumentService {
         return p;
     }
 
-/**
- * 替换为安全的文件名，避免文件名中包含特殊字符，导致文件无法被正确识别。
- */
+    /** 替换为安全的文件名，去除路径分隔符并将特殊字符替换为下划线。 */
     private static String sanitizeFilename(String filename) {
         String name = filename.replace("\\", "/");
         int slash = name.lastIndexOf('/');
@@ -626,6 +649,7 @@ public class KnowledgeDocumentService {
         );
     }
 
+    /** 从登录上下文取 userId，未登录抛 401。 */
     private Long requireUserId() {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {

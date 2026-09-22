@@ -1,3 +1,7 @@
+/**
+ * 文档库列表页
+ * 分页浏览、搜索、批量删除与上传 RAG 知识库文档
+ */
 import { useCallback, useEffect, useState } from 'react'
 
 import { useNavigate } from 'react-router-dom'
@@ -46,6 +50,7 @@ import {
 
 
 
+/** 文档库管理页：表格列表 + 上传/编辑/标签/删除 */
 export default function KnowledgeDocumentListPage() {
 
   const navigate = useNavigate()

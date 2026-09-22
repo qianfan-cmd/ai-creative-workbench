@@ -5,6 +5,7 @@ interface RagReferencesPanelProps {
   references: RagReferenceVO[]
 }
 
+/** RAG 回答引用片段列表（来源 + 摘要） */
 export default function RagReferencesPanel({ references }: RagReferencesPanelProps) {
   if (references.length === 0) return null
 

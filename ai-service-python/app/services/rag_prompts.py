@@ -1,7 +1,27 @@
-"""RAG 全链路 LLM 提示词 — 通用原则 + 多类型 few-shot，单点维护。"""
+"""
+RAG 全链路 LLM 提示词模板 — 单点维护，避免散落硬编码。
+
+涵盖：入库语义切分、文档/chunk 打标、query 标签推断、query 改写、
+反馈分诊、生成阶段规则。被 semantic_chunker、knowledge_tagger、
+query_rewriter、tag_retriever、feedback_auto_fix、rag_service 引用。
+"""
 
 
 def semantic_chunk_prompt(filename: str, blocks_text: str, *, block_count: int) -> str:
+    """
+    语义切分 Prompt — 指导 LLM 输出 keep/merge 块索引操作 JSON。
+
+    参数:
+        filename: 文档名，写入 Prompt 上下文
+        blocks_text: 编号预切块预览文本
+        block_count: 块总数，约束 indices 覆盖 0..n-1
+
+    返回:
+        完整 Prompt 字符串
+
+    在 RAG 流水线中:
+        索引阶段 semantic_chunker 调用，决定 chunk 边界与 section_hint/summary
+    """
     return f"""你是文档切分专家。下面是一份文档「{filename}」经规则预切后的 {block_count} 个块（编号 0～{block_count - 1}）。
 请输出 JSON 数组（不要其它文字），用块索引操作描述如何合并，**不要重复输出原文**：
 [
@@ -26,6 +46,20 @@ def semantic_chunk_prompt(filename: str, blocks_text: str, *, block_count: int) 
 
 
 def document_tag_prompt(filename: str, preview: str, vocab_hint: str) -> str:
+    """
+    文档/chunk 打标 Prompt — 输出 document_tags 与 chunk_tags JSON。
+
+    参数:
+        filename: 文档名
+        preview: chunk 内容预览（前若干段）
+        vocab_hint: 已有标签词表提示，引导复用
+
+    返回:
+        Prompt 字符串
+
+    在 RAG 流水线中:
+        索引阶段 knowledge_tagger 调用，标签写入 Chroma metadata 供 tag 召回
+    """
     return f"""你是知识库标签助手。为文档「{filename}」打标签，输出 JSON（不要其它文字）：
 {{
   "document_tags": ["文档级标签3到8个"],
@@ -49,6 +83,19 @@ def document_tag_prompt(filename: str, preview: str, vocab_hint: str) -> str:
 
 
 def query_tag_infer_prompt(question: str, vocab_hint: str) -> str:
+    """
+    Query 标签推断 Prompt — 从词表选 0~5 标签并判断 requires_exhaustive。
+
+    参数:
+        question: 用户问题
+        vocab_hint: 标签词表摘要
+
+    返回:
+        Prompt 字符串
+
+    在 RAG 流水线中:
+        检索阶段 tag_retriever.infer_query_tags 调用，驱动标签定向召回与穷尽列举策略
+    """
     return f"""你是 RAG 检索标签助手。根据用户问题，从标签词表中选出最相关的 0～5 个标签，并判断是否需要穷尽列举所有相关项。
 输出 JSON（不要其它文字）：
 {{"tags": ["标签1"], "requires_exhaustive": true}}
@@ -69,6 +116,18 @@ def query_tag_infer_prompt(question: str, vocab_hint: str) -> str:
 
 
 def query_rewrite_prompt(question: str) -> str:
+    """
+    Query 改写 Prompt — 输出 main_rewrite 与 sub_queries JSON。
+
+    参数:
+        question: 原始用户问题
+
+    返回:
+        Prompt 字符串
+
+    在 RAG 流水线中:
+        检索阶段 query_rewriter 调用，扩展多路检索 query 提升召回
+    """
     return f"""你是 RAG 检索 Query 改写助手。根据用户问题，输出 JSON（不要其它文字）：
 {{
   "main_rewrite": "补全语义、规范表达的检索问句",
@@ -101,6 +160,21 @@ def feedback_triage_prompt(
     answer: str,
     refs_preview: str,
 ) -> str:
+    """
+    反馈分诊 Prompt — 点踩后分析根因并建议 penalize/boost/reindex 等动作。
+
+    参数:
+        reason: 点踩原因枚举
+        user_reason_detail: 用户补充说明
+        question, answer: 原问答
+        refs_preview: 引用 chunk 摘要
+
+    返回:
+        Prompt 字符串
+
+    在 RAG 闭环中:
+        feedback_auto_fix 调用，输出动作供 Java 更新 chunk_signal/source_signal
+    """
     detail_block = ""
     if user_reason_detail and user_reason_detail.strip():
         detail_block = f"\n用户补充说明：{user_reason_detail.strip()[:500]}"
@@ -131,6 +205,15 @@ action 格式：penalize:chunk_id | boost:chunk_id | penalize_source:filename | 
 
 
 def rag_generation_rules() -> str:
+    """
+    RAG 生成阶段规则文本 — 嵌入 _retrieve_context 的 System 指令。
+
+    返回:
+        多行规则字符串（引用角标、穷尽列举、禁止编造等）
+
+    副作用:
+        无；纯字符串常量
+    """
     return """规则：
 - 只使用参考资料中的信息，不要编造；
 - 资料不足以回答时，明确说「根据现有资料无法确定」；

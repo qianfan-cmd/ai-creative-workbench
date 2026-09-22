@@ -1,7 +1,10 @@
 """
-LangChain 混合检索 — Dense + BM25 + Tag + 多 Query RRF + Rerank + 证据选取。
+LangChain 混合检索 — RAG 检索阶段核心编排。
 
-Wave D1.7：标签定向召回 + 通用硬过滤（无关键词规则）。
+多路召回：Dense（Chroma）+ BM25 + Tag 定向 → 多 Query RRF 融合 →
+距离阈值过滤 → Rerank → context_selector 证据选取（含邻块扩展）。
+
+``hybrid_search`` 为 rag_service._retrieve_context 的唯一检索入口。
 """
 from __future__ import annotations
 
@@ -43,6 +46,20 @@ def reciprocal_rank_fusion(
     *,
     rrf_k: int = RRF_K,
 ) -> list[tuple[str, float]]:
+    """
+    Reciprocal Rank Fusion — 融合多路有序 chunk_id 列表为统一得分。
+
+    参数:
+        ranked_lists: 各路检索结果的 chunk_id 排名列表
+        weights: 与 ranked_lists 等长的通道权重
+        rrf_k: RRF 平滑常数
+
+    返回:
+        (chunk_id, score) 按 score 降序
+
+    副作用:
+        无
+    """
     scores: dict[str, float] = {}
     for ranked, weight in zip(ranked_lists, weights):
         if weight <= 0:
@@ -55,9 +72,23 @@ def reciprocal_rank_fusion(
 
 
 class ChromaDenseRetriever(BaseRetriever):
+    """LangChain Retriever 适配器 — 封装 embed + search_similar 稠密通路。"""
+
     top_k: int = RETRIEVE_CANDIDATES
 
     def _get_relevant_documents(self, query: str) -> list[Document]:
+        """
+        稠密检索 — LangChain BaseRetriever 接口实现。
+
+        参数:
+            query: 检索问句（单条）
+
+        返回:
+            Document 列表，metadata 含 chunk_id、distance、tags 等
+
+        副作用:
+            调用 embedding API 与 Chroma query
+        """
         vector = embed_text(query)
         hits = search_similar(vector, top_k=self.top_k)
         docs: list[Document] = []
@@ -80,6 +111,15 @@ def _chunk_lookup(
     bm25_hits: list[dict[str, Any]],
     tag_hits: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """
+    合并多路 hit 为 chunk_id → 完整字段映射，标注 retrieval_source。
+
+    参数:
+        dense_hits, bm25_hits, tag_hits: 各路原始 hit 列表
+
+    返回:
+        dict[chunk_id, hit_dict]，后者含 retrieval_source: dense|bm25|tag|hybrid*
+    """
     by_id: dict[str, dict[str, Any]] = {}
     for hit in dense_hits:
         chunk_id = hit.get("id")
@@ -107,6 +147,7 @@ def _chunk_lookup(
 
 
 def _tag_overlap_count(chunk_tags_raw: Any, inferred_tags: set[str]) -> int:
+    """计算 chunk metadata.tags 与推断标签的交集大小 — 用于 RRF 加分。"""
     if not inferred_tags:
         return 0
     raw = str(chunk_tags_raw or "")
@@ -121,6 +162,11 @@ def _passes_threshold(
     tag_ids: set[str],
     threshold: float,
 ) -> bool:
+    """
+    候选 chunk 是否通过距离/通道硬过滤。
+
+    tag 命中直接放行；bm25-only 须 dense 距离存在且放宽阈值；纯 dense 用 DISTANCE_THRESHOLD。
+    """
     dist = dense_distances.get(chunk_id)
     if chunk_id in tag_ids:
         return True
@@ -135,6 +181,7 @@ def _passes_threshold(
 
 
 def _filter_by_rerank_score(hits: list[dict[str, Any]], min_score: float) -> list[dict[str, Any]]:
+    """按 rerank_score 下限过滤；min_score <= -999 时跳过过滤（调试）。"""
     if min_score <= -999:
         return hits
     return [h for h in hits if h.get("rerank_score", 0.0) >= min_score]
@@ -145,6 +192,15 @@ def _hybrid_search_single_query(
     *,
     retrieve_candidates: int,
 ) -> tuple[list[tuple[str, float]], dict[str, dict[str, Any]], set[str], dict[str, float | None]]:
+    """
+    单条 query 的 Dense+BM25 混合检索 — 不含 tag 与多 query 合并。
+
+    返回:
+        (fused_rrf, chunk_map, bm25_id_set, dense_distances)
+
+    副作用:
+        embedding API、Chroma、BM25 内存索引
+    """
     q = question.strip()
     if not q:
         return [], {}, set(), {}
@@ -184,6 +240,25 @@ def hybrid_search(
     retrieve_candidates: int | None = None,
     trace: RagTrace | None = None,
 ) -> list[dict[str, Any]]:
+    """
+    混合检索主入口 — rag_service 检索阶段的唯一对外函数。
+
+    流程:
+        infer_query_tags → rewrite_query → tag 召回 + 多 query Dense/BM25 RRF →
+        阈值过滤 → dedupe → rerank → select_context（+ 可选邻块扩展）
+
+    参数:
+        question: 用户问题
+        top_k: 最终返回 chunk 数
+        retrieve_candidates: 每路召回候选上限
+        trace: 可选，填充各阶段计数与中间结果
+
+    返回:
+        hit dict 列表，含 content、source、rrf_score、rerank_score 等
+
+    副作用:
+        多次 LLM（改写/标签）、embedding、BM25、reranker；只读向量库
+    """
     q = question.strip()
     if not q:
         return []

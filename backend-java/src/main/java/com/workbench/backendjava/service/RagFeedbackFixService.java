@@ -17,6 +17,10 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * RAG 差评自动修复：异步调用 Python triage，在 Java 侧落地 penalize/boost/reindex/add_tag 等动作。
+ * 调用方：{@link AiFeedbackService}（用户 rag downvote 后 {@code triggerRagAutoFix} 触发）。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -32,6 +36,10 @@ public class RagFeedbackFixService {
     private final RagFeedbackActionService actionService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 异步处理 RAG 差评：组装 turn 上下文 → Python {@code ragFeedbackFix} → 本地执行返回的 action 列表。
+     * 失败时写入 triage 失败日志，不阻塞用户反馈提交。
+     */
     @Async
     public void handleRagDownvoteAsync(
             Long feedbackId,
@@ -68,6 +76,7 @@ public class RagFeedbackFixService {
         }
     }
 
+    /** 逐条执行 Python 返回的 action，并写入 {@link RagFeedbackActionService} 审计日志。 */
     private void applyActionsLocally(
             Long feedbackId,
             Long turnId,
@@ -126,6 +135,7 @@ public class RagFeedbackFixService {
         }
     }
 
+    /** 从 action 的 document_id 或 filename 解析 MySQL 文档 id（当前用户范围内）。 */
     private Long resolveDocumentId(Long userId, String filename, Object documentIdRaw) {
         if (documentIdRaw instanceof Number n) {
             return n.longValue();
@@ -142,6 +152,7 @@ public class RagFeedbackFixService {
         return doc != null ? doc.getId() : null;
     }
 
+    /** 触发单文档 reindex，同一 turn+source 24h 内限流一次。 */
     private void reindexDocument(Long documentId, Long userId, Long feedbackId, Long turnId, String filename) {
         KnowledgeDocument doc = documentMapper.selectById(documentId);
         if (doc == null || !userId.equals(doc.getUserId())) {

@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class KnowledgeSessionService {
 
+    /** 会话标题最大字符数（首问自动标题、手动改名时截断）。 */
     private static final int TITLE_MAX_LEN = 30;
 
     private final KnowledgeSessionMapper sessionMapper;
@@ -42,6 +43,11 @@ public class KnowledgeSessionService {
     private final AiFeedbackService aiFeedbackService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 当前用户历史会话列表（置顶优先，再按 updatedAt 倒序）。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#listSessions}；
+     * 前端 {@code listKnowledgeSessionsApi}。
+     */
     public List<KnowledgeSessionVO> listSessions() {
         Long userId = requireUserId();
         List<KnowledgeSession> sessions = sessionMapper.selectList(
@@ -53,6 +59,11 @@ public class KnowledgeSessionService {
         return sessions.stream().map(this::toSessionVO).collect(Collectors.toList());
     }
 
+    /**
+     * 新建空会话（默认标题「新问答」）。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#createSession}；
+     * 前端 {@code createKnowledgeSessionApi}。
+     */
     @Transactional
     public KnowledgeSessionVO createSession() {
         Long userId = requireUserId();
@@ -66,6 +77,11 @@ public class KnowledgeSessionService {
         return toSessionVO(session);
     }
 
+    /**
+     * 加载会话详情（全部 turn + 用户反馈 rating）。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#getSession}；
+     * 前端 {@code getKnowledgeSessionApi}。
+     */
     public KnowledgeSessionDetailVO getSessionDetail(Long sessionId) {
         Long userId = requireUserId();
         KnowledgeSession session = getOwnedSession(sessionId, userId);
@@ -86,6 +102,11 @@ public class KnowledgeSessionService {
         return vo;
     }
 
+    /**
+     * 流式问答结束后写入一轮 Q/A 与 references；首问时自动更新会话标题。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#addTurn}；
+     * 前端 {@code saveKnowledgeTurnApi}。
+     */
     @Transactional
     public KnowledgeTurnVO addTurn(Long sessionId, KnowledgeTurnCreateRequest request) {
         Long userId = requireUserId();
@@ -110,6 +131,11 @@ public class KnowledgeSessionService {
         return toTurnVO(turn, null);
     }
 
+    /**
+     * 重新生成后覆盖已有 turn 的 Q/A 与 references。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#updateTurn}；
+     * 前端 {@code updateKnowledgeTurnApi}。
+     */
     @Transactional
     public KnowledgeTurnVO updateTurn(Long sessionId, Long turnId, KnowledgeTurnCreateRequest request) {
         Long userId = requireUserId();
@@ -136,6 +162,11 @@ public class KnowledgeSessionService {
         return toTurnVO(turn, rating);
     }
 
+    /**
+     * 删除会话（级联由 DB 外键处理 turn）。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#deleteSession}；
+     * 前端 {@code deleteKnowledgeSessionApi}。
+     */
     @Transactional
     public void deleteSession(Long sessionId) {
         Long userId = requireUserId();
@@ -143,6 +174,11 @@ public class KnowledgeSessionService {
         sessionMapper.deleteById(sessionId);
     }
 
+    /**
+     * 更新会话标题或置顶状态。
+     * 调用方：{@link com.workbench.backendjava.controller.KnowledgeController#patchSession}；
+     * 前端 {@code patchKnowledgeSessionApi}。
+     */
     @Transactional
     public KnowledgeSessionVO patchSession(Long sessionId, KnowledgeSessionPatchRequest request) {
         Long userId = requireUserId();
@@ -162,6 +198,7 @@ public class KnowledgeSessionService {
         return toSessionVO(session);
     }
 
+    /** 从登录上下文取 userId，未登录抛 401。 */
     private Long requireUserId() {
         Long userId = LoginUserContext.getUserId();
         if (userId == null) {
@@ -170,6 +207,7 @@ public class KnowledgeSessionService {
         return userId;
     }
 
+    /** 校验会话归属当前用户，不存在或不归属抛 404。 */
     private KnowledgeSession getOwnedSession(Long sessionId, Long userId) {
         KnowledgeSession session = sessionMapper.selectById(sessionId);
         if (session == null || !userId.equals(session.getUserId())) {
@@ -178,6 +216,7 @@ public class KnowledgeSessionService {
         return session;
     }
 
+    /** 将会话标题截断至 {@link #TITLE_MAX_LEN}，超出追加省略号。 */
     private String truncateTitle(String question) {
         String q = question.trim();
         if (q.length() <= TITLE_MAX_LEN) {
@@ -186,6 +225,7 @@ public class KnowledgeSessionService {
         return q.substring(0, TITLE_MAX_LEN) + "…";
     }
 
+    /** 将 RAG 引用列表序列化为 JSON 存入 turn.references_json。 */
     private String writeReferencesJson(List<RagReferenceVO> references) {
         try {
             return objectMapper.writeValueAsString(references != null ? references : Collections.emptyList());
@@ -194,6 +234,7 @@ public class KnowledgeSessionService {
         }
     }
 
+    /** 反序列化 turn.references_json；解析失败返回空列表并打 warn 日志。 */
     private List<RagReferenceVO> readReferencesJson(String json) {
         if (json == null || json.isBlank()) {
             return Collections.emptyList();
@@ -206,6 +247,7 @@ public class KnowledgeSessionService {
         }
     }
 
+    /** Entity → 侧栏会话 VO。 */
     private KnowledgeSessionVO toSessionVO(KnowledgeSession session) {
         KnowledgeSessionVO vo = new KnowledgeSessionVO();
         vo.setId(session.getId());
@@ -215,6 +257,7 @@ public class KnowledgeSessionService {
         return vo;
     }
 
+    /** Entity → turn VO，附带用户对该 turn 的 up/down 反馈（可为 null）。 */
     private KnowledgeTurnVO toTurnVO(KnowledgeTurn turn, String userFeedbackRating) {
         KnowledgeTurnVO vo = new KnowledgeTurnVO();
         vo.setId(turn.getId());
