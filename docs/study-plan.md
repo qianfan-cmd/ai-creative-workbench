@@ -4660,3 +4660,14 @@ README 必须包含：
 
 # AI 应用前端偏全栈路线。
 
+---
+
+## Wave E 执行入口（2026-09 起 · 项目 + 个人学习合一）
+
+投递反馈缺口（Redis、MQ、上下文、Tool/Agent）的 **干中学主文档**：
+
+- **[`docs/phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md)** — 按模块说「开始 Wave E-B0 / E-B3 / E-A1 …」
+- 状态总表：**[`docs/project-roadmap.md`](project-roadmap.md)** §六点五、§九
+- Java 中间件对照：**[`docs/java后端学习全链路.md`](java后端学习全链路.md)** 阶段5
+- Agent 技能对照：**[`docs/AI应用Agent开发岗位技能清单.md`](AI应用Agent开发岗位技能清单.md)**
+

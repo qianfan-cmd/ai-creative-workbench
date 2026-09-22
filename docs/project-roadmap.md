@@ -1,6 +1,6 @@
 # AI Creative Workbench — 项目迭代计划表
 
-> 更新日期：2026-09-10（Wave D D1.8 Admin 信号 + embed filename）  
+> 更新日期：2026-09-23（Phase 4 Wave E 需求文档）  
 > 目标岗位：AI 应用前端 / AI 全栈（腾讯 AI 应用工程师、字节 AIGC / 飞书 Agent 全栈等）  
 > 说明：本文仅作计划与验收清单；每项具体用 **Chat 带着做** 还是 **Agent 直接做**，实施时再定。
 
@@ -13,12 +13,13 @@
 | **Phase 1** | 亮点 + 作品化 | 5～7 天 | 公网 Demo、前端工程亮点、**Wave C** README/面试材料 |
 | **Phase 1.5** | 性能 + 部署加固 | 2～3 天 | 素材 N+1、懒加载、2G ECS 稳定、**Wave A** CD/HTTPS |
 | **Phase 2** | RAG 扩展 PDF/DOCX | 2～3 天 | **Wave B** 知识库 pdf/docx 上传与问答 |
-| **Phase 3（Wave D）** | JD 对齐增强 | 6～9 天 | LangChain 混合检索、Tool+Tavily、反馈闭环、上下文管理、可选 Redis |
+| **Phase 3（Wave D）** | JD 对齐增强 | 6～9 天 | LangChain 混合检索、反馈闭环（**D2/D4/D5 并入 Wave E**） |
+| **Phase 4（Wave E）** | 中间件 + Agent 干中学 | 按模块推进 | Redis、RabbitMQ、Tavily、上下文、Function Calling；见 [`phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md) |
 
 **原则**
 
 - 先能 **演示、能讲清**，再追 Agent / MCP 等关键词。
-- **当前迭代顺序（2026-09 起）：Wave A → Wave B → Wave C → Wave D（Phase 3）**；Wave D 细则见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。
+- **当前迭代顺序（2026-09 起）：Wave A → B → C → D（部分 ✅）→ **Wave E（Phase 4，进行中）**；Wave E 细则见 [`phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md)；Wave D 历史见 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)。
 - **Dev-log 门禁：** 每个里程碑验收通过后，必须在 [`docs/dev-log/`](dev-log/) 写复盘（见 [`.cursor/skills/dev-log-retrospective/SKILL.md`](../.cursor/skills/dev-log-retrospective/SKILL.md)），再进入下一序号。
 - 不堆 Nacos、Spring Cloud Gateway、Spring AI、Kafka 全链路。
 - 生成/Prompt/SSE **手写保留**；**LangChain 仅用于 Wave D1 检索链**；不整体替换、不默认上 LangGraph 主线。
@@ -277,8 +278,8 @@ flowchart LR
 ## 六、Phase 3：Wave D — JD 对齐增强
 
 > **详细需求（逐步开发用）：** [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)  
-> **开发方式：** Agent 模式说「**开始 Wave D1**」…「**开始 Wave D6**」；每 Wave 验收 → dev-log → 更新 §9 状态。  
-> **方案定稿日：** 2026-09-09（业务代码尚未改动）
+> **开发方式：** Wave D 未完成项说「**开始 Wave E-A1**」等（见 phase4 §0）；每模块验收 → dev-log → 更新 §9。  
+> **状态：** D1 / D1.5 / D1.8 / D3 ✅；D2 / D4 / D5 / D6 部分 ⬜ → **已迁移至 Wave E**
 
 依据 [`JD.md`](JD.md)；对齐腾讯 **AI 应用工程师**、字节 **飞书 Agent 全栈**。
 
@@ -328,14 +329,40 @@ flowchart LR
 
 ---
 
+## 六点五、Phase 4：Wave E — 中间件 + Agent（2026-09 起）
+
+> **详细需求（逐步开发 + 个人学习）：** [`phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md)  
+> **原则：** Redis/MQ **问题驱动**；RabbitMQ 任务队列；Redis 限流/缓存。
+
+### Wave E 一览
+
+| 模块 | 主题 | 状态 |
+|------|------|------|
+| **E-B0** | Docker Redis + RabbitMQ | ⬜ |
+| **E-B1** | Redis AI 限流 | ⬜ |
+| **E-B2** | Redis embedding 缓存 | ⬜ |
+| **E-B3** | MQ 知识库索引异步 | ⬜ |
+| **E-B4** | MQ 抠图 extract | ⬜ |
+| **E-B5** | AI 任务中心（stretch） | ⬜ |
+| **E-A1** | Tool Router + Tavily（原 D2） | ⬜ |
+| **E-A2** | 上下文管理（原 D4） | ⬜ |
+| **E-A3** | Agent Function Calling 小循环 | ⬜ |
+| **E-A4** | MCP 最小 Server（stretch） | ⬜ |
+| **E-A5** | Golden + interview（原 D6） | 进行中 |
+
+**建议顺序：** E-B0 → E-B3 → E-A1 → E-A2 → E-A3 → E-B1 → E-B4 → E-A5 →（B2/B5/A4 按需）
+
+---
+
 ## 七、岗位投递节奏
 
 | 完成阶段 | 适合投递 | 叙事重点 |
 |----------|----------|----------|
 | **Wave B 结束** | 技术面试练手、内推预热 | 全栈 Demo + SSE + **PDF/DOCX RAG** + **CD/HTTPS** + 前端工程亮点 |
 | **Wave C 结束** | 腾讯 **AI 应用工程师**；字节 **AIGC 全栈 / AI 前端** | 上述 + **portfolio/README** + STAR 可背 |
-| **Wave D 结束** | 腾讯 AI 应用 **加强版**；字节 **飞书 Agent 全栈** | LangChain 检索 + Tool/Tavily + 反馈闭环 |
-| Wave D + C3 MCP 后 | 字节 Agent 专向 | + MCP Server |
+| **Wave D 核心结束** | 腾讯 AI 应用；混合 RAG + 反馈 | D1/D3 ✅ |
+| **Wave E 结束** | 腾讯 AI 应用 **加强版**；字节 **飞书 Agent 全栈** | + Redis/MQ + Tavily + Agent tools |
+| Wave E + C3 MCP 后 | 字节 Agent 专向 | + MCP Server |
 | Agent 专岗 | stretch | 需 LangGraph 深度 + Agent 专向作品 |
 
 **主简历叙事（Wave C 定稿时写入 README）**
@@ -407,12 +434,17 @@ flowchart LR
 | **D3** | AI 反馈闭环 | **Wave D** | D2（可部分并行） | ✅ |
 | **D4** | Chat/生图/RAG 上下文管理 | **Wave D** | D3 或并行 | ⬜ |
 | **D6** | Golden Set + interview 更新 | **Wave D** | D1～D4 | ⬜ |
-| **D5** | Redis 限流/缓存（可选） | **Wave D** | 按需 | ⬜ |
+| **D5** | Redis 限流/缓存（可选） | **Wave D → E-B1/B2** | 按需 | ⬜ |
+| **E-B0** | Redis + Rabbit Docker | **Wave E** | — | ⬜ |
+| **E-B3** | MQ 文档索引 | **Wave E** | E-B0 | ⬜ |
+| **E-A1** | Tavily Tool Router | **Wave E** | D1.5 | ⬜ |
+| **E-A2** | 上下文管理 | **Wave E** | — | ⬜ |
+| **E-A3** | Agent tool loop | **Wave E** | E-A1,A2 | ⬜ |
 | 8～10 | （旧 P3 序号，已并入 D1～D5） | — | — | — |
 
-**建议实施顺序：** **3d ✅ → 5～7 ✅ → 2/4 ✅ → D1 → D2 → D3 → D4 → D6 → D5（可选）**；**1-F HTTPS** 与 Wave D 并行。
+**建议实施顺序：** **D1/D3 ✅ → Wave E（见 [`phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md) §4）**；**1-F HTTPS** 可并行。
 
-**说明：** Wave B/C 已验收。**Wave D 方案已写入 [`phase3-wave-d-requirements.md`](phase3-wave-d-requirements.md)，代码未动。** 开发时说「**开始 Wave D1**」。
+**说明：** Wave B/C 已验收。Wave D 检索与反馈已落地；**未完成 D2/D4/D5 在 Wave E 继续**。开发时说「**开始 Wave E-B0**」等。
 
 ---
 
@@ -424,12 +456,12 @@ flowchart LR
 | SSE / 流式 | Chat 已有 | 保持 |
 | 全栈交付 | 三端 + Docker + Demo | Wave A：CD ✅；HTTPS ⬜ |
 | 前端工程 | 虚拟列表、lazy、apiError | ✅ dev-log 已记录 |
-| Agent / Tool Use | 弱 | **Wave D2：Router + Tavily** |
-| LangChain | 无 | **Wave D1：仅检索链** |
-| MCP / Skills | 无 | Wave D 后 C3（可选） |
+| Agent / Tool Use | 弱 | **Wave E-A1/A3** |
+| LangChain | 检索链 ✅ | **Wave D1 仅检索链** |
+| MCP / Skills | 无 | **Wave E-A4** 或 C3 |
 | LangGraph | 无 | C2 实验分支（可选） |
-| 效果闭环 | 仅 ai_call_log | **Wave D3：ai_feedback** |
-| Redis / MQ | 无 | **Wave D5 可选** |
+| 效果闭环 | ai_feedback ✅ | **Wave D3** |
+| Redis / MQ | 无 | **Wave E-B0～B4** |
 | CI/CD | CI + CD | CD ✅ |
 
 ---

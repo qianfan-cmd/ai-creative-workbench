@@ -37,7 +37,8 @@
 |------|------|
 | 公网 Demo、CD、N+1、Chat 虚拟列表、lazy、apiError | **已验收** |
 | 混合检索、rerank、反馈闭环、Admin 信号、embed filename | **已交付**，Golden G-Resume / BC-004 建议部署后手测一句 |
-| Tavily 联网、HTTPS、Redis、Golden 自动化 | **规划中**，简历不写 |
+| Tavily 联网、Redis、RabbitMQ、Agent tools、HTTPS | **Wave E 规划中**（见 [`phase4-wave-e-requirements.md`](phase4-wave-e-requirements.md)），**模块验收前简历不写** |
+| Golden 自动化 | **进行中**（E-A5 / 原 D6），手工 Golden 可先讲 |
 
 ---
 
