@@ -3,7 +3,8 @@
 # =============================================================================
 # 这是 Docker Compose 的配置文件（YAML 格式）。执行 `docker compose up -d` 时，
 # Docker 会按本文件一次启动多个容器，并帮它们组网、配端口、挂数据盘。
-#
+# 启动四服务：docker compose up -d
+# 加 Redis/Rabbit：docker compose --profile middleware up -d redis rabbitmq
 # -----------------------------------------------------------------------------
 # YAML 最基础语法（读下面每一行前先懂这个）
 # -----------------------------------------------------------------------------
@@ -159,7 +160,43 @@ services:
     ports:
       - "8088:80"
 
+  # ---------------------------------------------------------------------------
+  # 服务 5：redis（Wave E-B0，可选中间件）
+  # ---------------------------------------------------------------------------
+  redis:
+    profiles: ["middleware"]
+    image: docker.m.daocloud.io/library/redis:7-alpine
+    container_name: workbench-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
+  # ---------------------------------------------------------------------------
+  # 服务 6：rabbitmq（Wave E-B0，可选中间件，带管理 UI）
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    profiles: ["middleware"]
+    image: docker.m.daocloud.io/library/rabbitmq:3-management
+    container_name: workbench-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: workbench
+      RABBITMQ_DEFAULT_PASS: workbench
+    ports:
+      - "5672:5672"    # AMQP，Java/Python 客户端连这个
+      - "15672:15672"  # 管理界面 http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 # volumes: 【顶层键】声明「命名卷」——给上面的 mysql_data、uploads_data 起名字并交给 Docker 管理。
 # 为什么单独写？services 里用 mysql_data:/path 挂载时，必须先在这里声明，否则 compose 报错。
 # docker compose down     → 删容器，卷还在（数据保留）
@@ -167,3 +204,5 @@ services:
 volumes:
   mysql_data:     # MySQL 数据文件
   uploads_data:   # 用户上传的素材
+  redis_data:     # Redis 数据文件
+  rabbitmq_data:  # RabbitMQ 数据文件

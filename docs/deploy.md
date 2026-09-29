@@ -1,6 +1,6 @@
 # Docker 部署指南
 
-> 更新日期：2026-09-06  
+> 更新日期：2026-09-30  
 > 适用环境：Windows + Docker Desktop（WSL2 引擎）
 
 本文说明如何使用 Docker 一键启动 **AI Creative Workbench** 全套服务，并记录部署过程中常见问题与解决方法。
@@ -16,6 +16,8 @@
 
 backend → mysql:3306          (MySQL 8)
 backend → ai:8000             (FastAPI)
+backend → redis:6379          (Wave E 可选，profile middleware)
+backend → rabbitmq:5672       (Wave E 可选，profile middleware)
 ```
 
 | 容器 | 镜像名 | 宿主机端口 | 说明 |
@@ -24,8 +26,12 @@ backend → ai:8000             (FastAPI)
 | `workbench-backend` | `workbench-backend:latest` | **8080** → 8080 | Java 业务 API |
 | `workbench-ai` | `workbench-ai:latest` | **8000** → 8000 | Python AI 服务 |
 | `workbench-mysql` | `mysql:8.0` | **3307** → 3306 | 数据库（避免与本机 3306 冲突） |
+| `workbench-redis` | `redis:7-alpine` | **6379** → 6379 | Wave E 可选；需 `--profile middleware` |
+| `workbench-rabbitmq` | `rabbitmq:3-management` | **5672** → 5672，**15672** → 15672 | AMQP + 管理 UI；同上 profile |
 
 容器之间通过 **docker-compose 服务名** 互连（如 `mysql`、`backend`、`ai`），不要用 `localhost`。
+
+**Redis / RabbitMQ** 使用 Compose profile `middleware`，默认 `docker compose up` **不会**启动它们；见 **§5.1**。
 
 ---
 
@@ -159,6 +165,45 @@ docker compose ps
 | AI 健康检查 | http://localhost:8000/health |
 | Docker MySQL | `localhost:3307`，用户 `root`，密码 `workbench` |
 
+### 5.1 Wave E 中间件（Redis + RabbitMQ）
+
+仅学习 / 后续 Wave E-B1（Redis 限流）、E-B3（Rabbit 异步索引）需要时使用。**不启中间件时 backend 行为与 Wave D 一致**（仍可用 IDE + Docker MySQL 开发）。
+
+**启动（常与 MySQL 一起）：**
+
+```bash
+docker compose --profile middleware up -d mysql redis rabbitmq
+docker compose --profile middleware ps
+```
+
+**验收：**
+
+```bash
+docker exec workbench-redis redis-cli ping
+```
+
+期望输出 `PONG`。RabbitMQ 首次启动可能显示 `(health: starting)`，半分钟内应变为 **healthy**。
+
+| 用途 | 地址 / 凭据 |
+|------|-------------|
+| Redis | `localhost:6379`，无密码（当前 compose） |
+| RabbitMQ AMQP | `localhost:5672`，用户 / 密码 `workbench` / `workbench` |
+| RabbitMQ 管理 UI | http://localhost:15672（同上账号） |
+
+**本机 IDE 连中间件：** 使用上表 `localhost` 与端口；环境变量名见项目根目录 [`.env.example`](../.env.example)。
+
+**容器内 backend 连中间件**（四服务与 profile 同网时）：主机名 `redis`、`rabbitmq`，端口 `6379` / `5672`；Rabbit 用户名密码与 compose 中 `RABBITMQ_DEFAULT_*` 一致。
+
+**Spring：** Wave E-B0 不要求配置 Redis/Rabbit。自 E-B1 起在 `application-local.yml` 或环境变量接入；可选 Spring profile 名 `middleware`（与 compose profile 同名，便于记忆）。
+
+**仅停止中间件：**
+
+```bash
+docker compose --profile middleware stop redis rabbitmq
+```
+
+默认四服务：`docker compose up -d` 仍只涉及 mysql / backend / ai / frontend（backend 等需已 build 镜像）。未加 `--profile middleware` 时，`docker compose config --services` **不应**列出 `redis`、`rabbitmq`。
+
 ---
 
 ## 6. 环境变量说明
@@ -207,6 +252,10 @@ SEEDREAM_API_KEY=...     # 可选
 
 本地 SMTP（找回密码）仍在 `application-local.yml`，Docker 镜像默认不包含该文件；容器内找回密码邮件需另行配置 `spring.mail.*` 环境变量或挂载配置。
 
+### 6.4 Wave E：根目录 `.env.example`
+
+中间件连接变量模板（`REDIS_*`、`RABBITMQ_*`）。Wave E-B0 仅文档约定；Spring 接入见 **§5.1** 与后续 Wave E-B1 / E-B3。AI Key 仍在 `ai-service-python/.env`，与此文件无关。
+
 ---
 
 ## 7. 常用运维命令
@@ -253,6 +302,8 @@ bind: Only one usage of each socket address ... 8080
 ```
 
 解决：停止 IDE 里的 backend / 本机 Python，再 `docker compose up -d`；或把 compose 里 backend 的 `8080:8080` 改成 `8081:8080`（前端经 Nginx 访问不受影响）。
+
+**Wave E 中间件（本地开发与 Docker 部署相同）：** Redis `localhost:6379`；RabbitMQ AMQP `localhost:5672`；管理 UI http://localhost:15672。需先执行 `docker compose --profile middleware up -d redis rabbitmq`（或 §5.1 与 MySQL 一并启动）。
 
 ---
 
@@ -409,6 +460,8 @@ docker compose up -d ai
 - [ ] http://localhost:8088 可打开登录页并登录
 - [ ] http://localhost:8000/health 返回 `{"status":"ok",...}`
 - [ ] Chat / 知识库 / 素材等核心功能可用
+- [ ] （Wave E-B0）`docker compose --profile middleware ps` 中 redis / rabbitmq 为 **Up (healthy)**
+- [ ] （Wave E-B0）`docker exec workbench-redis redis-cli ping` → **PONG**；http://localhost:15672 可登录
 
 ---
 
@@ -416,7 +469,8 @@ docker compose up -d ai
 
 | 文件 | 说明 |
 |------|------|
-| `docker-compose.yml` | 四服务编排与端口 |
+| `docker-compose.yml` | 四服务 + profile `middleware`（Redis / RabbitMQ） |
+| `.env.example` | Wave E Redis / RabbitMQ 变量模板（项目根目录） |
 | `docker-compose.prod.yml` | 生产 GHCR 镜像 + 公网 URL |
 | `backend-java/Dockerfile` | Java 多阶段构建（本机） |
 | `backend-java/Dockerfile.runtime` | Java 运行镜像（CI/CD） |
