@@ -163,6 +163,12 @@ services:
   # ---------------------------------------------------------------------------
   # 服务 5：redis（Wave E-B0，可选中间件）
   # ---------------------------------------------------------------------------
+  # profiles: ["middleware"] —— 意思是可选中间件
+  # 只有指定 profile 才会起这个服务。docker compose --profile middleware up -d
+  # redis:7-alpine可以拆成 redis 7 alpine意思就是redis7 + Alpine linux基础镜像
+  # ports: 6379:6379 —— 左边是电脑暴露的端口，右边是redis容器内部监听的端口
+  # volumes: redis_data:/data —— redis数据持久化到命名卷redis_data
+  # redis持久化文件放在/data目录下。删掉容器的话数据还在
   redis:
     profiles: ["middleware"]
     image: docker.m.daocloud.io/library/redis:7-alpine
