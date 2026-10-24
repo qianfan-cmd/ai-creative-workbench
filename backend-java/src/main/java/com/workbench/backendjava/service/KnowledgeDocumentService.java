@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.workbench.backendjava.client.PythonAiClient;
 import com.workbench.backendjava.common.BusinessException;
+import com.workbench.backendjava.common.KnowledgeIndexStatus;
 import com.workbench.backendjava.common.LoginUserContext;
 import com.workbench.backendjava.common.PageResult;
 import com.workbench.backendjava.config.UploadProperties;
 import com.workbench.backendjava.dto.IdsBatchDeleteRequest;
 import com.workbench.backendjava.dto.KnowledgeDocumentPatchRequest;
+import com.workbench.backendjava.dto.mq.KnowledgeIndexMessage;
+import com.workbench.backendjava.entity.AsyncJob;
 import com.workbench.backendjava.entity.KnowledgeDocument;
 import com.workbench.backendjava.mapper.KnowledgeDocumentMapper;
+import com.workbench.backendjava.service.mq.KnowledgeIndexPublisher;
 import com.workbench.backendjava.vo.KnowledgeBatchDeleteVO;
 import com.workbench.backendjava.vo.KnowledgeBatchUploadVO;
 import com.workbench.backendjava.vo.KnowledgeDeleteFailureVO;
@@ -23,8 +27,11 @@ import com.workbench.backendjava.vo.KnowledgeUploadVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -74,6 +81,12 @@ public class KnowledgeDocumentService {
     private final UploadProperties uploadProperties;
     private final ObjectProvider<KnowledgeDocumentService> selfProvider;
     private final KnowledgeDocumentTagService documentTagService;
+    private final AsyncJobService asyncJobService;
+    /** Rabbit 未 enabled 时不存在该 Bean，用 ObjectProvider 安全获取 */
+    private final ObjectProvider<KnowledgeIndexPublisher> knowledgeIndexPublisherProvider;
+
+    @Value("${app.rabbit.enabled:false}")
+    private boolean rabbitEnabled;
 
     /**
      * 批量上传：并发 {@link #uploadDocument}（线程池大小 {@value #BATCH_UPLOAD_CONCURRENCY}），
@@ -180,21 +193,50 @@ public class KnowledgeDocumentService {
         doc.setStoredPath(storedPath);
         documentMapper.updateById(doc);
 
-        try {
-            KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, filename, doc.getId(), userId);
-            doc.setCharCount(indexed.getCharCount());
-            doc.setChunkCount(indexed.getChunkCount());
+        /**
+         * 若 rabbitMQ服务启动则异步上传，未启动则同步上传
+         */
+        if (rabbitEnabled == true) {
+            doc.setIndexStatus(KnowledgeIndexStatus.PENDING_INDEX);
+            doc.setCharCount(0);
+            doc.setChunkCount(0);
+            documentMapper.updateById(doc);
+
+            AsyncJob job = asyncJobService.createDocumentIndexJob(userId, doc.getId(), filename);
+            doc.setLastJobId(job.getId());
             doc.setUpdatedAt(LocalDateTime.now());
             documentMapper.updateById(doc);
-            if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
-                documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+
+            publishIndexMessageAfterCommit(new KnowledgeIndexMessage(
+                    job.getId(), userId, doc.getId(), filename));
+
+            KnowledgeUploadVO vo = new KnowledgeUploadVO();
+            vo.setDocumentId(doc.getId());
+            vo.setJobId(job.getId());
+            vo.setFilename(filename);
+            vo.setIndexStatus(KnowledgeIndexStatus.PENDING_INDEX);
+            vo.setCharCount(0);
+            vo.setChunkCount(0);
+            vo.setIndexedCount(0);
+            return vo;
+        } else {
+            try {
+                KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, filename, doc.getId(), userId);
+                doc.setCharCount(indexed.getCharCount());
+                doc.setChunkCount(indexed.getChunkCount());
+                doc.setUpdatedAt(LocalDateTime.now());
+                documentMapper.updateById(doc);
+                if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
+                    documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+                }
+                return indexed;
+            } catch (RuntimeException e) {
+                documentMapper.deleteById(doc.getId());
+                deleteStoredFile(storedPath);
+                throw e;
             }
-            return indexed;
-        } catch (RuntimeException e) {
-            documentMapper.deleteById(doc.getId());
-            deleteStoredFile(storedPath);
-            throw e;
         }
+
     }
 
     /** 文档库分页列表（当前用户），支持文件名 keyword 与 createdAt 排序。 */
@@ -658,5 +700,25 @@ public class KnowledgeDocumentService {
             throw new BusinessException(401, "未登录");
         }
         return userId;
+    }
+
+    /**
+     * 必须在 DB 事务 commit 之后发 MQ，否则 Worker 可能查不到刚 insert 的 job/document。
+     */
+    private void publishIndexMessageAfterCommit(KnowledgeIndexMessage message) {
+        KnowledgeIndexPublisher publisher = knowledgeIndexPublisherProvider.getIfAvailable();
+        if (publisher == null) {
+            throw new BusinessException(500, "Rabbit 未启用，无法投递索引任务");
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publisher.publish(message);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publisher.publish(message);
+            }
+        });
     }
 }
