@@ -27,6 +27,12 @@ public class KnowledgeDocument {
 
     private Integer chunkCount;
 
+    /** 见 {@link com.workbench.backendjava.common.KnowledgeIndexStatus} */
+    private String indexStatus;
+
+    /** 最近一次索引任务 id，前端可用来轮询 GET /knowledge/jobs/{id} */
+    private Long lastJobId;
+
     /** 相对 uploads/ 目录，如 knowledge/1/5/notes.md */
     private String storedPath;
 

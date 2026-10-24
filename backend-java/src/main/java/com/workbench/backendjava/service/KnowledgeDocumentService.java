@@ -484,6 +484,8 @@ public class KnowledgeDocumentService {
         vo.setFileSize(doc.getFileSize());
         vo.setCharCount(doc.getCharCount());
         vo.setChunkCount(doc.getChunkCount());
+        vo.setIndexStatus(doc.getIndexStatus());
+        vo.setLastJobId(doc.getLastJobId());
         vo.setHasOriginalFile(doc.getStoredPath() != null && !doc.getStoredPath().isBlank());
         if (doc.getCreatedAt() != null) {
             vo.setCreatedAt(doc.getCreatedAt().format(ISO));

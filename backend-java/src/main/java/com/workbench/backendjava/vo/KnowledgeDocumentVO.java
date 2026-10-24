@@ -13,6 +13,9 @@ public class KnowledgeDocumentVO {
     private Long fileSize;
     private Integer charCount;
     private Integer chunkCount;
+    /** ready | pending_index | indexing | index_failed */
+    private String indexStatus;
+    private Long lastJobId;
     private String createdAt;
     private Boolean hasOriginalFile;
     private List<TagVO> tags = new ArrayList<>();

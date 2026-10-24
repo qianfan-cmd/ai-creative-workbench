@@ -18,29 +18,14 @@ import com.workbench.backendjava.dto.KnowledgeSessionPatchRequest;
 
 import com.workbench.backendjava.dto.KnowledgeTurnCreateRequest;
 
+import com.workbench.backendjava.service.AsyncJobService;
 import com.workbench.backendjava.service.KnowledgeDocumentTagService;
 
 import com.workbench.backendjava.service.KnowledgeService;
 
 import com.workbench.backendjava.service.KnowledgeSessionService;
 
-import com.workbench.backendjava.vo.TagVO;
-
-import com.workbench.backendjava.vo.KnowledgeBatchDeleteVO;
-
-import com.workbench.backendjava.vo.KnowledgeBatchUploadVO;
-
-import com.workbench.backendjava.vo.KnowledgeDocumentContentVO;
-
-import com.workbench.backendjava.vo.KnowledgeDocumentVO;
-
-import com.workbench.backendjava.vo.KnowledgeSessionDetailVO;
-
-import com.workbench.backendjava.vo.KnowledgeSessionVO;
-
-import com.workbench.backendjava.vo.KnowledgeTurnVO;
-
-import com.workbench.backendjava.vo.KnowledgeUploadVO;
+import com.workbench.backendjava.vo.*;
 
 import jakarta.validation.Valid;
 
@@ -97,6 +82,8 @@ public class KnowledgeController {
     private final KnowledgeSessionService knowledgeSessionService;
 
     private final KnowledgeDocumentTagService knowledgeDocumentTagService;
+
+    private final AsyncJobService asyncJobService;
 
 
 
@@ -468,6 +455,14 @@ public class KnowledgeController {
 
         return Result.ok(knowledgeSessionService.patchSession(id, request));
 
+    }
+
+    /**
+     * {@code GET /api/knowledge/jobs/{id}} — 查询异步索引任务状态（Wave E-B3 轮询用）。
+     */
+    @GetMapping("/jobs/{id}")
+    public Result<AsyncJobVO> getJob(@PathVariable Long id) {
+        return Result.ok(asyncJobService.getJobForCurrentUser(id));
     }
 
 }

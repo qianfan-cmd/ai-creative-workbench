@@ -10,6 +10,8 @@ export interface KnowledgeIndexUploadVO {
     charCount: number
     chunkCount: number
     indexedCount: number
+    indexStatus?: 'ready' | 'pending_index' | 'indexing' | 'index_failed'
+    lastJobId?: number
 }
 
 /** 单文件上传失败明细 */

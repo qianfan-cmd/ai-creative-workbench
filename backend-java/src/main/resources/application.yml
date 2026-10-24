@@ -49,6 +49,11 @@ app:
       public-base-url: ""
   ai-service:
     base-url: http://localhost:8000   # Python FastAPI 地址
+  rabbit:
+    # 未启 Docker Rabbit 时保持 false，backend 正常启动
+    enabled: true
+    # 仅本地连通性测试
+    smoke-test: true
   upload:
     dir: E:/ai-creative-workbench/uploads #本地存储目录
     max-size: 52428800 #50MB
