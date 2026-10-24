@@ -186,6 +186,7 @@ public class KnowledgeDocumentService {
         doc.setChromaSource(filename);
         doc.setCreatedAt(LocalDateTime.now());
         doc.setUpdatedAt(LocalDateTime.now());
+        doc.setIndexStatus(KnowledgeIndexStatus.READY); // 同步模式最终会更新；异步下面会改成 PENDING_INDEX
         documentMapper.insert(doc);
 
         // 存储文件到指定目录下
