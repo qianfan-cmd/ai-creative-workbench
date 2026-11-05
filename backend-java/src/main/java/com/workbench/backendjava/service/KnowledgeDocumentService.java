@@ -82,7 +82,9 @@ public class KnowledgeDocumentService {
     private final ObjectProvider<KnowledgeDocumentService> selfProvider;
     private final KnowledgeDocumentTagService documentTagService;
     private final AsyncJobService asyncJobService;
-    /** Rabbit 未 enabled 时不存在该 Bean，用 ObjectProvider 安全获取 */
+    /** Rabbit 未 enabled 时不存在该 Bean，用 ObjectProvider 安全获取
+     * ObjectProvider<T>：表示【容器里可能有也可能没有这个Bean】
+     */
     private final ObjectProvider<KnowledgeIndexPublisher> knowledgeIndexPublisherProvider;
 
     @Value("${app.rabbit.enabled:false}")
@@ -197,11 +199,10 @@ public class KnowledgeDocumentService {
         /**
          * 若 rabbitMQ服务启动则异步上传，未启动则同步上传
          */
-        if (rabbitEnabled == true) {
+        if (rabbitEnabled) {
             doc.setIndexStatus(KnowledgeIndexStatus.PENDING_INDEX);
             doc.setCharCount(0);
             doc.setChunkCount(0);
-            documentMapper.updateById(doc);
 
             AsyncJob job = asyncJobService.createDocumentIndexJob(userId, doc.getId(), filename);
             doc.setLastJobId(job.getId());
@@ -230,6 +231,8 @@ public class KnowledgeDocumentService {
                 if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
                     documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
                 }
+                indexed.setDocumentId(doc.getId());
+                indexed.setIndexStatus(KnowledgeIndexStatus.READY);
                 return indexed;
             } catch (RuntimeException e) {
                 documentMapper.deleteById(doc.getId());
@@ -705,16 +708,42 @@ public class KnowledgeDocumentService {
 
     /**
      * 必须在 DB 事务 commit 之后发 MQ，否则 Worker 可能查不到刚 insert 的 job/document。
+     * 异步上传流程大概是：
+     * 1.在同一个数据库事务里：insert 文档 -> 更新路径 -> createDocumentIndexJob 插入 async_job -> 再更新文档
+     * 2.往 RabbitMQ 发一条 KnowledgeIndexMessage 消息
+     * 3.Worker 收到消息后立刻去MySQL查 job/document，再读磁盘，调python索引
+     * 避免消费者先于commit执行，导致查不到刚insert的job/document
+     * @param message MQ消息体DTO
+     * @return
+     * @throws BusinessException
      */
     private void publishIndexMessageAfterCommit(KnowledgeIndexMessage message) {
+        /**
+         * KnowledgeIndexPublisher：真正发MQ的类，内部用RabbitTemplate.convertAndSend(exchange, routingKey, message)
+         * 把对象转成JSON发到 workbench.tasks / knowledge.index
+         */
         KnowledgeIndexPublisher publisher = knowledgeIndexPublisherProvider.getIfAvailable();
         if (publisher == null) {
             throw new BusinessException(500, "Rabbit 未启用，无法投递索引任务");
         }
+        /**
+         * TransactionSynchronizationManager：管理事务同步
+         * isSynchronizationActive：判断是否存在事务同步
+         * 返回true：表示存在事务同步
+         * 返回false：表示不存在事务同步，无法挂载afterCommit回调只能马上publish然后return，不能等事务提交
+         * registerSynchronization：注册事务同步
+         * afterCommit：事务提交后执行
+         * publish：发布MQ消息
+         * publish(message)：将消息转换为JSON并发送
+         * 
+         */
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             publisher.publish(message);
             return;
         }
+        /**
+         * 事务已成功写入DB之后执行
+         */
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
