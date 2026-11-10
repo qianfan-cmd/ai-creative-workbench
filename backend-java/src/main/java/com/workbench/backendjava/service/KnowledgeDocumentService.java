@@ -39,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -239,6 +240,99 @@ public class KnowledgeDocumentService {
                 deleteStoredFile(storedPath);
                 throw e;
             }
+        }
+
+    }
+
+    /**
+     * MQ Worker：根据消息做向量索引。
+     * 调用方：KnowledgeIndexListener。无 HTTP，需自行设置 LoginUserContext。
+     */
+    public void consumeKnowledgeIndex(KnowledgeIndexMessage message) {
+        Long jobId = message.getJobId();
+        Long userId = message.getUserId();
+        Long documentId = message.getDocumentId();
+
+        // 测试消息 jobId=0 不写入库
+        if (jobId == null || jobId <= 0 || documentId == null) {
+            log.warn("忽略非法索引消息 jobId={} documentId={}", jobId, documentId);
+            return;
+        }
+
+        /**
+         * 防止抢任务/重复索引
+         * 只有是pending或failed状态的job才能改成running
+         * 避免同一条消息被消费两次又跑一遍完整索引
+         */
+        boolean claimed = asyncJobService.markRunning(jobId);
+        if (!claimed) {
+            // 已 succeeded/running，或 job 不存在 -> 幂等跳过，避免重复Index
+            log.info("跳过索引任务 jobId={}（非 pending/failed）", jobId);
+            return;
+        }
+
+        /**
+         * HTTp里用 ThreadLocal 存储 userId；
+         * MQ 线程里没有 Session，所以要手动 setUserId，处理完 clear，防止线程复用串用户
+         */
+        LoginUserContext.setUserId(userId);
+        try {
+            KnowledgeDocument doc = documentMapper.selectById(documentId);
+            if (doc == null || (userId != null && !userId.equals(doc.getUserId()))) {
+                asyncJobService.markFailed(jobId, "文档不存在或不属于该用户");
+                return;
+            }
+
+            if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
+                asyncJobService.markFailed(jobId, "原文件不存在，无法索引");
+                doc.setIndexStatus(KnowledgeIndexStatus.INDEX_FAILED);
+                doc.setUpdatedAt(LocalDateTime.now());
+                documentMapper.updateById(doc);
+                return;
+            }
+
+            /**
+             * 更新文档状态为indexing，更新时间。表示索引中
+             */
+            doc.setIndexStatus(KnowledgeIndexStatus.INDEXING);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+
+            /**
+             * 读取文件内容，调用 Python AI 客户端进行向量索引
+             */
+            byte[] bytes = readStoredBytes(doc.getStoredPath());
+            KnowledgeUploadVO indexed = pythonAiClient.indexDocument(
+                    bytes, doc.getFilename(), doc.getId(), userId);
+
+            doc.setCharCount(indexed.getCharCount());
+            doc.setChunkCount(indexed.getChunkCount());
+            doc.setIndexStatus(KnowledgeIndexStatus.READY);
+            doc.setUpdatedAt(LocalDateTime.now());
+            documentMapper.updateById(doc);
+
+            if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
+                documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+            }
+            asyncJobService.markSucceeded(jobId);
+
+        } catch(RuntimeException e) {
+            log.error("知识库异步索引失败 jobId={} documentId={}", jobId, documentId, e);
+            try {
+                KnowledgeDocument doc = documentMapper.selectById(documentId);
+                if (doc != null) {
+                    doc.setIndexStatus(KnowledgeIndexStatus.INDEX_FAILED);
+                    doc.setUpdatedAt(LocalDateTime.now());
+                    documentMapper.updateById(doc);
+                }
+                String msg = e.getMessage() != null ? e.getMessage() : "索引失败";
+                asyncJobService.markFailed(jobId, msg);
+            } catch (RuntimeException nested) {
+                log.error("标记索引失败时出错 jobId={}", jobId, nested);
+            }
+            throw e; // 让 Spring 不 ACK，队列可重投；markRunning 幂等会挡住二次成功路径
+        } finally {
+            LoginUserContext.clear();
         }
 
     }
