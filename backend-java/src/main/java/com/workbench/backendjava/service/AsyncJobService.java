@@ -10,7 +10,6 @@ import com.workbench.backendjava.mapper.AsyncJobMapper;
 import com.workbench.backendjava.vo.AsyncJobVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.kafka.SslBundleSslEngineFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,13 +36,23 @@ public class AsyncJobService {
      */
     @Transactional
     public AsyncJob createDocumentIndexJob(Long userId, Long documentId, String filename) {
+        return createKnowledgeIndexJob(userId, documentId, filename, AsyncJobConstants.TYPE_DOCUMENT_INDEX);
+    }
+
+    /** 单文档 reindex：磁盘重读再 index，与上传共用同一 MQ 消费者。 */
+    @Transactional
+    public AsyncJob createReindexJob(Long userId, Long documentId, String filename) {
+        return createKnowledgeIndexJob(userId, documentId, filename, AsyncJobConstants.TYPE_REINDEX);
+    }
+
+    private AsyncJob createKnowledgeIndexJob(Long userId, Long documentId, String filename, String type) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("documentId", documentId);
         payload.put("filename", filename);
 
         AsyncJob job = new AsyncJob();
         job.setUserId(userId);
-        job.setType(AsyncJobConstants.TYPE_DOCUMENT_INDEX);
+        job.setType(type);
         job.setStatus(AsyncJobConstants.STATUS_PENDING);
         job.setPayloadJson(toJson(payload));
         job.setCreatedAt(LocalDateTime.now());

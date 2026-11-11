@@ -3,6 +3,7 @@ package com.workbench.backendjava.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.workbench.backendjava.client.PythonAiClient;
+import com.workbench.backendjava.common.AsyncJobConstants;
 import com.workbench.backendjava.common.BusinessException;
 import com.workbench.backendjava.common.KnowledgeIndexStatus;
 import com.workbench.backendjava.common.LoginUserContext;
@@ -201,17 +202,7 @@ public class KnowledgeDocumentService {
          * 若 rabbitMQ服务启动则异步上传，未启动则同步上传
          */
         if (rabbitEnabled) {
-            doc.setIndexStatus(KnowledgeIndexStatus.PENDING_INDEX);
-            doc.setCharCount(0);
-            doc.setChunkCount(0);
-
-            AsyncJob job = asyncJobService.createDocumentIndexJob(userId, doc.getId(), filename);
-            doc.setLastJobId(job.getId());
-            doc.setUpdatedAt(LocalDateTime.now());
-            documentMapper.updateById(doc);
-
-            publishIndexMessageAfterCommit(new KnowledgeIndexMessage(
-                    job.getId(), userId, doc.getId(), filename));
+            AsyncJob job = enqueueIndexJob(doc, AsyncJobConstants.TYPE_DOCUMENT_INDEX);
 
             KnowledgeUploadVO vo = new KnowledgeUploadVO();
             vo.setDocumentId(doc.getId());
@@ -398,6 +389,14 @@ public class KnowledgeDocumentService {
         if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
             throw new BusinessException(400, "该文档无原文件，无法 re-index");
         }
+        if (rabbitEnabled) {
+            enqueueIndexJob(doc, AsyncJobConstants.TYPE_REINDEX);
+            return;
+        }
+        reindexDocumentFromDiskSync(doc);
+    }
+
+    private void reindexDocumentFromDiskSync(KnowledgeDocument doc) {
         byte[] bytes = readStoredBytes(doc.getStoredPath());
         Long userId = doc.getUserId();
         KnowledgeUploadVO indexed = pythonAiClient.indexDocument(
@@ -405,6 +404,7 @@ public class KnowledgeDocumentService {
         );
         doc.setCharCount(indexed.getCharCount());
         doc.setChunkCount(indexed.getChunkCount());
+        doc.setIndexStatus(KnowledgeIndexStatus.READY);
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
         if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
@@ -418,13 +418,18 @@ public class KnowledgeDocumentService {
         List<KnowledgeDocument> docs = documentMapper.selectList(new LambdaQueryWrapper<>());
         KnowledgeReindexAllVO result = new KnowledgeReindexAllVO();
         result.setTotal(docs.size());
+        result.setAsyncEnqueue(rabbitEnabled);
 
         for (KnowledgeDocument doc : docs) {
             try {
                 if (doc.getStoredPath() == null || doc.getStoredPath().isBlank()) {
                     throw new BusinessException(400, "无原文件");
                 }
-                reindexDocumentInternal(doc);
+                if (rabbitEnabled) {
+                    enqueueIndexJob(doc, AsyncJobConstants.TYPE_REINDEX);
+                } else {
+                    reindexDocumentFromDiskSync(doc);
+                }
                 result.setSucceeded(result.getSucceeded() + 1);
             } catch (Exception e) {
                 KnowledgeReindexFailureVO failure = new KnowledgeReindexFailureVO();
@@ -499,19 +504,30 @@ public class KnowledgeDocumentService {
         String newStoredPath = storeKnowledgeFile(userId, doc.getId(), filename, bytes);
         if (oldStoredPath != null && !oldStoredPath.equals(newStoredPath)) {
             deleteStoredFile(oldStoredPath);
-        } 
-
-        KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, filename, doc.getId(), userId);
+        }
 
         doc.setFilename(filename);
         doc.setChromaSource(filename);
         doc.setStoredPath(newStoredPath);
         doc.setFileType(mimeOf(extensionOf(filename)));
         doc.setFileSize((long) bytes.length);
-        doc.setCharCount(indexed.getCharCount());
-        doc.setChunkCount(indexed.getChunkCount());
         doc.setUpdatedAt(LocalDateTime.now());
         documentMapper.updateById(doc);
+
+        if (rabbitEnabled) {
+            enqueueIndexJob(doc, AsyncJobConstants.TYPE_REINDEX);
+            return;
+        }
+
+        KnowledgeUploadVO indexed = pythonAiClient.indexDocument(bytes, filename, doc.getId(), userId);
+        doc.setCharCount(indexed.getCharCount());
+        doc.setChunkCount(indexed.getChunkCount());
+        doc.setIndexStatus(KnowledgeIndexStatus.READY);
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+        if (indexed.getSuggestedTags() != null && !indexed.getSuggestedTags().isEmpty()) {
+            documentTagService.applyAiSuggestedTags(doc.getId(), indexed.getSuggestedTags());
+        }
     }
 
     /** 删除文档：Chroma 向量 + 磁盘原文件 + MySQL 行（需归属当前用户）。 */
@@ -811,6 +827,32 @@ public class KnowledgeDocumentService {
      * @return
      * @throws BusinessException
      */
+    /**
+     * 写入 async_job、置文档 pending_index，事务提交后发 MQ（上传与 reindex 共用 Worker）。
+     */
+    private AsyncJob enqueueIndexJob(KnowledgeDocument doc, String jobType) {
+        Long userId = doc.getUserId();
+        String filename = doc.getFilename();
+
+        AsyncJob job;
+        if (AsyncJobConstants.TYPE_DOCUMENT_INDEX.equals(jobType)) {
+            job = asyncJobService.createDocumentIndexJob(userId, doc.getId(), filename);
+        } else {
+            job = asyncJobService.createReindexJob(userId, doc.getId(), filename);
+        }
+
+        doc.setIndexStatus(KnowledgeIndexStatus.PENDING_INDEX);
+        doc.setCharCount(0);
+        doc.setChunkCount(0);
+        doc.setLastJobId(job.getId());
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentMapper.updateById(doc);
+
+        publishIndexMessageAfterCommit(new KnowledgeIndexMessage(
+                job.getId(), userId, doc.getId(), filename));
+        return job;
+    }
+
     private void publishIndexMessageAfterCommit(KnowledgeIndexMessage message) {
         /**
          * KnowledgeIndexPublisher：真正发MQ的类，内部用RabbitTemplate.convertAndSend(exchange, routingKey, message)
