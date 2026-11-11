@@ -338,10 +338,10 @@ flowchart LR
 
 | 模块 | 主题 | 状态 |
 |------|------|------|
-| **E-B0** | Docker Redis + RabbitMQ | ⬜ |
+| **E-B0** | Docker Redis + RabbitMQ | ✅ |
 | **E-B1** | Redis AI 限流 | ⬜ |
 | **E-B2** | Redis embedding 缓存 | ⬜ |
-| **E-B3** | MQ 知识库索引异步 | ⬜ |
+| **E-B3** | MQ 知识库索引异步 | ✅ |
 | **E-B4** | MQ 抠图 extract | ⬜ |
 | **E-B5** | AI 任务中心（stretch） | ⬜ |
 | **E-A1** | Tool Router + Tavily（原 D2） | ⬜ |
@@ -435,8 +435,8 @@ flowchart LR
 | **D4** | Chat/生图/RAG 上下文管理 | **Wave D** | D3 或并行 | ⬜ |
 | **D6** | Golden Set + interview 更新 | **Wave D** | D1～D4 | ⬜ |
 | **D5** | Redis 限流/缓存（可选） | **Wave D → E-B1/B2** | 按需 | ⬜ |
-| **E-B0** | Redis + Rabbit Docker | **Wave E** | — | ⬜ |
-| **E-B3** | MQ 文档索引 | **Wave E** | E-B0 | ⬜ |
+| **E-B0** | Redis + Rabbit Docker | **Wave E** | — | ✅ |
+| **E-B3** | MQ 文档索引 | **Wave E** | E-B0 | ✅ |
 | **E-A1** | Tavily Tool Router | **Wave E** | D1.5 | ⬜ |
 | **E-A2** | 上下文管理 | **Wave E** | — | ⬜ |
 | **E-A3** | Agent tool loop | **Wave E** | E-A1,A2 | ⬜ |

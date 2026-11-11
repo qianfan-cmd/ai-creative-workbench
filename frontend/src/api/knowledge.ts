@@ -10,8 +10,12 @@ export interface KnowledgeIndexUploadVO {
     charCount: number
     chunkCount: number
     indexedCount: number
+    suggestedTags?: string[]
+    /**异步索引：文档id */
+    documentId?: number
+    /**异步索引：状态 */
+    jobId?: number
     indexStatus?: 'ready' | 'pending_index' | 'indexing' | 'index_failed'
-    lastJobId?: number
 }
 
 /** 单文件上传失败明细 */
@@ -69,6 +73,8 @@ export interface KnowledgeDocumentVO {
     createdAt?: string
     hasOriginalFile?: boolean
     tags?: TagVO[]
+    indexStatus?: 'ready' | 'pending_index' | 'indexing' | 'index_failed'
+    lastJobId?: number
 }
 
 /** 文档库分页查询参数 */
@@ -246,7 +252,15 @@ export async function updateKnowledgeTurnApi(
  * 批量上传文档：POST /knowledge/documents/upload，服务端并发入库并写 Chroma。
  * 前端大文件列表应分片（见 KNOWLEDGE_UPLOAD_CHUNK_SIZE）避免 HTTP 超时。
  */
-export async function uploadKnowledgeDocumentsApi(files: File[]) {
+export interface UploadKnowledgeDocumentsOptions {
+    /** 当前分片上传进度 0～1（仅本批 multipart） */
+    onChunkProgress?: (ratio: number) => void
+}
+
+export async function uploadKnowledgeDocumentsApi(
+    files: File[],
+    options?: UploadKnowledgeDocumentsOptions,
+) {
     const formData = new FormData()
     files.forEach((file) => formData.append('files', file))
 
@@ -256,9 +270,30 @@ export async function uploadKnowledgeDocumentsApi(files: File[]) {
         {
             // 勿手动设 Content-Type，让浏览器自动带 multipart boundary
             timeout: API_TIMEOUT_HEAVY,
+            onUploadProgress: (event) => {
+                if (!options?.onChunkProgress || !event.total) return
+                options.onChunkProgress(event.loaded / event.total)
+            },
         },
     )
     return res.data.data
+}
+
+/** async_job 状态 -- GET /api/knowledge/jobs/{id} -- 前端轮询检查索引状态 */
+export interface KnowledgeAsyncJobVO {
+    id: number
+    type: string
+    status: 'pending' | 'running' | 'succeeded' | 'failed'
+    documentId?: number
+    filename?: string
+    errorMessage?: string
+    createdAt?: string
+    updatedAt?: string
+}
+
+export async function getKnowledgeJobApi(jobId: number) {
+    const res = await request.get<ApiResponse<KnowledgeAsyncJobVO>>(`/knowledge/jobs/${jobId}`);
+    return res.data.data;
 }
 
 /** 批量删除文档：逐条删 MySQL + 向量 + 磁盘，部分失败仍返回 failures 列表。 */

@@ -204,6 +204,43 @@ docker compose --profile middleware stop redis rabbitmq
 
 默认四服务：`docker compose up -d` 仍只涉及 mysql / backend / ai / frontend（backend 等需已 build 镜像）。未加 `--profile middleware` 时，`docker compose config --services` **不应**列出 `redis`、`rabbitmq`。
 
+### 5.2 Wave E-B3 — 知识库索引异步（RabbitMQ）
+
+**开启条件**
+
+- Compose：`docker compose --profile middleware up -d rabbitmq`（建议与 MySQL 同启）
+- Spring：在 `application-local.yml`（或环境变量）设置 `app.rabbit.enabled: true`，并配置 `spring.rabbitmq.host/port/username/password`（本机 IDE 连 `localhost:5672`，用户/密码见上表 `workbench`）
+
+**拓扑**
+
+| 项 | 值 |
+|----|-----|
+| Exchange | `workbench.tasks`（direct，持久化） |
+| Queue | `knowledge.index` |
+| Routing key | `knowledge.index` |
+| 消息体 | `jobId`, `userId`, `documentId`, `filename` |
+
+**行为**
+
+- 上传、单文档 reindex、编辑/重命名后索引、Admin 全库重建：在 Rabbit 开启时**入队**；`app.rabbit.enabled=false` 时保持 Wave D **同步**调 Python。
+- `async_job`：`pending → running → succeeded/failed`；文档 `index_status`：`pending_index → indexing → ready / index_failed`。
+- 生产者在 DB **事务提交后**发 MQ（`afterCommit`），避免 Worker 查不到刚插入的 job/document。
+
+**重启与重投**
+
+- 监听器处理失败会抛异常 → 默认**不 ACK**，消息回到队列可再次投递。
+- `markRunning` 仅当 job 为 `pending` 或 `failed` 时 claim；`running` / `succeeded` 重复消息**幂等跳过**，不重复完整索引。
+- `failed` job 可被再次消费尝试（状态机允许 failed → running）。
+
+**验收速查**
+
+```bash
+# 管理 UI 应能看到 knowledge.index 队列与消费者
+# 上传后：文档 index_status=pending_index，async_job=pending → succeeded
+```
+
+详见 [`docs/dev-log/2026-09-wave-e-b3-mq-knowledge-index.md`](dev-log/2026-09-wave-e-b3-mq-knowledge-index.md)。
+
 ---
 
 ## 6. 环境变量说明

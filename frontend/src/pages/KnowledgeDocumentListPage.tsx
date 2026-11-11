@@ -2,13 +2,13 @@
  * 文档库列表页
  * 分页浏览、搜索、批量删除与上传 RAG 知识库文档
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useNavigate } from 'react-router-dom'
 
-import { Button, message, Modal, Spin, Table, Tooltip } from 'antd'
+import { Button, message, Modal, Spin, Table, Tooltip, Tag } from 'antd'
 
-import { ArrowLeftOutlined, UploadOutlined } from '@ant-design/icons'
+import { UploadOutlined } from '@ant-design/icons'
 
 import type { ColumnsType } from 'antd/es/table'
 
@@ -27,6 +27,7 @@ import {
 import TagListCell from '@/components/assets/TagListCell'
 import EditKnowledgeDocumentModal from '@/components/knowledge/EditKnowledgeDocumentModal'
 import KnowledgeDocumentTagsModal from '@/components/knowledge/KnowledgeDocumentTagsModal'
+import KnowledgeDocumentProgressBar from '@/components/knowledge/KnowledgeDocumentProgressBar'
 
 import KnowledgeDocToolbar from '@/components/knowledge/KnowledgeDocToolbar'
 
@@ -37,6 +38,10 @@ import { useKnowledgeDocumentUpload } from '@/hooks/useKnowledgeDocumentUpload'
 import { useMainContentLayout } from '@/hooks/useMainContentLayout'
 
 import { formatDate, formatFileSize } from '@/utils/format'
+import {
+  loadKnowledgeUploadBatchIds,
+  saveKnowledgeUploadBatchIds,
+} from '@/utils/knowledgeUploadBatchStorage'
 
 import styles from '@/pages/KnowledgeDocumentListPage.module.css'
 
@@ -48,7 +53,13 @@ import {
 
 } from '@/constants/knowledgeFormats'
 
+import { useKnowledgeIndexPolling } from '@/hooks/useKnowledgeIndexPolling'
 
+import {
+  isKnowledgeListIndexUnchanged,
+  toIndexSnapshots,
+  type KnowledgeIndexRowSnapshot,
+} from '@/utils/knowledgeIndexListCompare'
 
 /** 文档库管理页：表格列表 + 上传/编辑/标签/删除 */
 export default function KnowledgeDocumentListPage() {
@@ -90,57 +101,107 @@ export default function KnowledgeDocumentListPage() {
 
   useMainContentLayout({ fullBleed: true })
 
+  /** 静默轮询用：仅索引相关字段变化时才 setRecords */
+  const indexSnapshotRef = useRef<KnowledgeIndexRowSnapshot[]>([])
+  const totalSnapshotRef = useRef(0)
 
-
-  const fetchList = useCallback(async () => {
-
-    setListLoading(true)
-
-    try {
-
-      const data = await listKnowledgeDocumentsPageApi({
-
-        page,
-
-        size,
-
-        keyword: keyword || undefined,
-
-        sort,
-
-      })
-
-      setRecords(data.records)
-
-      setTotal(data.total)
-
-    } catch (err) {
-
-      message.error(err instanceof Error ? err.message : '获取文档列表失败')
-
-    } finally {
-
-      setListLoading(false)
-
+  const fetchList = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
+    if (!silent) {
+      setListLoading(true)
     }
 
+    try {
+      const data = await listKnowledgeDocumentsPageApi({
+        page,
+        size,
+        keyword: keyword || undefined,
+        sort,
+      })
+
+      if (
+        silent &&
+        isKnowledgeListIndexUnchanged(
+          indexSnapshotRef.current,
+          data.records,
+          totalSnapshotRef.current,
+          data.total,
+        )
+      ) {
+        return
+      }
+
+      indexSnapshotRef.current = toIndexSnapshots(data.records)
+      totalSnapshotRef.current = data.total
+      setRecords(data.records)
+      setTotal(data.total)
+    } catch (err) {
+      if (!silent) {
+        message.error(err instanceof Error ? err.message : '获取文档列表失败')
+      }
+    } finally {
+      if (!silent) {
+        setListLoading(false)
+      }
+    }
   }, [page, size, keyword, sort])
 
+  useKnowledgeIndexPolling(records, () => fetchList({ silent: true }))
 
+  /** 本批上传 documentId；session 持久化，切模块回来仍显示直到索引结束 */
+  const [uploadBatchIds, setUploadBatchIds] = useState(() => loadKnowledgeUploadBatchIds())
 
-  const { uploading, fileInputRef, openFilePicker, handleFileChange } = useKnowledgeDocumentUpload({
+  useEffect(() => {
+    saveKnowledgeUploadBatchIds(uploadBatchIds)
+  }, [uploadBatchIds])
 
-    onSuccess: async () => {
+  const { uploading, uploadProgress, uploadProgressLabel, fileInputRef, openFilePicker, handleFileChange } =
+    useKnowledgeDocumentUpload({
+      onSuccess: async (meta) => {
+        if (meta.uploadedDocumentIds.length > 0) {
+          setUploadBatchIds(meta.uploadedDocumentIds)
+        }
+        setPage(1)
+        setSelectedRowKeys([])
+        await fetchList()
+      },
+    })
 
-      setPage(1)
+  const indexProgress = useMemo(() => {
+    if (uploadBatchIds.length === 0) {
+      return null
+    }
 
-      setSelectedRowKeys([])
+    const total = uploadBatchIds.length
+    let indexedSuccess = 0
+    let indexFailed = 0
 
-      await fetchList()
+    for (const id of uploadBatchIds) {
+      const row = records.find((r) => r.id === id)
+      if (!row) continue
+      if (row.indexStatus === 'ready') {
+        indexedSuccess += 1
+      } else if (row.indexStatus === 'index_failed') {
+        indexFailed += 1
+      }
+    }
 
-    },
+    const percent = total > 0 ? Math.round((indexedSuccess / total) * 100) : 0
+    const label =
+      indexFailed > 0
+        ? `本次上传：已成功索引 ${indexedSuccess}/${total}（另有 ${indexFailed} 个失败）`
+        : `本次上传：已成功索引 ${indexedSuccess}/${total}`
 
-  })
+    const allIndexedOrSettled = indexedSuccess + indexFailed >= total
+
+    return { percent, label, allIndexedOrSettled }
+  }, [uploadBatchIds, records])
+
+  useEffect(() => {
+    if (!indexProgress?.allIndexedOrSettled) return
+    const timer = window.setTimeout(() => setUploadBatchIds([]), 2500)
+    return () => window.clearTimeout(timer)
+  }, [indexProgress?.allIndexedOrSettled])
 
 
 
@@ -288,7 +349,22 @@ export default function KnowledgeDocumentListPage() {
 
   }
 
+  const INDEX_STATUS_LABEL: Record<string, string> = {
+    ready: '已索引',
+    pending_index: '排队索引',
+    indexing: '索引中',
+    index_failed: '索引失败',
+}
 
+function renderIndexStatus(status?: string) {
+    if (!status || status === 'ready') {
+        return <Tag color="success">已索引</Tag>
+    }
+    if (status === 'index_failed') {
+        return <Tag color="error">{INDEX_STATUS_LABEL[status]}</Tag>
+    }
+    return <Tag color="processing">{INDEX_STATUS_LABEL[status] ?? status}</Tag>
+}
 
   const columns: ColumnsType<KnowledgeDocumentVO> = [
 
@@ -348,6 +424,14 @@ export default function KnowledgeDocumentListPage() {
 
     },
 
+    {
+      title: '索引',
+      dataIndex: 'indexStatus',
+      key: 'indexStatus',
+      width: 100,
+      render: (status?: string) => renderIndexStatus(status),
+    },
+    
     {
 
       title: 'Chunks',
@@ -504,7 +588,7 @@ export default function KnowledgeDocumentListPage() {
 
     <div className={styles.page}>
 
-      <Button
+      {/* <Button
 
         type="link"
 
@@ -518,7 +602,7 @@ export default function KnowledgeDocumentListPage() {
 
         返回知识问答
 
-      </Button>
+      </Button> */}
 
 
 
@@ -580,7 +664,12 @@ export default function KnowledgeDocumentListPage() {
 
       />
 
-
+      <KnowledgeDocumentProgressBar
+        uploadPercent={uploading ? uploadProgress : null}
+        uploadLabel={uploadProgressLabel || undefined}
+        indexPercent={indexProgress != null ? indexProgress.percent : null}
+        indexLabel={indexProgress?.label}
+      />
 
       {selectedRowKeys.length > 0 && (
 

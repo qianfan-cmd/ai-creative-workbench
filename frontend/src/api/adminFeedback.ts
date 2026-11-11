@@ -80,8 +80,11 @@ export interface KnowledgeReindexFailure {
 
 export interface KnowledgeReindexAllResult {
   total: number
+  /** 同步模式：索引成功数；asyncEnqueue 为 true 时：成功入队数 */
   succeeded: number
   failed: KnowledgeReindexFailure[]
+  /** Rabbit 开启时 true，索引在后台执行 */
+  asyncEnqueue?: boolean
 }
 
 export async function listSourceSignalsApi(params: { page?: number; size?: number } = {}) {

@@ -146,7 +146,17 @@ export default function AdminFeedbackPage() {
         try {
           const result = await reindexAllKnowledgeApi()
           setReindexResult(result)
-          if (result.failed.length === 0) {
+          if (result.asyncEnqueue) {
+            if (result.failed.length === 0) {
+              message.success(
+                `已提交 ${result.succeeded}/${result.total} 个后台重建任务，请在文档库查看索引进度`,
+              )
+            } else {
+              message.warning(
+                `已入队 ${result.succeeded}/${result.total}，预检失败 ${result.failed.length} 个`,
+              )
+            }
+          } else if (result.failed.length === 0) {
             message.success(`重建完成：${result.succeeded}/${result.total}`)
           } else {
             message.warning(`部分失败：成功 ${result.succeeded}，失败 ${result.failed.length}`)
@@ -365,7 +375,9 @@ export default function AdminFeedbackPage() {
           </Button>
           {reindexResult && (
             <span className={styles.reindexResult}>
-              上次：成功 {reindexResult.succeeded}/{reindexResult.total}
+              上次：
+              {reindexResult.asyncEnqueue ? '已入队 ' : '成功 '}
+              {reindexResult.succeeded}/{reindexResult.total}
               {reindexResult.failed.length > 0 && `，失败 ${reindexResult.failed.length}`}
             </span>
           )}

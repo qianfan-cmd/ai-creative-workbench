@@ -8,9 +8,17 @@ import {
 } from '@/api/knowledge'
 import { validateKnowledgeFile } from '@/constants/knowledgeFormats'
 
+/** 上传成功回调：便于列表页按「本次上传批次」展示索引进度 */
+export interface KnowledgeUploadSuccessMeta {
+  /** 本批上传成功落库的 documentId（分母 = 长度） */
+  uploadedDocumentIds: number[]
+  /** 其中走 MQ 异步索引的 id（仅用于提示文案，进度按 ready 数量计） */
+  asyncDocumentIds: number[]
+}
+
 /** 上传 Hook 配置项 */
 interface UseKnowledgeDocumentUploadOptions {
-  onSuccess?: () => void | Promise<void>
+  onSuccess?: (meta: KnowledgeUploadSuccessMeta) => void | Promise<void>
 }
 
 /** 将文件列表按固定大小切分为多批，避免单次 HTTP 超时 */
@@ -46,6 +54,18 @@ function showBatchUploadResult(total: number, succeeded: number, failed: { filen
   }
 }
 
+function isAsyncIndexItem(item: {
+  indexStatus?: string
+  jobId?: number
+  chunkCount?: number
+}): boolean {
+  return (
+    item.indexStatus === 'pending_index' ||
+    item.indexStatus === 'indexing' ||
+    (item.jobId != null && (item.chunkCount ?? 0) === 0)
+  )
+}
+
 /**
  * 知识库文档批量上传 Hook
  * 校验格式 → 分片 POST /knowledge/documents/upload → 汇总结果
@@ -56,6 +76,9 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  /** 上传到服务器进度 0～100，非上传中为 null */
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [uploadProgressLabel, setUploadProgressLabel] = useState<string>('')
 
   const openFilePicker = useCallback(() => {
     const input = fileInputRef.current
@@ -63,7 +86,6 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
       message.error('上传组件未就绪，请刷新页面后重试')
       return
     }
-    // 允许重复选择同一文件（否则部分浏览器不触发 change）
     input.value = ''
     input.click()
   }, [])
@@ -72,10 +94,12 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
     const fileList = e.target.files
     if (!fileList || fileList.length === 0) return
 
-    const files = Array.from(fileList) // 将类数组转换为数组
+    const files = Array.from(fileList)
     e.target.value = ''
 
     setUploading(true)
+    setUploadProgress(0)
+    setUploadProgressLabel('准备上传…')
     let hideLoading: (() => void) | undefined
 
     try {
@@ -84,8 +108,8 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
         return
       }
 
-      const invalid: { filename: string; reason: string }[] = [] // 无效文件列表
-      const valid: File[] = [] // 有效文件列表
+      const invalid: { filename: string; reason: string }[] = []
+      const valid: File[] = []
       for (const file of files) {
         const err = validateKnowledgeFile(file)
         if (err) {
@@ -101,19 +125,47 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
       }
 
       const chunks = chunkFiles(valid, KNOWLEDGE_UPLOAD_CHUNK_SIZE)
-      let processed = 0
+      let filesDoneBeforeChunk = 0
       let totalSucceeded = 0
       const allFailed = [...invalid]
+      let asyncIndexCount = 0
+      const asyncDocumentIds: number[] = []
+      const uploadedDocumentIds: number[] = []
 
       hideLoading = message.loading(`正在上传 0/${valid.length}…`, 0)
 
       for (const chunk of chunks) {
-        const result = await uploadKnowledgeDocumentsApi(chunk)
-        processed += chunk.length
+        const chunkStart = filesDoneBeforeChunk
+        const result = await uploadKnowledgeDocumentsApi(chunk, {
+          onChunkProgress: (ratio) => {
+            const virtualDone = chunkStart + ratio * chunk.length
+            const percent = Math.min(100, Math.round((virtualDone / valid.length) * 100))
+            setUploadProgress(percent)
+            setUploadProgressLabel(`正在上传 ${Math.floor(virtualDone)}/${valid.length} 个文件…`)
+          },
+        })
+
+        filesDoneBeforeChunk += chunk.length
+        const percent = Math.min(100, Math.round((filesDoneBeforeChunk / valid.length) * 100))
+        setUploadProgress(percent)
+        setUploadProgressLabel(`正在上传 ${filesDoneBeforeChunk}/${valid.length} 个文件…`)
+
         hideLoading()
-        hideLoading = message.loading(`正在上传 ${processed}/${valid.length}…`, 0)
+        hideLoading = message.loading(`正在上传 ${filesDoneBeforeChunk}/${valid.length}…`, 0)
         totalSucceeded += result.succeeded.length
         allFailed.push(...result.failed)
+
+        for (const item of result.succeeded) {
+          if (item.documentId != null) {
+            uploadedDocumentIds.push(item.documentId)
+          }
+          if (isAsyncIndexItem(item)) {
+            asyncIndexCount += 1
+            if (item.documentId != null) {
+              asyncDocumentIds.push(item.documentId)
+            }
+          }
+        }
       }
 
       hideLoading()
@@ -121,19 +173,31 @@ export function useKnowledgeDocumentUpload(options: UseKnowledgeDocumentUploadOp
 
       showBatchUploadResult(files.length, totalSucceeded, allFailed)
 
+      if (asyncIndexCount > 0) {
+        message.info(
+          asyncIndexCount === 1
+            ? '文件已保存，正在后台建立索引，下方进度条将更新状态'
+            : `${asyncIndexCount} 个文件已保存，正在后台建立索引，下方进度条将更新状态`,
+        )
+      }
+
       if (totalSucceeded > 0) {
-        await onSuccessRef.current?.()
+        await onSuccessRef.current?.({ uploadedDocumentIds, asyncDocumentIds })
       }
     } catch (error) {
       message.error(error instanceof Error ? error.message : '上传失败')
     } finally {
       hideLoading?.()
       setUploading(false)
+      setUploadProgress(null)
+      setUploadProgressLabel('')
     }
   }, [])
 
   return {
     uploading,
+    uploadProgress,
+    uploadProgressLabel,
     fileInputRef,
     openFilePicker,
     handleFileChange,

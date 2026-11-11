@@ -155,9 +155,9 @@ flowchart TD
 
 **验收标准**
 
-- [ ] `docker compose up` 后 Redis/Rabbit 健康
-- [ ] 不启中间件时 backend 仍能启动（文档写明条件）
-- [ ] 能用 `redis-cli` / Rabbit 管理 UI 看到空实例
+- [x] `docker compose up` 后 Redis/Rabbit 健康
+- [x] 不启中间件时 backend 仍能启动（文档写明条件）
+- [x] 能用 `redis-cli` / Rabbit 管理 UI 看到空实例
 
 **面试 30 秒**  
 「长任务和限流需要 Redis 和 MQ；我用 Compose 加 profile，Demo 默认可不启，生产启 full stack。」
@@ -265,10 +265,10 @@ flowchart TD
 
 **验收标准**
 
-- [ ] 上传大 PDF 立即返回，UI 显示 indexing → done/failed
-- [ ] 重启 backend 后：未 ACK 消息重新消费或 job 标 failed（策略写进文档）
-- [ ] 重复投递不会重复写坏数据（幂等）
-- [ ] Admin reindex-all 走同一套 job（可选 P1）
+- [x] 上传大 PDF 立即返回，UI 显示 indexing → done/failed
+- [x] 重启 backend 后：未 ACK 消息重新消费或 job 标 failed（策略写进文档）
+- [x] 重复投递不会重复写坏数据（幂等）
+- [x] Admin reindex-all 走同一套 job（Rabbit 开启时入队）
 
 **面试 30 秒**  
 「索引从 HTTP 线程拆到 RabbitMQ：上传写 MySQL 和 async_job，发消息，Worker 调 Python index；前端轮询 job 状态，重启不丢任务。」
