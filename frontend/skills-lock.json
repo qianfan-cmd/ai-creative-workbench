@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
+    },
+    "modern-web-guidance": {
+      "source": "GoogleChrome/modern-web-guidance",
+      "sourceType": "npm",
+      "skillPath": "skills/modern-web-guidance/SKILL.md",
+      "computedHash": "777b5d2d6774c40563ffb9b8a4ff3db4560f4ab47474081978a08ccc7d428134"
     }
   }
 }
